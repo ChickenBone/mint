@@ -83,6 +83,14 @@
   }
   const queueTracks = (tracks) => tracks.filter((track) => track.type === "track")
     .map((track) => ({ ...track, playQueueItemID: String(++queueSequence) }));
+  function shuffled(items) {
+    const result = items.slice();
+    for (let i = result.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+  }
   const playlist = () => ({
     MediaContainer: {
       size: audio?.queue.length ?? 0, totalSize: audio?.queue.length ?? 0,
@@ -114,6 +122,7 @@
       if (method === "get" && endpoint === "/playQueues/1") return Response.json(playlist());
       if (!audio) return Response.json({ error: "Start playback before changing the queue" }, { status: 409 });
       try {
+        audio.cancelTransition();
         const selected = audio.queue[audio.index];
         const item = /^\/playQueues\/1\/items\/(\d+)(\/move)?$/.exec(endpoint);
         if (method === "put" && endpoint === "/playQueues/1" && url.searchParams.has("uri")) {
@@ -181,19 +190,32 @@
       this.shuffle = false;
       this.devices = [];
       this.state = { volume: 100, state: "stopped" };
-      this.element = document.createElement("audio");
-      this.element.preload = "metadata";
-      this.element.id = "mint-browser-audio";
-      document.body.appendChild(this.element);
-      for (const name of ["playing", "pause", "timeupdate", "durationchange", "volumechange", "waiting", "seeked"]) {
-        this.element.addEventListener(name, () => this.update());
-      }
-      this.element.addEventListener("ended", () => void this.next(true).catch((error) => report(error.message)));
-      this.element.addEventListener("error", () => {
-        this.state.state = "paused";
-        report("This track could not play. Check its file mapping, permissions and browser codec support.");
-        this.update();
+      this.elements = [0, 1].map((index) => {
+        const element = document.createElement("audio");
+        element.preload = "metadata";
+        element.id = index === 0 ? "mint-browser-audio" : "mint-browser-standby";
+        document.body.appendChild(element);
+        for (const name of ["playing", "pause", "timeupdate", "durationchange", "volumechange", "waiting", "seeked"]) {
+          element.addEventListener(name, () => {
+            if (element === this.element) {
+              this.update();
+              if (name === "timeupdate") void this.transition().catch((error) => report(error.message));
+            }
+          });
+        }
+        element.addEventListener("ended", () => {
+          if (element === this.element) void this.next(true).catch((error) => report(error.message));
+        });
+        element.addEventListener("error", () => {
+          if (element !== this.element) { this.prepared = undefined; return report("The next track could not preload. Playback will try it normally at the end of this song."); }
+          this.pause();
+          report("This track could not play. Check its file mapping, permissions and browser codec support.");
+          this.update();
+        });
+        return element;
       });
+      this.element = this.elements[0];
+      this.dsp = window.MintBrowserDSP ? new window.MintBrowserDSP(this.elements, report) : null;
       audio = this;
       this.visibility = setInterval(() => {
         void nativeFetch("/listen/api/server/identity", { cache: "no-store" }).then((response) => {
@@ -214,23 +236,75 @@
     getState() { return this.state; }
     findActiveDevice() { return null; }
     async refreshDevices() {}
-    setRate(rate) { this.element.playbackRate = rate; }
-    setVolume(volume) { this.element.volume = Math.max(0, Math.min(1, volume / 100)); this.update(); }
-    async pause() { this.element.pause(); }
+    setRate(rate) { for (const element of this.elements) element.playbackRate = rate; }
+    setVolume(volume) { for (const element of this.elements) element.volume = Math.max(0, Math.min(1, volume / 100)); this.update(); }
+    cancelTransition() {
+      clearTimeout(this.fadeTimer);
+      this.transitioning = false;
+      this.prepared = undefined;
+      for (const element of this.elements) if (element !== this.element) {
+        element.pause(); element.removeAttribute("src"); element.load();
+      }
+      this.dsp?.select(this.element);
+    }
+    async pause() { this.playGeneration = (this.playGeneration ?? 0) + 1; this.cancelTransition(); this.element.pause(); this.update(); }
     async resume() {
-      try { await this.element.play(); document.getElementById("mint-player-error").hidden = true; }
+      if (!this.element.getAttribute("src") && this.queue[this.index]) return this.select(this.index);
+      try { await this.dsp?.initialize(); await this.element.play(); document.getElementById("mint-player-error").hidden = true; }
       catch (error) {
         report(error.name === "NotAllowedError" ? "Your browser needs a tap to start audio. Press Play again." : "Unable to start audio. Check the track and your connection.");
         throw error;
       }
     }
-    stop() { this.element.pause(); this.element.removeAttribute("src"); this.element.load(); this.state.state = "stopped"; this.update(); }
-    seekTo(ms) { if (Number.isFinite(ms)) this.element.currentTime = Math.max(0, ms / 1000); this.update(); }
-    setRepeatMode(mode) { this.repeat = mode; this.update(); }
+    stop() { this.playGeneration = (this.playGeneration ?? 0) + 1; this.cancelTransition(); this.element.pause(); this.element.removeAttribute("src"); this.element.load(); this.state.state = "stopped"; this.update(); }
+    seekTo(ms) { this.cancelTransition(); if (Number.isFinite(ms)) this.element.currentTime = Math.max(0, ms / 1000); this.update(); }
+    setRepeatMode(mode) { this.cancelTransition(); this.repeat = mode; this.update(); }
+    setShuffle(value) {
+      const current = this.queue[this.index];
+      this.cancelTransition();
+      this.shuffle = Boolean(value);
+      this.queue = value ? [...this.queue.slice(0, this.index + 1), ...shuffled(this.queue.slice(this.index + 1))]
+        : this.queue.slice().sort((a, b) => Number(a.playQueueItemID) - Number(b.playQueueItemID));
+      this.index = Math.max(0, this.queue.indexOf(current));
+      this.version++; this.update();
+    }
+    async transition() {
+      const seconds = this.dsp?.settings.crossfade ?? 0;
+      const remaining = this.element.duration - this.element.currentTime;
+      if (!seconds || this.transitioning || this.element.paused || this.repeat === 1 ||
+          !Number.isFinite(remaining) || remaining <= 0 || remaining > seconds + 5) return;
+      const index = this.index + 1 < this.queue.length ? this.index + 1 : this.repeat === 2 ? 0 : -1;
+      if (index < 0 || index === this.index) return;
+      const next = this.queue[index], standby = this.elements.find((element) => element !== this.element);
+      if (this.prepared !== next.playQueueItemID) {
+        standby.src = `/listen/api/audio/${next.ratingKey}`; standby.preload = "auto"; standby.load();
+        this.prepared = next.playQueueItemID;
+      }
+      if (remaining > seconds || standby.readyState < 3) return;
+      this.transitioning = true;
+      const from = this.element;
+      try {
+        await this.dsp.initialize();
+        await standby.play();
+        if (!this.transitioning || this.element !== from || this.element.paused || this.queue[index] !== next) {
+          standby.pause(); return;
+        }
+        const duration = Math.min(seconds, remaining, (standby.duration || seconds * 2) / 2);
+        this.dsp.fade(from, standby, duration);
+        this.element = standby; this.index = index; this.prepared = undefined;
+        this.update();
+        this.fadeTimer = setTimeout(() => {
+          from.pause(); from.removeAttribute("src"); from.load();
+          this.transitioning = false; this.dsp.select(this.element); this.update();
+        }, duration * 1000);
+      } catch (error) {
+        standby.pause(); this.transitioning = false; this.dsp.select(this.element);
+        throw new Error(`Smooth transition failed: ${error.message}`);
+      }
+    }
     async next(ended = false) {
       if (ended && this.repeat === 1) return this.select(this.index);
       let index = this.index + 1;
-      if (this.shuffle && this.queue.length > 1) index = (this.index + 1 + Math.floor(Math.random() * (this.queue.length - 1))) % this.queue.length;
       if (index >= this.queue.length) {
         if (this.repeat === 2) index = 0;
         else return this.stop();
@@ -243,6 +317,7 @@
     }
     async select(index, offset = 0, paused = false) {
       if (!this.queue[index]) return;
+      this.cancelTransition();
       this.index = index;
       this.element.src = `/listen/api/audio/${this.queue[index].ratingKey}`;
       if (offset > 0) this.element.currentTime = offset / 1000;
@@ -270,6 +345,10 @@
           artwork: track.thumb ? [{ src: track.thumb }] : [],
         });
         navigator.mediaSession.playbackState = this.state.state === "playing" ? "playing" : "paused";
+        const duration = this.state.duration / 1000, position = this.state.time / 1000;
+        if (navigator.mediaSession.setPositionState && duration > 0 && position >= 0 && position <= duration) {
+          navigator.mediaSession.setPositionState({ duration, position, playbackRate: this.element.playbackRate });
+        }
       }
     }
   }
@@ -341,23 +420,40 @@
           emit() { this.notifyObservers(this.event(), this.eventCounter); }
           async doPoll() { return this.event(); }
           async doPlay(item, started) {
+            const generation = audio.playGeneration = (audio.playGeneration ?? 0) + 1;
             try {
               let key = item.containerKey || item.key;
+              if (!key && typeof item.uri === "string") {
+                const directory = /^library:\/\/[^/]+\/directory\/(.+)$/.exec(item.uri);
+                if (directory) {
+                  try { key = decodeURIComponent(directory[1]); }
+                  catch { throw new Error("This library selection has an invalid encoded key"); }
+                }
+              }
               if (!key || !key.startsWith("/")) throw new Error("This library item has no playable tracks");
-              if (key.startsWith("/playQueues/")) return this.doResume();
+              if (/^\/library\/sections\/1(?:\/all)?(?:\?|$)/.test(key)) {
+                const library = new URL(key.replace(/^\/library\/sections\/1(?=\?|$)/, "/library/sections/1/all"), location.origin);
+                library.searchParams.set("type", "10");
+                key = library.pathname + library.search;
+              }
+              if (key.startsWith("/playQueues/")) {
+                await this.doResume(); started?.(true); this.emit(); return true;
+              }
               if (key.includes("/children") && key.includes("/ar_")) key = key.replace("/children", "/allLeaves");
               let result = await loadTracks(key);
               const selected = result[0];
-              if (!item.containerKey && result.length === 1 && selected?.type === "track" && selected.parentKey) {
+              const selectedKey = item.key ?? (result.length === 1 && selected?.type === "track" ? selected.key : undefined);
+              if (!item.containerKey && /^\/library\/metadata\/[^/?]+$/.test(key) && result.length === 1 && selected?.type === "track" && selected.parentKey) {
                 result = await loadTracks(`${selected.parentKey}/children`);
               }
               const tracks = queueTracks(result);
+              if (generation !== audio.playGeneration) { started?.(false); return false; }
               if (!tracks.length) throw new Error("No downloaded tracks are available for this selection");
-              audio.queue = tracks;
+              audio.queue = item.shuffle ? shuffled(tracks) : tracks;
               audio.version++;
               audio.shuffle = Boolean(item.shuffle);
-              const found = tracks.findIndex((track) => track.key === item.key);
-              await audio.select(found < 0 ? (audio.shuffle ? Math.floor(Math.random() * tracks.length) : 0) : found, item.offset ?? 0, item.paused ?? false);
+              const found = item.shuffle ? -1 : audio.queue.findIndex((track) => track.key === selectedKey);
+              await audio.select(found < 0 ? 0 : found, item.offset ?? 0, item.paused ?? false);
               started?.(true);
               this.emit();
               return true;
@@ -377,7 +473,7 @@
           async doSetVolume(volume) { audio.setVolume(volume); }
           async doSetRate(rate) { audio.setRate(rate); }
           async doSetRepeatMode(mode) { audio.setRepeatMode(mode); }
-          async doSetShuffle(shuffle) { audio.shuffle = Boolean(shuffle); audio.version++; audio.update(); }
+          async doSetShuffle(shuffle) { audio.setShuffle(shuffle); }
           async doRefreshPlayQueue() { this.emit(); }
         }
         exports.__esModule = true;

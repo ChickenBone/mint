@@ -26,11 +26,12 @@ test("approved-member streaming, range seeking, session revocation and member-pr
   const { runMigrations } = await import("@mint/core/db/migrate");
   const { signToken, sha256 } = await import("@mint/core/crypto");
   const { eq } = await import("drizzle-orm");
-  const { servePlayback } = await import("./playback");
+  const { servePlayback, serveSonic } = await import("./playback");
   const { catalogItems, catalogResponse, playerArtworkUrl } = await import("../../web/src/lib/player-catalog");
   const { albumPlayerId, artistPlayerId, trackPlayerItem, playerItemSchema } = await import("../../web/src/lib/player-protocol");
   const server = createServer((req, res) => {
-    void servePlayback(req, res, req.url!.slice(1)).catch((error: unknown) => { res.destroy(error instanceof Error ? error : undefined); });
+    const sonic = req.url!.startsWith("/sonic/");
+    void (sonic ? serveSonic(req, res, req.url!.slice(7)) : servePlayback(req, res, req.url!.slice(1))).catch((error: unknown) => { res.destroy(error instanceof Error ? error : undefined); });
   });
   try {
     await runMigrations(path.resolve("../../packages/core/migrations"));
@@ -84,6 +85,17 @@ test("approved-member streaming, range seeking, session revocation and member-pr
     assert.equal((await fetch(`${origin}/${song!.id}`, { headers: { authorization: `Bearer ${signToken("playback", { trackId: song!.id, userId: member!.id, sessionHash }, -1)}` } })).status, 401);
     assert.equal((await fetch(`${origin}/${song!.id}`, { headers: { authorization: `Bearer ${token(song!.id, other!.id)}` } })).status, 401);
     const headers = { authorization: `Bearer ${token(song!.id)}` };
+    const sonicUrl = `${origin}/sonic/${song!.id}`;
+    assert.equal((await fetch(sonicUrl)).status, 401);
+    assert.equal((await fetch(sonicUrl, { headers })).status, 401, "media claims cannot authorize sonic reads");
+    const sonicToken = signToken("sonic", { trackId: song!.id, userId: member!.id, sessionHash }, 30_000);
+    const sonicHeaders = { authorization: `Bearer ${sonicToken}` };
+    const notAnalyzed = await fetch(sonicUrl, { headers: sonicHeaders });
+    assert.equal(notAnalyzed.status, 409);
+    assert.match(await notAnalyzed.text(), /completed sonic analysis/);
+    assert.equal(notAnalyzed.headers.get("cache-control"), "private, no-store");
+    const wrongMemberSonic = signToken("sonic", { trackId: song!.id, userId: other!.id, sessionHash }, 30_000);
+    assert.equal((await fetch(sonicUrl, { headers: { authorization: `Bearer ${wrongMemberSonic}` } })).status, 401);
     const partial = await fetch(`${origin}/${song!.id}`, { headers: { ...headers, range: "bytes=5-12" } });
     assert.equal(partial.status, 206);
     assert.equal(partial.headers.get("content-range"), `bytes 5-12/${bytes.length}`);

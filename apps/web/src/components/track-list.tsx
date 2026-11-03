@@ -4,7 +4,7 @@ import type { TrackView } from "@mint/core/events";
 import clsx from "clsx";
 import { ArrowUpRight, Clock3, Play, Sparkles } from "lucide-react";
 import { TrackMenuButton, usePlayer } from "@/components/app/player";
-import { trackPlayerItem } from "@/lib/player-protocol";
+import { trackPlayerItem, type PlayerCollection } from "@/lib/player-protocol";
 import { formatDuration, youtubeMusicUrl } from "@/lib/format";
 import { Artwork } from "./artwork";
 import { ProgressBar, StageBadge } from "./stage-badge";
@@ -15,16 +15,19 @@ function Row({
   showStage,
   actions,
   flash,
+  collection,
 }: {
   track: TrackView;
   index: number;
   showStage: boolean;
   actions?: (t: TrackView) => React.ReactNode;
   flash?: number;
+  collection?: PlayerCollection;
 }) {
   const player = usePlayer();
   const playable = player && (track.stage === "ready" || track.stage === "analyzing");
   const item = trackPlayerItem(track);
+  const play = () => player?.command(collection ? { action: "collection", collection, shuffle: false, key: item.key } : { action: "play", item });
   const inFlight = track.stage !== "ready" && track.stage !== "analyzing" && track.stage !== "failed";
   return (
     <li
@@ -46,14 +49,14 @@ function Row({
         flash && "stage-flash",
       )}
     >
-      {playable ? <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={() => player.command({ action: "play", item })}
+      {playable ? <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={play}
         className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated hover:text-mint disabled:opacity-40">
         <span className="text-sm tabular group-hover:hidden">{index + 1}</span><Play className="hidden size-4 group-hover:block" fill="currentColor" />
       </button> : <span className="text-center text-sm text-muted tabular">{index + 1}</span>}
       <div className="flex min-w-0 items-center gap-3">
         <Artwork track={track} className={clsx("size-11 transition-[filter] duration-500", inFlight && "grayscale-[0.7]")} />
         <div className="min-w-0">
-          {playable ? <button onClick={() => player.command({ action: "play", item })} disabled={!player.ready}
+          {playable ? <button onClick={play} disabled={!player.ready}
             className="block max-w-full truncate text-left font-medium text-fg hover:underline disabled:opacity-40">{track.title}</button>
             : <p className="truncate font-medium text-fg">{track.title}</p>}
           <p className="truncate text-sm text-muted">{track.artist}</p>
@@ -90,12 +93,14 @@ export function TrackList({
   actions,
   flash,
   empty,
+  collection,
 }: {
   tracks: TrackView[];
   showStage?: boolean;
   actions?: (t: TrackView) => React.ReactNode;
   flash?: Record<string, number>;
   empty?: React.ReactNode;
+  collection?: PlayerCollection;
 }) {
   if (!tracks.length) return <>{empty}</>;
   return (
@@ -109,7 +114,7 @@ export function TrackList({
       </div>
       <ol className="mt-2">
         {tracks.map((t, i) => (
-          <Row key={t.id} track={t} index={i} showStage={showStage} actions={actions} flash={flash?.[t.id]} />
+          <Row key={t.id} track={t} index={i} showStage={showStage} actions={actions} flash={flash?.[t.id]} collection={collection} />
         ))}
       </ol>
     </div>

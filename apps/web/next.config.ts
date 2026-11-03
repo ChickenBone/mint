@@ -25,7 +25,7 @@ const config: NextConfig = {
   output: process.env.VERCEL ? undefined : "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
   outputFileTracingIncludes: {
-    "/listen/assets/*": ["./plexamp-assets/index.js", "../../deploy/plexamp/bridge.js", "../../deploy/plexamp/integration.js", "../../deploy/plexamp/player.css"],
+    "/listen/assets/*": ["./plexamp-assets/index.js", "../../deploy/plexamp/bridge.js", "../../deploy/plexamp/integration.js", "../../deploy/plexamp/audio.js", "../../deploy/plexamp/player.css"],
   },
   transpilePackages: ["@mint/core"],
   serverExternalPackages: ["@node-rs/argon2", "bullmq", "pg", "ioredis"],
@@ -42,6 +42,10 @@ const config: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
+      },
+      {
+        source: "/sw.js",
+        headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }],
       },
       {
         source: "/listen/:path*",

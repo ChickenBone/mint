@@ -104,7 +104,10 @@ export async function catalogItems(opts: { type?: string; id?: string; q?: strin
     });
     return { items, total: rows[0]?.total ?? 0, start };
   }
-  const order = opts.playlist && opts.playlist !== "liked"
+  const ids = opts.id?.includes(",") ? opts.id.split(",") : null;
+  const order = ids
+    ? [asc(sql`array_position(ARRAY[${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)}], ${t.id})`)]
+    : opts.playlist && opts.playlist !== "liked"
     ? [asc(sql`(select position from ${schema.playlistTracks} where ${schema.playlistTracks.playlistId} = ${opts.playlist} and ${schema.playlistTracks.trackId} = ${t.id})`)]
     : [asc(t.artist), asc(t.album), asc(t.title)];
   const [rows, count] = await Promise.all([

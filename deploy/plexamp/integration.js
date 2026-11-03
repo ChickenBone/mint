@@ -21,6 +21,7 @@
       playing: !audio.element.paused && Boolean(audio.element.getAttribute("src")),
       time: audio.state.time ?? 0, duration: audio.state.duration ?? 0,
       volume: audio.state.volume ?? 100, shuffle: audio.shuffle, repeat: audio.repeat,
+      dsp: audio.dsp?.settings, dspAvailable: Boolean(window.AudioContext), transitioning: Boolean(audio.transitioning),
       track: metadata(audio.queue[audio.index]), queue: audio.queue.slice(offset, offset + 1000).map(metadata).filter(Boolean),
       queueTotal: audio.queue.length, queueOffset: offset,
     } });
@@ -36,6 +37,36 @@
     if (!ready || !audio || !controller) throw new Error("The music engine is still starting. Try again in a moment.");
     switch (data.action) {
       case "state": break;
+      case "dsp":
+        if (!audio.dsp) throw new Error("Audio processing is unavailable in this browser.");
+        audio.cancelTransition();
+        await audio.dsp.configure(data.settings);
+        audio.update();
+        break;
+      case "collection": {
+        const collection = data.collection;
+        if (!collection || typeof data.shuffle !== "boolean") throw new Error("Invalid collection");
+        let containerKey;
+        if (collection.kind === "library") {
+          if (collection.query !== undefined && (typeof collection.query !== "string" || collection.query.length > 100)) throw new Error("Library search is too long");
+          containerKey = `/library/sections/1/all?type=10${collection.query ? `&query=${encodeURIComponent(collection.query)}` : ""}`;
+        } else if (collection.kind === "liked") containerKey = "/playlists/liked/items";
+        else if (collection.kind === "playlist" && /^[0-9a-f-]{36}$/.test(collection.id)) containerKey = `/playlists/${collection.id}/items`;
+        else throw new Error("Invalid collection");
+        if (data.key && (typeof data.key !== "string" || !itemKey.test(data.key))) throw new Error("Invalid track");
+        await root.player.play({ containerKey, key: data.key ?? containerKey, source: "mint", shuffle: data.shuffle });
+        break;
+      }
+      case "sonic": {
+        if (!/^[0-9a-f-]{36}$/.test(data.trackId ?? "")) throw new Error("Invalid sonic selection");
+        const response = await window.fetch(`/listen/api/sonic/${data.trackId}`);
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error ?? "Sonic recommendations are unavailable.");
+        if (!Array.isArray(result.ids) || !result.ids.length) throw new Error("No indexed, playable sonic matches were found. Let Plex finish analysis and re-index the library.");
+        const containerKey = `/library/metadata/${[data.trackId, ...result.ids].join(",")}`;
+        await root.player.play({ containerKey, key: `/library/metadata/${data.trackId}`, source: "mint" });
+        break;
+      }
       case "navigate":
         if (!["home", "library", "search", "now-playing"].includes(data.view)) throw new Error("Invalid music view");
         navigate(data.view);
@@ -64,7 +95,7 @@
         } else if (data.action === "play") {
           const containerKey = item.type === "album" && !item.key.endsWith("/children") ? `${item.key}/children`
             : item.type === "artist" ? item.key.replace(/\/children$/, "") + "/allLeaves" : item.type === "playlist" ? item.key : undefined;
-          await root.player.play({ key: item.key, containerKey, source: "mint" });
+          await root.player.play({ key: item.key, containerKey, source: "mint", shuffle: Boolean(data.shuffle) });
         } else {
           if (!audio.queue.length || !audio.element.getAttribute("src")) throw new Error("Play a song before adding to the queue.");
           await root.player.addToPlayQueue(native, data.action === "next-in-queue");
@@ -159,8 +190,15 @@
       factories[72003] = (module, exports, req) => {
         iconButton(module, exports, req);
         const original = exports.default;
-        exports.default = (props) => ["download", "add-files", "add-to-playlist", "home-add"].includes(props.icon)
-          ? null : req(96540).createElement(original, props);
+        exports.default = (props) => {
+          if (["download", "add-files", "add-to-playlist", "home-add"].includes(props.icon)) return null;
+          const label = { "menu-play": "Play this view", "menu-shuffle": "Shuffle this view" }[props.icon];
+          if (label) return req(96540).createElement("button", {
+            type: "button", "aria-label": label, onClick: props.onClick,
+            style: { display: "flex", alignItems: "center", justifyContent: "center", minWidth: 44, minHeight: 44, padding: 14, margin: "0 3px", border: 0, borderRadius: 24, background: "transparent", color: "inherit", cursor: "pointer" },
+          }, req(96540).createElement(req(98511).default, { name: props.icon, color: props.color, size: props.size }));
+          return req(96540).createElement(original, props);
+        };
       };
       const layout = factories[87279];
       factories[87279] = (module, exports, req) => {

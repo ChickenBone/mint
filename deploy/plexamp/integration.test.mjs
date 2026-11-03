@@ -106,6 +106,22 @@ test("native music menus become semantic Mint menus without suppressing unrelate
   assert.equal(messages.at(-1).point.x, 35);
 });
 
+test("collection commands preserve search, shuffle and private playlist identities without accepting arbitrary paths", async () => {
+  const { send, actions, messages } = fixture();
+  await send({ action: "collection", collection: { kind: "library", query: "First & Light" }, shuffle: true });
+  assert.equal(actions.at(-1)[0], "play");
+  assert.equal(actions.at(-1)[1].containerKey, "/library/sections/1/all?type=10&query=First%20%26%20Light");
+  assert.equal(actions.at(-1)[1].shuffle, true);
+  await send({ action: "collection", collection: { kind: "liked" }, shuffle: false });
+  assert.equal(actions.at(-1)[1].containerKey, "/playlists/liked/items");
+  await send({ action: "collection", collection: { kind: "playlist", id: "00000000-0000-0000-0000-000000000001" }, shuffle: false });
+  assert.equal(actions.at(-1)[1].containerKey, "/playlists/00000000-0000-0000-0000-000000000001/items");
+  for (const collection of [{ kind: "library", query: "a".repeat(101) }, { kind: "playlist", id: "/logout" }, { kind: "url", path: "https://example.test" }]) {
+    await send({ action: "collection", collection, shuffle: false });
+    assert.equal(messages.at(-1).ok, false);
+  }
+});
+
 test("queue snapshots are bounded without pretending the full queue is present", async () => {
   const { audio, messages, send } = fixture();
   audio.queue = Array.from({ length: 2500 }, (_, i) => ({ key: `/library/metadata/track-${i}`, ratingKey: `track-${i}`, title: `Track ${i}`, type: "track", playQueueItemID: String(i + 1) }));

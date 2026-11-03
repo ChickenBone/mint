@@ -19,7 +19,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <PlayerProvider>
-    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 bg-bg p-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
+    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 bg-bg p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-[max(.5rem,env(safe-area-inset-top))] lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
       <aside className="hidden min-h-0 flex-col gap-2 lg:flex">
         <div className="flex items-center justify-between rounded-lg bg-surface px-5 py-4">
           <Logo />

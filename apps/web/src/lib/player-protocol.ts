@@ -13,16 +13,28 @@ export const playerItemSchema = z.object({
   queueId: z.string().regex(/^\d+$/).optional(),
 });
 export type PlayerItem = z.infer<typeof playerItemSchema>;
+export const dspSchema = z.object({
+  enabled: z.boolean(), preamp: z.number().min(-18).max(0),
+  bands: z.array(z.number().min(-12).max(12)).length(10),
+  compressor: z.boolean(), crossfade: z.number().min(0).max(12),
+});
+export type DspSettings = z.infer<typeof dspSchema>;
+export const defaultDsp: DspSettings = { enabled: false, preamp: -6, bands: Array(10).fill(0), compressor: false, crossfade: 0 };
+export type PlayerCollection = { kind: "library"; query?: string } | { kind: "liked" } | { kind: "playlist"; id: string };
 export const playerStateSchema = z.object({
   playing: z.boolean(), time: z.number().finite().nonnegative(), duration: z.number().finite().nonnegative(),
   volume: z.number().min(0).max(100), shuffle: z.boolean(), repeat: z.number().int().min(0).max(2),
   track: playerItemSchema.nullable(), queue: z.array(playerItemSchema).max(1000),
   queueTotal: z.number().int().nonnegative(), queueOffset: z.number().int().nonnegative(),
+  dsp: dspSchema.optional(), dspAvailable: z.boolean().optional(), transitioning: z.boolean().optional(),
 });
 export type PlayerState = z.infer<typeof playerStateSchema>;
 export type MusicView = "home" | "library" | "search" | "now-playing";
 export type PlayerCommand =
-  | { action: "play" | "next-in-queue" | "add-to-queue" | "browse"; item: PlayerItem }
+  | { action: "play" | "next-in-queue" | "add-to-queue" | "browse"; item: PlayerItem; shuffle?: boolean }
+  | { action: "collection"; collection: PlayerCollection; shuffle: boolean; key?: string }
+  | { action: "dsp"; settings: DspSettings }
+  | { action: "sonic"; trackId: string }
   | { action: "navigate"; view: MusicView }
   | { action: "toggle" | "previous" | "next" | "shuffle" | "repeat" | "clear" | "state" }
   | { action: "seek" | "volume"; value: number }

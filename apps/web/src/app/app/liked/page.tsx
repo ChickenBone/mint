@@ -6,6 +6,7 @@ import { CoverMosaic, firstCover, PageHeader } from "@/components/app/page-heade
 import { requireUser } from "@/lib/auth";
 import { getLikedTracks, getYoutubeAccount } from "@/lib/data";
 import { formatCount, formatHours } from "@/lib/format";
+import { CollectionActions } from "@/components/app/collection-actions";
 
 export const metadata: Metadata = { title: "Liked songs" };
 
@@ -35,14 +36,13 @@ export default async function Liked() {
           </p>
         }
       />
-      {!acct ? (
-        <LinkYoutubeCallout />
-      ) : (
+      <div className="mb-6"><CollectionActions collection={{ kind: "liked" }} empty={!landed.length} label="liked songs" /></div>
+      {!acct && <LinkYoutubeCallout />}
         <LiveTrackList
           initial={tracks}
+          collection={{ kind: "liked" }}
           empty={<p className="py-12 text-muted">No likes yet. Like a song in YouTube Music, then press Sync now on Home.</p>}
         />
-      )}
     </>
   );
 }

@@ -37,7 +37,7 @@ Headings use `text-wrap: balance` and paragraphs use `pretty`.
 
 - **Public pages.** A sticky blurred `SiteHeader` above a `max-w-7xl` column with `px-5 sm:px-8`. The landing hero sits on `ArtWall`: drifting rows of real library covers behind a left-to-right scrim.
 - **Dashboard.** A Spotify‑style persistent shell: sidebar (nav and "Your music"), main pane and a bottom Mint player bar, separated by an 8px gutter. Music browsing uses the embedded Plexamp engine with Mint's tokens and Figtree; management pages keep their artwork-led `PageHeader`. Moving between them never remounts the engine.
-- **Below `lg`.** The sidebar becomes a compact top bar with Music, Library and a keyboard-accessible More menu. The player keeps cover/title, play/pause, next, seek and queue visible.
+- **Below `lg`.** The sidebar becomes a compact top bar with Music, Library and a keyboard-accessible More menu. The player keeps cover/title, play/pause, next, seek, lyrics, audio settings and queue visible. Shuffle and repeat remain available in Audio settings; safe-area insets protect installed-phone controls.
 - **Small screens.** No horizontal scroll at 320 px. Header actions are `whitespace-nowrap`, and secondary links hide on narrow screens.
 
 ## Components (`apps/web/src/components`)
@@ -46,6 +46,7 @@ Headings use `text-wrap: balance` and paragraphs use `pretty`.
   - Rows show the number, artwork (greyed while in flight), title and artist, the stage badge, and the duration.
   - Approved member rows and cards play downloaded tracks in Mint. Options buttons, right-click and keyboard menus expose Mint-owned queue and album/artist actions. Public cards still link to YouTube Music; public rows have no audio controls. `FreshShelf` leads with one 2×2 feature card.
 - **Player.** One persistent engine per member tab. Mint owns transport, queue and context menus; Plexamp owns music browsing and its full now-playing screen. Muted controls disable while starting, and engine/authentication errors are explicit. Native duplicate tabs, mini-player and unavailable cast/download/station actions are removed.
+- **Collections and panels.** Library, search results, likes and playlists expose explicit Play and Shuffle actions, with loading/empty states. One complementary panel at a time holds Queue, Lyrics or Audio settings, keeping the transport reachable. Lyrics follow playback unless the listener scrolls, and honor reduced-motion preferences. EQ edits apply together rather than sending each slider movement to the engine.
 - **StageBadge + ProgressBar.** Each pipeline stage has one colour and one label everywhere: queued, matching, downloading, importing, sonic scan, ready, failed. Failed rows show the error detail and a retry.
 - **PipelineBoard.** Live lanes for each stage, fed by `useLiveTracks`.
 - **LiveStats.** The library as one live sentence (numbers in `fg`, words in `faint`), plus the source and sonic ratio bars. Never a grid of big numbers.

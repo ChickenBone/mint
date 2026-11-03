@@ -4,6 +4,7 @@ import { UUID, type PlaybackClaim } from "@mint/core/playback";
 import { destroySession, getUser } from "@/lib/auth";
 import { CatalogInputError, catalogResponse, playerArtworkUrl } from "@/lib/player-catalog";
 import { publicUrl } from "@/lib/request";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,24 @@ export async function GET(request: Request, context: { params: Promise<{ path: s
   const parts = (await context.params).path;
   const url = new URL(request.url);
   const endpoint = "/" + parts.slice(1).join("/");
+  if (parts[0] === "sonic") {
+    const id = parts[1] ?? "";
+    if (!UUID.test(id) || parts.length !== 2) return json({ error: "Invalid sonic selection" }, 400);
+    if (!await rateLimit(`sonic:${user.id}`, 12, 60)) return json({ error: "Too many sonic requests. Wait a minute before trying again." }, 429);
+    const session = (await cookies()).get(SESSION_COOKIE)?.value;
+    if (!session) return json({ error: "Sign in required" }, 401);
+    const token = signToken<PlaybackClaim>("sonic", { userId: user.id, sessionHash: sha256(session), trackId: id }, 30_000);
+    try {
+      const response = await fetch(`${process.env.PLAYBACK_WORKER_URL ?? "http://worker:8080"}/sonic/${id}`, {
+        headers: { authorization: `Bearer ${token}` }, cache: "no-store", signal: AbortSignal.timeout(20_000), redirect: "error",
+      });
+      if (response.status === 404) return json({ error: "Update the worker image to enable sonic recommendations." }, 503);
+      return json(await response.json(), response.status);
+    } catch (error) {
+      console.error("Sonic worker unavailable", error instanceof Error ? error.message : "Network failure");
+      return json({ error: "The sonic service is unavailable. Check the worker connection." }, 503);
+    }
+  }
   if (parts[0] === "audio") {
     const id = parts[1] ?? "";
     if (!UUID.test(id) || parts.length !== 2) return json({ error: "Invalid track" }, 400);

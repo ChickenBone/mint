@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TrackList } from "../track-list";
 import { useLiveTracks, useRealtime } from "../realtime";
 import { RetryButton } from "./retry-button";
+import type { PlayerCollection } from "@/lib/player-protocol";
 
 /**
  * A member's list that updates rows in place from public track events and
@@ -14,10 +15,12 @@ export function LiveTrackList({
   initial,
   mode = "library",
   empty,
+  collection,
 }: {
   initial: TrackView[];
   mode?: "library" | "jobs";
   empty?: React.ReactNode;
+  collection?: PlayerCollection;
 }) {
   const router = useRouter();
   const { tracks, flash } = useLiveTracks(initial, {
@@ -31,6 +34,7 @@ export function LiveTrackList({
   return (
     <TrackList
       tracks={tracks}
+      collection={collection}
       flash={flash}
       showStage={mode === "jobs"}
       empty={empty}

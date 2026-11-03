@@ -41,7 +41,7 @@ COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public
 COPY --from=build --chown=node:node /repo/apps/web/plexamp-assets ./plexamp-assets
-COPY --from=build --chown=node:node /repo/deploy/plexamp/bridge.js /repo/deploy/plexamp/integration.js /repo/deploy/plexamp/player.css ./plexamp/
+COPY --from=build --chown=node:node /repo/deploy/plexamp/bridge.js /repo/deploy/plexamp/integration.js /repo/deploy/plexamp/audio.js /repo/deploy/plexamp/player.css ./plexamp/
 COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/mint-entrypoint
 RUN mkdir -p /secrets && chown node:node /secrets
 USER node

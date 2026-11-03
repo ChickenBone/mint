@@ -23,7 +23,7 @@ import { processTorboxDownload } from "./jobs/torbox-bridge";
 import { log } from "./log";
 import { connection, queues } from "./queues";
 import { updateTrack } from "./track-state";
-import { servePlayback } from "./playback";
+import { servePlayback, serveSonic } from "./playback";
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL || "admin@mint.local";
@@ -92,6 +92,12 @@ async function main() {
   }
 
   const server = http.createServer(async (req, res) => {
+    const sonic = /^\/sonic\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
+    if (sonic && req.method === "GET") {
+      try { await serveSonic(req, res, sonic[1]!); }
+      catch (err) { log.error({ err }, "sonic request failed"); if (!res.headersSent) res.writeHead(503).end('{"error":"Sonic service unavailable"}'); else res.destroy(); }
+      return;
+    }
     const media = /^\/playback\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
     if (media && (req.method === "GET" || req.method === "HEAD")) {
       try { await servePlayback(req, res, media[1]!); }

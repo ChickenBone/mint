@@ -7,6 +7,7 @@ import { PlaylistToggle } from "@/components/app/playlist-toggle";
 import { requireUser } from "@/lib/auth";
 import { getPlaylist } from "@/lib/data";
 import { formatCount } from "@/lib/format";
+import { CollectionActions } from "@/components/app/collection-actions";
 
 export const metadata: Metadata = { title: "Playlist" };
 
@@ -43,8 +44,9 @@ export default async function PlaylistPage({ params }: { params: Promise<{ id: s
           {playlist.syncEnabled ? "Syncing to Plex" : "Sync this playlist to Plex"}
         </label>
       </PageHeader>
+      <div className="mb-6"><CollectionActions collection={{ kind: "playlist", id }} empty={!ready || !playlist.syncEnabled} label="playlist" /></div>
       {playlist.syncEnabled ? (
-        <LiveTrackList initial={tracks} empty={<p className="py-12 text-muted">The next sync fills this in. It can take a minute.</p>} />
+        <LiveTrackList initial={tracks} collection={{ kind: "playlist", id }} empty={<p className="py-12 text-muted">The next sync fills this in. It can take a minute.</p>} />
       ) : (
         <p className="max-w-xl text-muted">
           This playlist isn&rsquo;t synced. Turn on sync and Mint downloads every song in it and keeps a matching Plex playlist called{" "}

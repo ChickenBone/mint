@@ -81,6 +81,15 @@ export function isSonicallyAnalyzed(t: PlexTrack) {
   return Boolean(t.musicAnalysisVersion && Number(t.musicAnalysisVersion) > 0);
 }
 
+export async function sonicNeighbors(ratingKey: string): Promise<string[]> {
+  if (!/^\d+$/.test(ratingKey)) throw new Error("The track has no valid Plex identity");
+  const result = await plex<Container<PlexTrack>>(`/library/metadata/${ratingKey}/nearest`, {
+    query: { limit: 50, maxDistance: 0.25 }, timeoutMs: 15_000,
+  });
+  if (!result.MediaContainer || !Array.isArray(result.MediaContainer.Metadata ?? [])) throw new Error("Plex returned an invalid sonic response");
+  return (result.MediaContainer.Metadata ?? []).filter((item) => item.ratingKey !== ratingKey && /^\d+$/.test(item.ratingKey)).map((item) => item.ratingKey);
+}
+
 /** Asks Plex to (re)analyze the item; with Plex Pass + sonic analysis enabled this includes sonic analysis. */
 export async function analyze(ratingKey: string) {
   if (config.plexReadOnly) throw new Error("Plex is configured read-only");

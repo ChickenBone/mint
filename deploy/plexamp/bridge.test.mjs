@@ -10,7 +10,7 @@ function browser(member, saved = new Map(), embedded = false) {
   const intervals = [];
   const elements = new Map([["mint-player-error", { hidden: true, appendChild() {} }]]);
   const tracks = Array.from({ length: 501 }, (_, i) => ({
-    key: `/library/metadata/track-${i}`, ratingKey: `track-${i}`, type: "track", title: `Track ${i}`, duration: 90_000,
+    key: `/library/metadata/track-${i}`, ratingKey: `track-${i}`, type: "track", title: `Track ${i}`, duration: 90_000, parentKey: "/library/metadata/album",
   }));
   class Audio {
     paused = true; volume = 1; playbackRate = 1; currentTime = 0; duration = 90;
@@ -37,6 +37,9 @@ function browser(member, saved = new Map(), embedded = false) {
       const url = new URL(input, "https://mint.example.test");
       requests.push(url.href);
       if (url.pathname === "/listen/api/server/identity") return new Response(null, { status: 401 });
+      if (url.pathname === "/listen/api/server/library/metadata/track-4" || url.pathname === "/listen/api/server/playlists/liked/items") {
+        return Response.json({ MediaContainer: { totalSize: 1, Metadata: [tracks[4]] } });
+      }
       if (url.pathname.includes("/library/")) {
         const start = Number(url.searchParams.get("X-Plex-Container-Start") ?? 0);
         const size = Number(url.searchParams.get("X-Plex-Container-Size") ?? 100);
@@ -53,7 +56,7 @@ function browser(member, saved = new Map(), embedded = false) {
       getElementById: (id) => elements.get(id), body: { appendChild(el) { elements.set(el.id, el); } },
     },
     location, navigator: {},
-    URL, URLSearchParams, Response, setInterval: (fn) => { intervals.push(fn); return 1; }, clearInterval() {},
+    URL, URLSearchParams, Response, setTimeout, clearTimeout, setInterval: (fn) => { intervals.push(fn); return 1; }, clearInterval() {},
   });
   const factories = { 15779: (_module, exports) => { exports.default = class {}; } };
   window.mintPlexamp.install(null, factories);
@@ -138,10 +141,50 @@ test("preferences are member-local and revoked access stops buffered audio", asy
   await one.intervals[0]();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(one.audio.element.currentSrc, "");
+  assert.ok(one.audio.elements.every((element) => element.paused && !element.currentSrc));
   assert.equal(one.elements.get("mint-player-error").hidden, false);
   await assert.rejects(one.window.fetch("https://example.net/private"), /disabled/);
   await one.app.signOut();
   assert.equal(one.window.assignedPath, "/");
   assert.ok(one.requests.includes("https://mint.example.test/listen/api/logout"));
   assert.equal(one.window.localStorage.length, 0);
+});
+
+test("native whole-library selections request tracks and shuffle each item once with reversible order", async () => {
+  const { audio, controller, requests } = browser("shuffle-member");
+  await controller.doPlay({ uri: `library://abc/directory/${encodeURIComponent("/library/sections/1/all?type=8")}`, shuffle: 1 });
+  assert.ok(requests.some((url) => new URL(url).searchParams.get("type") === "10"));
+  const order = audio.queue.map((track) => track.key);
+  assert.equal(order.length, 501);
+  assert.equal(new Set(order).size, 501);
+  assert.notDeepEqual(order, Array.from({ length: 501 }, (_, i) => `/library/metadata/track-${i}`));
+  const visited = new Set([audio.queue[audio.index].key]);
+  for (let i = 1; i < 501; i++) { await controller.doNextTrack(); visited.add(audio.queue[audio.index].key); }
+  assert.equal(visited.size, 501);
+  await controller.doPreviousTrack();
+  assert.equal(audio.queue[audio.index].key, order[499]);
+  const current = audio.queue[audio.index];
+  await controller.doSetShuffle(false);
+  assert.equal(audio.queue[audio.index], current);
+  assert.equal(audio.queue[0].key, "/library/metadata/track-0");
+  await audio.select(500);
+  await audio.next(true);
+  assert.ok(audio.elements.every((element) => element.paused));
+  await audio.resume();
+  assert.equal(audio.element.paused, false);
+});
+
+test("native track URIs start the selected song while single-track playlists do not expand albums", async () => {
+  const { audio, controller } = browser("native-uri-member");
+  await controller.doPlay({ uri: `library://abc/directory/${encodeURIComponent("/library/metadata/track-4")}` });
+  assert.equal(audio.queue.length, 501);
+  assert.equal(audio.queue[audio.index].key, "/library/metadata/track-4");
+  await controller.doPlay({ uri: `library://abc/directory/${encodeURIComponent("/playlists/liked/items")}` });
+  assert.equal(audio.queue.length, 1);
+  assert.equal(audio.queue[0].key, "/library/metadata/track-4");
+  await audio.pause();
+  let started;
+  await controller.doPlay({ key: "/playQueues/1" }, (value) => { started = value; });
+  assert.equal(started, true);
+  assert.equal(audio.element.paused, false);
 });
