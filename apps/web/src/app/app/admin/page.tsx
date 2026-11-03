@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
 import { decideRequest, retryAllFailed, setMemberRole, setMemberStatus } from "@/app/actions/admin";
+import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
 import { ActionButton } from "@/components/app/admin-controls";
+import { AdminWorkers } from "@/components/app/workers-panel";
 import { LiveTrackList } from "@/components/app/live-track-list";
 import { PageHeader } from "@/components/app/page-header";
 import { requireAdmin } from "@/lib/auth";
-import { getAccessRequests, getFailedTracks, getHealth, getMembers } from "@/lib/data";
+import { getAccessRequests, getAllWorkers, getFailedTracks, getHealth, getMembers } from "@/lib/data";
 import { formatCount, timeAgo } from "@/lib/format";
 import clsx from "clsx";
 
@@ -14,7 +16,8 @@ const SERVICE_LABEL = { lidarr: "Lidarr", torbox: "TorBox", cobalt: "Cobalt", pl
 
 export default async function Admin() {
   const admin = await requireAdmin();
-  const [requests, members, failed, health] = await Promise.all([getAccessRequests(), getMembers(), getFailedTracks(), getHealth()]);
+  const [requests, members, failed, health, workers] = await Promise.all([getAccessRequests(), getMembers(), getFailedTracks(), getHealth(), getAllWorkers()]);
+  const pendingWorkers = workers.filter((w) => w.status === "pending").length;
 
   return (
     <>
@@ -88,6 +91,14 @@ export default async function Admin() {
             </table>
           </div>
         )}
+      </section>
+
+      <section className="mb-12">
+        <h2 className="mb-1 text-xl font-bold">
+          Workers {pendingWorkers > 0 && <span className="text-warn tabular">({pendingWorkers} to approve)</span>}
+        </h2>
+        <p className="mb-4 text-sm text-muted">Volunteer machines that rip YouTube audio and upload it to the hub. Disabling one returns its jobs to the pool.</p>
+        <AdminWorkers initial={workers} actions={{ setStatus: setWorkerStatus, revoke: revokeWorker }} />
       </section>
 
       <section className="mb-12">

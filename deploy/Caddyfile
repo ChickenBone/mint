@@ -1,19 +1,46 @@
-{$MINT_DOMAIN} {
-	encode zstd gzip
+# Home server entry points when the website runs on Vercel.
+# DNS: ws.mint.chickenbone.dev and hub.mint.chickenbone.dev -> this host.
 
-	# WebSocket gateway
-	handle /ws* {
-		reverse_proxy realtime:3001 {
-			header_up X-Forwarded-For {remote_host}
+ws.{$MINT_DOMAIN} {
+	reverse_proxy realtime:3001 {
+		header_up X-Forwarded-For {remote_host}
+	}
+	log {
+		output stdout
+		format console
+	}
+}
+
+hub.{$MINT_DOMAIN} {
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type image/*
 		}
 	}
 
-	handle {
-		reverse_proxy web:3000 {
-			# Trust only Caddy's view of the client address.
-			header_up X-Forwarded-For {remote_host}
-			header_up X-Real-IP {remote_host}
+	# Volunteer uploads: one song per request, streamed straight to staging.
+	@ingest path /ingest/*
+	handle @ingest {
+		request_body {
+			max_size 250MB
 		}
+		reverse_proxy hub:8090 {
+			header_up X-Forwarded-For {remote_host}
+			transport http {
+				read_timeout 1h
+				write_timeout 1h
+			}
+		}
+	}
+
+	handle /media/* {
+		reverse_proxy hub:8090
+	}
+
+	handle {
+		respond 404
 	}
 
 	log {

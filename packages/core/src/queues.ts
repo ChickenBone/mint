@@ -19,6 +19,8 @@ export interface AcquireJob {
   lidarrAlbumId?: number;
   lidarrStartedAt?: number;
   forceCobalt?: boolean;
+  /** Rip on this host even if volunteer workers are online. */
+  local?: boolean;
 }
 
 export interface FinalizeJob {
@@ -26,6 +28,8 @@ export interface FinalizeJob {
   /** Absolute path of the downloaded audio file on the shared media volume. */
   sourcePath: string;
   source: "lidarr" | "cobalt";
+  /** Volunteer worker that uploaded the file. */
+  workerId?: string;
   /** Lidarr already placed and tagged the file in the library; skip tag/move. */
   inLibrary: boolean;
 }
@@ -45,13 +49,14 @@ export type MaintenanceJob =
   | { kind: "stats" }
   | { kind: "torbox-tick" }
   | { kind: "health" }
+  | { kind: "leases" }
   | { kind: "plex-playlists"; userId: string };
 
 export const jobId = {
-  sync: (userId: string) => `sync:${userId}`,
-  acquire: (trackId: string) => `acquire:${trackId}`,
-  finalize: (trackId: string) => `finalize:${trackId}`,
-  sonic: (trackId: string) => `sonic:${trackId}`,
-  torbox: (torrentId: number) => `torbox:${torrentId}`,
-  plexPlaylists: (userId: string) => `plex-playlists:${userId}`,
+  sync: (userId: string) => `sync-${userId}`,
+  acquire: (trackId: string) => `acquire-${trackId}`,
+  finalize: (trackId: string) => `finalize-${trackId}`,
+  sonic: (trackId: string) => `sonic-${trackId}`,
+  torbox: (torrentId: number) => `torbox-${torrentId}`,
+  plexPlaylists: (userId: string) => `plex-playlists-${userId}`,
 };

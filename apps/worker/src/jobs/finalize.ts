@@ -73,6 +73,7 @@ export async function processFinalize(job: Job<FinalizeJob>) {
   await updateTrack(track.id, {
     filePath,
     source: job.data.source,
+    workerId: job.data.workerId ?? track.workerId,
     bytes: stat.size,
     codec: info.codec,
     durationSec: info.durationSec ?? track.durationSec,

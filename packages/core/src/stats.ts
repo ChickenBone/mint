@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { WORKER_ONLINE_MS } from "./agent-protocol";
 import type { Db } from "./db";
 import type { Stats } from "./events";
 
@@ -32,6 +33,9 @@ export async function computeStats(db: Db): Promise<Stats> {
     sql`select stage, count(*) as n from tracks where stage not in ('ready','failed') group by stage`,
   );
   const members = await db.execute<{ n: string }>(sql`select count(*) as n from users where status = 'active'`);
+  const workers = await db.execute<{ n: string }>(
+    sql`select count(*) as n from workers where status = 'active' and last_seen_at > now() - make_interval(secs => ${WORKER_ONLINE_MS / 1000})`,
+  );
   const r = rows[0]!;
   return {
     tracks: Number(r.tracks),
@@ -45,6 +49,7 @@ export async function computeStats(db: Db): Promise<Stats> {
     byStage: Object.fromEntries(stageRows.rows.map((s) => [s.stage, Number(s.n)])),
     readyToday: Number(r.ready_today),
     failed: Number(r.failed),
+    workersOnline: Number(workers.rows[0]?.n ?? 0),
     updatedAt: new Date().toISOString(),
   };
 }

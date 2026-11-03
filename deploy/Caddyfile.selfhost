@@ -1,0 +1,38 @@
+# Everything on one host (docker compose --profile selfhost-web). Use with CADDYFILE=./deploy/Caddyfile.selfhost
+{$MINT_DOMAIN} {
+	encode zstd gzip
+
+	# WebSocket gateway
+	handle /ws* {
+		reverse_proxy realtime:3001 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle /media/* {
+		reverse_proxy hub:8090
+	}
+
+	@ingest path /ingest/*
+	handle @ingest {
+		request_body {
+			max_size 250MB
+		}
+		reverse_proxy hub:8090 {
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	handle {
+		reverse_proxy web:3000 {
+			# Trust only Caddy's view of the client address.
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Real-IP {remote_host}
+		}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import clsx from "clsx";
-import { Activity, Heart, Home, Library, ListMusic, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Heart, Home, Library, ListMusic, Server, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -25,6 +25,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
     { href: "/app", label: "Home", icon: Home, exact: true },
     { href: "/app/library", label: "Library", icon: Library },
     { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
+    { href: "/app/workers", label: "Workers", icon: Server },
     { href: "/app/settings", label: "Settings", icon: Settings },
     ...(isAdmin ? [{ href: "/app/admin", label: "Admin", icon: ShieldCheck, badge: pending || undefined, alert: pending > 0 }] : []),
   ];

@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [web, worker, realtime]
+        target: [web, worker, realtime, agent]
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
@@ -79,4 +79,4 @@ jobs:
           DIR: ${{ vars.DEPLOY_PATH || '/srv/mint' }}
         run: |
           scp -r docker-compose.yml deploy "$USER@$HOST:$DIR/"
-          ssh "$USER@$HOST" "cd '$DIR' && docker compose pull web worker realtime && docker compose up -d --remove-orphans && docker image prune -f"
+          ssh "$USER@$HOST" "cd '$DIR' && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"

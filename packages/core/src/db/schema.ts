@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  jsonb,
   index,
   integer,
   pgEnum,
@@ -20,6 +21,7 @@ export const userStatusEnum = pgEnum("user_status", ["pending", "active", "denie
 export const stageEnum = pgEnum("stage", STAGES);
 export const sourceEnum = pgEnum("source", SOURCES);
 export const syncStatusEnum = pgEnum("sync_status", ["idle", "syncing", "error"]);
+export const workerStatusEnum = pgEnum("worker_status", ["pending", "active", "disabled"]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -82,6 +84,33 @@ export const youtubeAccounts = pgTable("youtube_accounts", {
   ...timestamps,
 });
 
+/** Volunteer download workers. Each authenticates with a bearer token whose sha256 is stored here. */
+export const workers = pgTable(
+  "workers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull(),
+    /** First characters of the token, shown so owners can tell tokens apart. */
+    tokenHint: text("token_hint").notNull(),
+    status: workerStatusEnum("status").notNull().default("pending"),
+    version: text("version"),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    lastIp: text("last_ip"),
+    activeJobs: integer("active_jobs").notNull().default(0),
+    completed: integer("completed").notNull().default(0),
+    failed: integer("failed").notNull().default(0),
+    bytes: bigint("bytes", { mode: "number" }).notNull().default(0),
+    capabilities: jsonb("capabilities").$type<Record<string, unknown>>(),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("workers_token_idx").on(t.tokenHash), index("workers_user_idx").on(t.userId)],
+);
+
 export const tracks = pgTable(
   "tracks",
   {
@@ -109,10 +138,19 @@ export const tracks = pgTable(
     error: text("error"),
     attempts: integer("attempts").notNull().default(0),
     readyAt: timestamp("ready_at", { withTimezone: true }),
+    /** Volunteer worker that delivered the audio, if any. */
+    workerId: uuid("worker_id").references(() => workers.id, { onDelete: "set null" }),
+    /** Set while the track sits in the remote pool waiting for (or leased to) a volunteer worker. */
+    remoteAt: timestamp("remote_at", { withTimezone: true }),
+    leaseId: text("lease_id"),
+    leaseWorkerId: uuid("lease_worker_id").references(() => workers.id, { onDelete: "set null" }),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    remoteFailures: integer("remote_failures").notNull().default(0),
     ...timestamps,
   },
   (t) => [
     uniqueIndex("tracks_video_idx").on(t.youtubeVideoId),
+    index("tracks_remote_idx").on(t.remoteAt).where(sql`${t.remoteAt} is not null`),
     index("tracks_stage_idx").on(t.stage),
     index("tracks_ready_idx").on(t.readyAt),
     index("tracks_artist_idx").on(t.artist),
@@ -185,3 +223,4 @@ export type User = typeof users.$inferSelect;
 export type Track = typeof tracks.$inferSelect;
 export type Playlist = typeof playlists.$inferSelect;
 export type YoutubeAccount = typeof youtubeAccounts.$inferSelect;
+export type Worker = typeof workers.$inferSelect;

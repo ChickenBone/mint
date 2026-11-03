@@ -68,7 +68,7 @@ export function LiveStats({ initial }: { initial: Stats }) {
             {" "}· <span className="text-danger">{formatCount(s.failed)}</span> need attention
           </>
         )}{" "}
-        · updated {timeAgo(s.updatedAt)}
+        · <span className="text-fg">{formatCount(s.workersOnline ?? 0)}</span> {s.workersOnline === 1 ? "worker" : "workers"} online · updated {timeAgo(s.updatedAt)}
       </p>
     </div>
   );

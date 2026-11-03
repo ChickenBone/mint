@@ -1,0 +1,35 @@
+# Mint volunteer worker. The same file is served at https://mint.chickenbone.dev/worker.yml
+#   1. Register at https://mint.chickenbone.dev/app/workers and copy your token.
+#   2. echo "MINT_WORKER_TOKEN=mint_wk_..." > .env
+#   3. docker compose -f docker-compose.agent.yml up -d
+# Needs outbound HTTPS only. No ports are opened on this machine.
+name: mint-worker
+
+services:
+  agent:
+    image: ghcr.io/chickenbone/mint-agent:latest
+    restart: unless-stopped
+    environment:
+      MINT_URL: ${MINT_URL:-https://mint.chickenbone.dev}
+      MINT_WORKER_TOKEN: ${MINT_WORKER_TOKEN:?put MINT_WORKER_TOKEN in .env}
+      COBALT_URL: http://cobalt:9000
+      AGENT_CONCURRENCY: ${AGENT_CONCURRENCY:-2}
+    volumes: [work:/work]
+    depends_on: [cobalt]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:11
+    restart: unless-stopped
+    init: true
+    read_only: true
+    environment:
+      API_URL: http://cobalt:9000/
+      API_PORT: "9000"
+    logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
+
+volumes:
+  work: {}

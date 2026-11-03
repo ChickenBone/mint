@@ -8,56 +8,96 @@ Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs eac
 
 ## Architecture
 
+Three places run code:
+
+- **Vercel** hosts the website and the agent API.
+- **Your home server** holds the music: Plex, Lidarr, Cobalt, the pipeline, the WebSocket gateway, and the upload hub.
+- **Volunteer workers** are anyone's machine running one Docker image. They rip YouTube audio with their own Cobalt and upload the file to your hub.
+
 ```mermaid
 flowchart LR
-  subgraph edge[edge network]
-    caddy[Caddy :443] --> web[web · Next.js]
-    caddy -- /ws --> rt[realtime · ws]
+  subgraph vercel[Vercel]
+    web[web · Next.js<br/>site + /api/agent/v1]
   end
-  subgraph data[data network · internal]
-    pg[(Postgres)]
-    redis[(Redis · BullMQ + pub/sub)]
+  subgraph cloud[Managed data]
+    pg[(Neon Postgres)]
+    redis[(Upstash Redis<br/>BullMQ + pub/sub)]
   end
-  subgraph media[media network · the barrier]
-    lidarr[Lidarr] --- cobalt[Cobalt]
-    plex[Plex]
+  subgraph home[Home server]
+    caddy[Caddy :443]
+    caddy -- ws.mint --> rt[realtime]
+    caddy -- hub.mint --> hub[hub<br/>uploads in · previews out]
+    worker[worker · pipeline]
+    subgraph media[media network · the barrier]
+      lidarr[Lidarr] --- cobalt[Cobalt]
+      plex[Plex]
+    end
+    worker --> lidarr & cobalt & plex
+    hub -- staging volume --> worker
+  end
+  subgraph vol[Volunteer worker]
+    agent[mint-agent] --- vc[own Cobalt]
   end
   web --> pg & redis
-  rt --> redis
-  worker[worker · BullMQ] --> pg & redis
-  worker --> lidarr & cobalt & plex
+  rt & hub & worker --> pg & redis
+  agent -- claim / progress<br/>bearer token --> web
+  agent -- PUT audio<br/>signed upload token --> caddy
   worker -. HTTPS .-> torbox[(TorBox)]
-  worker -. HTTPS .-> yt[(YouTube Data API)]
 ```
 
 | Package | Role |
 | --- | --- |
-| `apps/web` | Next.js 16: landing, browse, auth, dashboard, server actions, preview/artwork streaming |
-| `apps/realtime` | WebSocket gateway. Relays Redis pub/sub to public, per‑user and admin channels, authenticated by the session cookie |
-| `apps/worker` | BullMQ jobs: YouTube sync → match (MusicBrainz) → acquire (Lidarr+TorBox / Cobalt) → finalize (tag, preview, move) → Plex scan → sonic watch → playlists |
-| `packages/core` | Drizzle schema and migrations, env, crypto, event bus, queue names, stats |
+| `apps/web` | Next.js 16: landing, browse, auth, dashboard, server actions, worker registration, and the agent API (`/api/agent/v1/*`) |
+| `apps/realtime` | WebSocket gateway. Relays Redis pub/sub to public, per‑user and admin channels. Browsers authenticate with a signed 60‑second ticket from `/api/realtime/ticket` |
+| `apps/worker` | Two entry points. `index.js` runs the pipeline: YouTube sync → match (MusicBrainz) → acquire (Lidarr+TorBox / volunteer pool / local Cobalt) → finalize (tag, preview, move) → Plex scan → sonic watch → playlists. `hub.js` takes volunteer uploads and serves previews and artwork |
+| `apps/agent` | The volunteer worker (`ghcr.io/chickenbone/mint-agent`) |
+| `packages/core` | Drizzle schema and migrations, env, crypto, the agent protocol, event bus, queue names, stats |
 
-**The barrier.** `web` and `realtime` sit only on `edge` and `data`. Only the `worker` joins `media`, where Lidarr, Cobalt and Plex live. Cobalt has no published port, and Lidarr is bound to `127.0.0.1:8686` for setup. The public app never talks to them: it reads the database and the read‑only previews volume, and sends work through Redis queues.
+**The barrier.** Only the `worker` joins the `media` network, where Lidarr, Cobalt and Plex live. Cobalt and Plex's API have no route from the internet except Plex's own port, and Lidarr is bound to `127.0.0.1:8686`. Vercel never talks to the home server directly: it reads and writes the database and sends work through Redis queues. The hub has no Plex, Lidarr or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
 
-**Privacy.** Public events show which tracks are moving through the pipeline, never who liked them. Google refresh tokens are encrypted at rest with AES‑256‑GCM (`ENCRYPTION_KEY`).
+**How a volunteer job flows.**
+1. Lidarr/TorBox fails or times out.
+2. If a volunteer worker is online (`REMOTE_DOWNLOADS=auto`), the track goes into the remote pool. Otherwise the home server rips it with its own Cobalt.
+3. An agent claims the track. Claims use `FOR UPDATE SKIP LOCKED` and give a five‑minute lease that progress reports extend.
+4. The agent rips the audio and uploads it to `hub.mint…/ingest/:id`.
+5. The hub verifies the upload, releases the lease and queues `finalize`. The rest is the normal pipeline.
+6. Expired leases go back to the pool. A track nobody takes within `REMOTE_WAIT_MINUTES` is ripped locally.
+
+**Privacy.** Public events show which tracks are moving through the pipeline, never who liked them. Workers only receive a YouTube video ID, title and artist. Google refresh tokens are encrypted at rest with AES‑256‑GCM (`ENCRYPTION_KEY`). Worker tokens are stored as SHA‑256 hashes.
 
 ## Deploy
 
-Requirements: a Linux host with Docker Compose v2, DNS `mint.chickenbone.dev → host`, and ports 80, 443 and 32400 open.
+### 1. Data: Neon + Upstash
+
+- **Neon.** Create a project and a `mint` database. Keep both connection strings: the **direct** one for the home server and the **pooled** one (`-pooler` host) for Vercel.
+- **Upstash.** Create a Redis database in the same region and copy the `rediss://` endpoint. BullMQ polls Redis constantly, so pay‑per‑request plans add up quickly. Use a **fixed‑price** plan, or run Redis yourself with `--profile local-db` and expose it over TLS.
+
+### 2. Home server
+
+Requirements: Linux with Docker Compose v2, ports 80, 443 and 32400 open, and DNS records `ws.mint.chickenbone.dev` and `hub.mint.chickenbone.dev` → this host. Don't put the hub behind the Cloudflare proxy (orange cloud), because it caps request bodies at 100 MB.
 
 ```bash
-mkdir -p /srv/mint && cd /srv/mint
+mkdir -p /srv/mint/deploy && cd /srv/mint
 curl -O https://raw.githubusercontent.com/ChickenBone/mint/main/docker-compose.yml
-mkdir deploy && curl -o deploy/Caddyfile https://raw.githubusercontent.com/ChickenBone/mint/main/deploy/Caddyfile
+curl -o deploy/Caddyfile https://raw.githubusercontent.com/ChickenBone/mint/main/deploy/Caddyfile
 curl -o .env https://raw.githubusercontent.com/ChickenBone/mint/main/.env.example
 openssl rand -base64 32          # → ENCRYPTION_KEY
-openssl rand -base64 24          # → POSTGRES_PASSWORD (also update DATABASE_URL)
+openssl rand -base64 48          # → MINT_SIGNING_SECRET
 mkdir -p music blackhole/torrents blackhole/downloads && sudo chown -R 1000:1000 music blackhole
-$EDITOR .env
+$EDITOR .env                     # Neon direct URL, Upstash URL, keys
 docker compose pull && docker compose up -d
 ```
 
 The worker runs migrations on start, and seeds the first admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if no admin exists yet. Containers run as uid 1000, so keep `PUID`/`PGID` at 1000 or chown the folders to match.
+
+**Self‑hosting the website instead of using Vercel.** Point `mint.chickenbone.dev` at the host, set `CADDYFILE=./deploy/Caddyfile.selfhost` and `NEXT_PUBLIC_WS_URL=wss://mint.chickenbone.dev/ws`, and add `--profile selfhost-web`. Add `--profile local-db` (with `POSTGRES_PASSWORD`, `DATABASE_URL=postgres://mint:…@postgres:5432/mint`, `REDIS_URL=redis://redis:6379`) to run Postgres and Redis locally too.
+
+### 3. Vercel
+
+1. Import `ChickenBone/mint` into Vercel.
+2. Set **Root Directory** to `apps/web` and leave "Include files outside the root directory" on, because the app imports `packages/core`. Framework: Next.js, with the default build commands.
+3. Add the variables from [`apps/web/.env.vercel.example`](apps/web/.env.vercel.example). `ENCRYPTION_KEY`, `MINT_SIGNING_SECRET` and the Google client must match the home server. `NEXT_PUBLIC_*` values are baked in at build time, so redeploy after changing them.
+4. Add the domain `mint.chickenbone.dev` in Vercel and create the CNAME it asks for.
 
 ### Google (YouTube Music linking)
 
@@ -90,6 +130,26 @@ Cobalt runs internally only. If YouTube starts answering "sign in to confirm you
 4. Turn on Remote Access on port 32400.
 5. **Share the library with each approved member** from Plex settings. This step is manual. Their liked songs then appear in Plexamp as the playlist `Mint · Name · Liked`.
 
+## Volunteer workers
+
+Anyone with an approved account can lend a machine to rip YouTube audio. The machine needs Docker and outbound HTTPS only, with no open ports and no access to your server. Each account can register up to 5 workers.
+
+1. Go to **Dashboard → Workers → Register a worker**. Copy the token; it is shown once.
+2. Run it:
+
+   ```bash
+   mkdir mint-worker && cd mint-worker
+   curl -o docker-compose.yml https://mint.chickenbone.dev/worker.yml
+   echo "MINT_WORKER_TOKEN=mint_wk_..." > .env
+   docker compose up -d
+   ```
+
+3. The worker appears online within a minute. Admins approve new workers in **Admin → Workers**, unless `WORKER_AUTO_APPROVE=true`. Owners can revoke their own workers at any time, and revoking releases any job the worker held.
+
+The image is `ghcr.io/chickenbone/mint-agent`. It bundles nothing but Node, and runs read‑only with all capabilities dropped. The compose file pairs it with a private Cobalt container. Tuning: `AGENT_CONCURRENCY` (1–4, default 2).
+
+> GHCR packages from a private repository are private. After the first release, open the **mint-agent** package on GitHub → *Package settings* → *Change visibility* → **Public** so volunteers can pull it.
+
 ## Development
 
 ```bash
@@ -97,7 +157,9 @@ npm ci
 docker compose -f docker-compose.dev.yml up -d        # Postgres + Redis
 cp .env.development.example .env                       # fill ENCRYPTION_KEY
 npm run db:migrate
-npm run dev:worker & npm run dev:realtime & npm run dev:web
+npm run dev:worker & npm run dev:hub & npm run dev:realtime & npm run dev:web
+# a volunteer agent against your dev stack:
+MINT_URL=http://localhost:3000 MINT_WORKER_TOKEN=mint_wk_... COBALT_URL=http://localhost:9000 npm run dev:agent
 ```
 
 Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
@@ -105,7 +167,7 @@ Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 ## CI/CD
 
 - **`ci.yml`** runs on every push and PR: typecheck, lint, test and build.
-- **`release.yml`** runs on `main` and `v*` tags. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime}` for amd64 and arm64, with provenance and an SBOM.
+- **`release.yml`** runs on `main` and `v*` tags. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent}` for amd64 and arm64, with provenance and an SBOM.
 - **Auto‑deploy (optional).** Set the repository variable `DEPLOY_ENABLED=true` (and optionally `DEPLOY_PATH`), plus these secrets:
   - `DEPLOY_HOST`
   - `DEPLOY_USER`

@@ -1,8 +1,8 @@
 import path from "node:path";
-import { jobId, type AcquireJob } from "@mint/core";
+import { WORKER_ONLINE_MS, jobId, type AcquireJob } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { DelayedError, type Job } from "bullmq";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { config } from "../config";
 import { downloadToFile } from "../files";
 import { log } from "../log";
@@ -12,6 +12,19 @@ import * as lidarr from "../services/lidarr";
 import { matchRecording } from "../services/musicbrainz";
 import { progress, stage, updateTrack } from "../track-state";
 import { bridgeProgress, getRecord } from "./torbox-bridge";
+
+async function onlineWorkers() {
+  return getDb().$count(
+    schema.workers,
+    and(eq(schema.workers.status, "active"), gt(schema.workers.lastSeenAt, new Date(Date.now() - WORKER_ONLINE_MS))),
+  );
+}
+
+async function shouldHandOff() {
+  if (config.remoteMode === "never") return false;
+  if (config.remoteMode === "always" || !process.env.COBALT_URL) return true;
+  return (await onlineWorkers()) > 0;
+}
 
 async function later(job: Job<AcquireJob>, token: string | undefined, data: AcquireJob, ms: number): Promise<never> {
   await job.updateData(data);
@@ -106,6 +119,14 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
   }
 
   // step === "cobalt"
+  if (!job.data.local && (await shouldHandOff())) {
+    await updateTrack(
+      track.id,
+      { stage: "downloading", detail: "Waiting for a volunteer worker", progress: 0, remoteAt: new Date(), leaseId: null, leaseWorkerId: null, leaseExpiresAt: null },
+      "Handed to the volunteer worker pool",
+    );
+    return { source: "remote" };
+  }
   if (track.stage !== "downloading") await stage(track.id, "downloading", "YouTube via Cobalt");
   const { url, filename } = await cobalt.requestAudio(track.youtubeVideoId);
   const ext = path.extname(filename) || ".audio";

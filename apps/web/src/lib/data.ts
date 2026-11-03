@@ -1,8 +1,8 @@
 import "server-only";
-import { computeStats, toTrackView, type Stats, type TrackView } from "@mint/core";
+import { computeStats, toTrackView, toWorkerView, type Stats, type TrackView } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
-import { and, asc, desc, eq, ilike, inArray, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, isNotNull, lt, notInArray, or, sql } from "drizzle-orm";
 
 const db = () => getDb();
 const t = schema.tracks;
@@ -220,4 +220,22 @@ export function syncStateOf(acct: Awaited<ReturnType<typeof getYoutubeAccount>>)
     message: acct?.syncError ?? null,
     lastSyncedAt: acct?.lastSyncedAt?.toISOString() ?? null,
   } as const;
+}
+
+export async function getMyWorkers(userId: string) {
+  const rows = await db().select().from(schema.workers).where(eq(schema.workers.userId, userId)).orderBy(asc(schema.workers.createdAt));
+  return rows.map((w) => ({ ...toWorkerView(w), tokenHint: w.tokenHint, createdAt: w.createdAt.toISOString() }));
+}
+
+export async function getAllWorkers() {
+  const rows = await db()
+    .select({ worker: schema.workers, owner: schema.users.name })
+    .from(schema.workers)
+    .innerJoin(schema.users, eq(schema.users.id, schema.workers.userId))
+    .orderBy(asc(schema.workers.status), desc(schema.workers.lastSeenAt));
+  return rows.map((r) => ({ ...toWorkerView(r.worker), owner: r.owner, lastIp: r.worker.lastIp, createdAt: r.worker.createdAt.toISOString() }));
+}
+
+export async function getRemotePoolSize() {
+  return db().$count(t, and(isNotNull(t.remoteAt), notInArray(t.stage, ["ready", "failed"])));
 }

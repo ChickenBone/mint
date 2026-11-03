@@ -49,9 +49,17 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       statusListeners.current.forEach((f) => f());
     };
 
-    const connect = () => {
+    const connect = async () => {
       setStatus("connecting");
-      ws = new WebSocket(wsUrl());
+      // The gateway may be on another origin, so authenticate with a one-minute signed ticket.
+      const ticket = await fetch("/api/realtime/ticket", { cache: "no-store" })
+        .then((r) => (r.ok ? (r.json() as Promise<{ ticket: string | null }>) : { ticket: null }))
+        .then((r) => r.ticket)
+        .catch(() => null);
+      if (closed) return;
+      const url = new URL(wsUrl());
+      if (ticket) url.searchParams.set("ticket", ticket);
+      ws = new WebSocket(url);
       ws.onopen = () => {
         attempt = 0;
         setStatus("live");
@@ -69,16 +77,16 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         if (closed) return;
         // 4401 = session expired; reconnect as a visitor rather than hammering.
         const delay = Math.min(30_000, 1000 * 2 ** attempt++) + Math.random() * 500;
-        timer = setTimeout(connect, e.code === 4401 ? 2000 : delay);
+        timer = setTimeout(() => void connect(), e.code === 4401 ? 2000 : delay);
       };
     };
-    connect();
+    void connect();
 
     const onVisible = () => {
       if (document.visibilityState === "visible" && ws?.readyState === WebSocket.CLOSED) {
         clearTimeout(timer);
         attempt = 0;
-        connect();
+        void connect();
       }
     };
     document.addEventListener("visibilitychange", onVisible);

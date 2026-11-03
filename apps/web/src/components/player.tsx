@@ -2,6 +2,7 @@
 
 import type { TrackView } from "@mint/core/events";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { artUrl, previewUrl } from "@/lib/media";
 
 export const PREVIEW_SECONDS = 30;
 
@@ -47,7 +48,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const el = audio.current;
     if (!el) return;
     setS((p) => ({ ...p, current: track, queue, loading: true, error: null, time: 0 }));
-    el.src = `/api/preview/${track.id}`;
+    el.src = previewUrl(track.id);
     el.play().catch((err: unknown) => {
       if ((err as DOMException)?.name === "AbortError") return;
       setS((p) => ({ ...p, loading: false, playing: false, error: "Preview couldn't play. Try again in a moment." }));
@@ -105,7 +106,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       title: t.title,
       artist: t.artist,
       album: t.album ?? "",
-      artwork: t.hasArtwork ? [{ src: `/api/art/${t.id}`, sizes: "600x600", type: "image/jpeg" }] : [],
+      artwork: t.hasArtwork ? [{ src: artUrl(t.id), sizes: "600x600", type: "image/jpeg" }] : [],
     });
     navigator.mediaSession.setActionHandler("play", () => void audio.current?.play());
     navigator.mediaSession.setActionHandler("pause", () => audio.current?.pause());

@@ -18,4 +18,10 @@ export const config = {
   },
   plexEnabled: Boolean(process.env.PLEX_URL && process.env.PLEX_TOKEN && process.env.PLEX_MUSIC_SECTION_ID),
   previewSeconds: numberEnv("PREVIEW_SECONDS", 30),
+  /** auto: hand YouTube rips to volunteer workers when any are online (or when no local Cobalt). */
+  remoteMode: optionalEnv("REMOTE_DOWNLOADS", "auto") as "auto" | "always" | "never",
+  /** Take a job back from the remote pool and rip it locally after this long without a taker. */
+  remoteWaitMs: numberEnv("REMOTE_WAIT_MINUTES", 30) * 60_000,
+  hubPort: numberEnv("HUB_PORT", 8090),
+  maxUploadBytes: numberEnv("MAX_UPLOAD_MB", 200) * 1024 * 1024,
 };

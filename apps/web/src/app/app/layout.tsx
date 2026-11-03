@@ -40,6 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <Link href="/app/liked" className="hover:text-fg">Liked</Link>
         <Link href="/app/library" className="hover:text-fg">Library</Link>
         <Link href="/app/jobs" className="hover:text-fg">Jobs</Link>
+        <Link href="/app/workers" className="hover:text-fg">Workers</Link>
         <Link href="/app/settings" className="hover:text-fg">Settings</Link>
         {user.role === "admin" && <Link href="/app/admin" className="hover:text-fg">Admin{pending ? ` (${pending})` : ""}</Link>}
       </header>

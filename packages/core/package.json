@@ -15,11 +15,12 @@
     "./redis": "./src/redis.ts",
     "./env": "./src/env.ts",
     "./views": "./src/views.ts",
-    "./stats": "./src/stats.ts"
+    "./stats": "./src/stats.ts",
+    "./agent-protocol": "./src/agent-protocol.ts",
+    "./track-state": "./src/track-state.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },

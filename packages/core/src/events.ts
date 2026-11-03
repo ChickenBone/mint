@@ -1,4 +1,5 @@
 import type { Redis } from "ioredis";
+import type { WorkerView } from "./agent-protocol";
 import type { Source, Stage } from "./stages";
 
 export const CHANNEL = {
@@ -19,6 +20,7 @@ export interface Stats {
   byStage: Partial<Record<Stage, number>>;
   readyToday: number;
   failed: number;
+  workersOnline: number;
   updatedAt: string;
 }
 
@@ -55,7 +57,8 @@ export type RealtimeEvent =
   | { type: "track"; data: TrackView }
   | { type: "sync"; data: SyncState }
   | { type: "library"; data: { trackIds: string[] } }
-  | { type: "access-request"; data: { pending: number } };
+  | { type: "access-request"; data: { pending: number } }
+  | { type: "worker"; data: WorkerView };
 
 export async function publish(redis: Redis, channel: string, event: RealtimeEvent) {
   await redis.publish(channel, JSON.stringify(event));

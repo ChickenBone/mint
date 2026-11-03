@@ -66,6 +66,7 @@ async function main() {
 
   const m = queues.maintenance;
   await m.upsertJobScheduler("stats", { every: 5_000 }, { name: "stats", data: { kind: "stats" } });
+  await m.upsertJobScheduler("leases", { every: 30_000 }, { name: "leases", data: { kind: "leases" } });
   await m.upsertJobScheduler("health", { every: 30_000 }, { name: "health", data: { kind: "health" } });
   await m.upsertJobScheduler("torbox-tick", { every: 15_000 }, { name: "torbox-tick", data: { kind: "torbox-tick" } });
   await m.upsertJobScheduler("schedule-sync", { every: config.syncIntervalMin * 60_000 }, { name: "schedule-sync", data: { kind: "schedule-sync" } });

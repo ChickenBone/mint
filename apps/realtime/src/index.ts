@@ -1,6 +1,6 @@
 import http from "node:http";
 import { CHANNEL, type RealtimeEvent } from "@mint/core";
-import { SESSION_COOKIE, sha256 } from "@mint/core/crypto";
+import { SESSION_COOKIE, sha256, verifyToken } from "@mint/core/crypto";
 import { getDb, schema } from "@mint/core/db";
 import { createRedis, getRedis } from "@mint/core/redis";
 import { and, eq, gt, inArray } from "drizzle-orm";
@@ -35,17 +35,20 @@ function parseCookies(header: string | undefined) {
   return out;
 }
 
-async function authenticate(cookieHeader: string | undefined) {
-  const token = parseCookies(cookieHeader)[SESSION_COOKIE];
-  if (!token) return null;
+/** Accepts a signed ticket from the web app (cross-origin deployments) or the session cookie (same origin). */
+async function authenticate(cookieHeader: string | undefined, ticket: string | null) {
+  const fromTicket = ticket ? verifyToken<{ sid: string }>("ws", ticket)?.sid : undefined;
+  const cookie = parseCookies(cookieHeader)[SESSION_COOKIE];
+  const sessionId = fromTicket ?? (cookie ? sha256(cookie) : undefined);
+  if (!sessionId) return null;
   const db = getDb();
   const [row] = await db
     .select({ id: schema.users.id, name: schema.users.name, role: schema.users.role, status: schema.users.status })
     .from(schema.sessions)
     .innerJoin(schema.users, eq(schema.users.id, schema.sessions.userId))
-    .where(and(eq(schema.sessions.id, sha256(token)), gt(schema.sessions.expiresAt, new Date())))
+    .where(and(eq(schema.sessions.id, sessionId), gt(schema.sessions.expiresAt, new Date())))
     .limit(1);
-  return row && row.status === "active" ? { ...row, sessionId: sha256(token) } : null;
+  return row && row.status === "active" ? { ...row, sessionId } : null;
 }
 
 function send(ws: WebSocket, event: RealtimeEvent | string) {
@@ -76,7 +79,7 @@ server.on("upgrade", async (req, socket, head) => {
   }
   let user: Awaited<ReturnType<typeof authenticate>> = null;
   try {
-    user = await authenticate(req.headers.cookie);
+    user = await authenticate(req.headers.cookie, url.searchParams.get("ticket"));
   } catch (err) {
     log.error({ err }, "auth lookup failed");
   }

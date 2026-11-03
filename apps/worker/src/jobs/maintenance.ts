@@ -1,8 +1,8 @@
-import { CHANNEL, computeStats, jobId, publish, type MaintenanceJob } from "@mint/core";
+import { CHANNEL, computeStats, jobId, publish, toTrackView, type MaintenanceJob } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
 import type { Job } from "bullmq";
-import { and, asc, eq, isNotNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { config } from "../config";
 import { log } from "../log";
 import { queues } from "../queues";
@@ -71,6 +71,30 @@ async function plexPlaylists(userId: string) {
   }
 }
 
+/** Returns expired leases to the pool and pulls long-waiting remote jobs back to the local Cobalt. */
+async function reapLeases() {
+  const db = getDb();
+  const t = schema.tracks;
+  const expired = await db
+    .update(t)
+    .set({ leaseId: null, leaseWorkerId: null, leaseExpiresAt: null, detail: "Worker went quiet, back in the pool", progress: 0 })
+    .where(and(isNotNull(t.remoteAt), isNotNull(t.leaseExpiresAt), lt(t.leaseExpiresAt, new Date())))
+    .returning();
+  for (const row of expired) await publish(getRedis(), CHANNEL.public, { type: "track", data: toTrackView(row) });
+  if (expired.length) log.warn({ count: expired.length }, "reclaimed expired worker leases");
+
+  if (!process.env.COBALT_URL || config.remoteMode === "always") return;
+  const stale = await db
+    .update(t)
+    .set({ remoteAt: null, detail: "No worker picked it up; ripping locally" })
+    .where(and(isNotNull(t.remoteAt), isNull(t.leaseId), lt(t.remoteAt, new Date(Date.now() - config.remoteWaitMs))))
+    .returning({ id: t.id });
+  for (const { id } of stale) {
+    await queues.acquire.remove(jobId.acquire(id)).catch(() => undefined);
+    await queues.acquire.add("acquire", { trackId: id, step: "cobalt", local: true }, { jobId: jobId.acquire(id) });
+  }
+}
+
 export async function processMaintenance(job: Job<MaintenanceJob>) {
   const data = job.data;
   switch (data.kind) {
@@ -78,6 +102,8 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
       return publishStats();
     case "health":
       return health();
+    case "leases":
+      return reapLeases();
     case "torbox-tick":
       return torboxTick();
     case "plex-playlists":

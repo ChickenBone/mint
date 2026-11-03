@@ -1,7 +1,9 @@
 import "server-only";
 import { QUEUE, jobId, type AcquireJob, type SyncJob } from "@mint/core";
 import { createRedis } from "@mint/core/redis";
+import { getDb, schema } from "@mint/core/db";
 import { Queue } from "bullmq";
+import { eq } from "drizzle-orm";
 
 const g = globalThis as unknown as { __mintQueues?: ReturnType<typeof make> };
 
@@ -31,6 +33,11 @@ export async function enqueueSync(userId: string, reason: SyncJob["reason"]) {
 /** Clears any previous pipeline jobs for the track and starts acquisition again. */
 export async function enqueueRetry(trackId: string, forceCobalt = false) {
   const q = queues();
+  // Drop any volunteer lease so a late upload for the old attempt is rejected by the hub.
+  await getDb()
+    .update(schema.tracks)
+    .set({ remoteAt: null, leaseId: null, leaseWorkerId: null, leaseExpiresAt: null, remoteFailures: 0 })
+    .where(eq(schema.tracks.id, trackId));
   await Promise.all([
     q.acquire.remove(jobId.acquire(trackId)),
     q.finalize.remove(jobId.finalize(trackId)),

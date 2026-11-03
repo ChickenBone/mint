@@ -1,12 +1,18 @@
-# Mint production stack.
+# Mint home server.
 #
-# Network barrier:
-#   edge  – Caddy, web, realtime         (the only things the internet can reach)
-#   data  – Postgres, Redis + app tiers  (internal, no egress)
-#   media – worker, Lidarr, Cobalt, Plex (web and realtime are NOT on this network)
+# Default topology: the website runs on Vercel, Postgres on Neon, Redis on Upstash.
+# This stack is everything that must live next to the music:
+#   caddy     ws.<domain> -> realtime, hub.<domain> -> hub        (the only public entry points)
+#   realtime  WebSocket gateway (Redis pub/sub -> browsers)
+#   hub       volunteer uploads in, 30s previews and cover art out. No Plex/Lidarr/TorBox access.
+#   worker    the pipeline: sync, Lidarr/TorBox, local Cobalt fallback, tagging, Plex, sonic
+#   lidarr, cobalt, plex                                            (media network only)
 #
-# web/realtime can only read Postgres/Redis and the read-only preview volume.
-# Only the worker talks to Lidarr, Cobalt, Plex and TorBox.
+# Profiles:
+#   --profile selfhost-web  also run the Next.js site here (set CADDYFILE=./deploy/Caddyfile.selfhost)
+#   --profile local-db      run Postgres and Redis here instead of Neon/Upstash
+#
+# Network barrier: the hub and realtime sit on `edge` only; they cannot reach Plex, Lidarr or Cobalt.
 
 name: mint
 
@@ -26,16 +32,18 @@ services:
       MINT_DOMAIN: ${MINT_DOMAIN:-mint.chickenbone.dev}
     ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
-      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${CADDYFILE:-./deploy/Caddyfile}:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks: [edge]
     depends_on:
-      web: { condition: service_healthy }
       realtime: { condition: service_healthy }
+      hub: { condition: service_healthy }
+      web: { condition: service_healthy, required: false }
 
   web:
     <<: *app
+    profiles: [selfhost-web]
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-web:${MINT_TAG:-latest}
     environment:
       PREVIEW_DIR: /data/previews
@@ -43,17 +51,37 @@ services:
       - previews:/data/previews:ro
     networks: [edge, data]
     depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-      worker: { condition: service_started }
+      postgres: { condition: service_healthy, required: false }
+      redis: { condition: service_healthy, required: false }
 
   realtime:
     <<: *app
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-realtime:${MINT_TAG:-latest}
     networks: [edge, data]
     depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy, required: false }
+      redis: { condition: service_healthy, required: false }
+
+  hub:
+    <<: *app
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-worker:${MINT_TAG:-latest}
+    command: ["node", "--enable-source-maps", "dist/hub.js"]
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      PREVIEW_DIR: /data/previews
+      STAGING_DIR: /data/staging
+      HUB_PORT: "8090"
+    volumes:
+      - previews:/data/previews:ro
+      - staging:/data/staging
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [edge, data]
+    depends_on:
+      worker: { condition: service_started }
 
   worker:
     <<: *app
@@ -66,7 +94,7 @@ services:
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
       BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
       LIDARR_URL: http://lidarr:8686
-      COBALT_URL: http://cobalt:9000
+      COBALT_URL: ${LOCAL_COBALT_URL-http://cobalt:9000}
       PLEX_URL: http://plex:32400
     volumes:
       - ${MUSIC_PATH:-./data/music}:/music
@@ -75,16 +103,17 @@ services:
       - staging:/data/staging
     networks: [data, media]
     depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy, required: false }
+      redis: { condition: service_healthy, required: false }
 
   postgres:
     <<: *app
+    profiles: [local-db]
     image: postgres:17-alpine
     env_file: []
     environment:
       POSTGRES_USER: mint
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}  # required with --profile local-db
       POSTGRES_DB: mint
     volumes: [postgres:/var/lib/postgresql/data]
     networks: [data]
@@ -96,6 +125,7 @@ services:
 
   redis:
     <<: *app
+    profiles: [local-db]
     image: redis:7-alpine
     env_file: []
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
@@ -158,8 +188,8 @@ services:
 
 networks:
   edge: {}
-  data:
-    internal: true
+  # Not internal: with Neon/Upstash every app tier needs egress. Postgres/Redis (local-db) publish no ports.
+  data: {}
   media: {}
 
 volumes:
