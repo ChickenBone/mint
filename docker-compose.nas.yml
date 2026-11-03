@@ -107,7 +107,7 @@ services:
         {
           admin off
         }
-        http://{$$MINT_DOMAIN} {
+        :80 {
           encode zstd gzip
           handle /ws* {
             reverse_proxy realtime:3001 {
@@ -128,6 +128,8 @@ services:
           }
           handle {
             reverse_proxy web:3000 {
+              header_up Host {$$MINT_DOMAIN}
+              header_up X-Forwarded-Host {$$MINT_DOMAIN}
               header_up X-Forwarded-For {remote_host}
               header_up X-Real-IP {remote_host}
             }

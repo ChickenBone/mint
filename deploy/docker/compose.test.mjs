@@ -61,7 +61,9 @@ test("one hostname edit reaches every public URL without exposing media keys to 
     assert.equal(services.hub.environment[key], undefined);
   }
   assert.ok(services.caddy.command[0].includes("MINT_DOMAIN"));
-  assert.ok(!services.caddy.command[0].includes(":80 {"));
+  assert.ok(services.caddy.command[0].includes(":80 {"));
+  assert.ok(services.caddy.command[0].includes("header_up Host {$$MINT_DOMAIN}"));
+  assert.ok(services.caddy.command[0].includes("header_up X-Forwarded-Host {$$MINT_DOMAIN}"));
 });
 
 test("data and media remain behind the public gateway", () => {
@@ -82,7 +84,8 @@ test("Cloudflare Tunnel uses HTTP internally while public URLs remain HTTPS", ()
     assert.equal(services[name].environment.CADDY_SCHEME, undefined);
     assert.equal(services[name].environment.MINT_DOMAIN, "mint.example.com");
   }
-  assert.ok(services.caddy.command[0].includes("http://{$$MINT_DOMAIN}"));
+  assert.ok(services.caddy.command[0].includes(":80 {"));
+  assert.ok(!services.caddy.command[0].includes("http://{$$MINT_DOMAIN}"));
   assert.ok(!services.caddy.command[0].includes("cert_issuer"));
 });
 

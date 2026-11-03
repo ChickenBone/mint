@@ -58,6 +58,10 @@ jobs:
           docker compose -f docker-compose.nas-migrate.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet
           node --test deploy/docker/compose.test.mjs
+          docker create --name mint-caddy-test-binary caddy:2
+          docker cp mint-caddy-test-binary:/usr/bin/caddy /tmp/mint-caddy
+          docker rm mint-caddy-test-binary
+          CADDY_BINARY=/tmp/mint-caddy node --test deploy/docker/caddy.test.mjs
 
   secrets:
     runs-on: ubuntu-latest
