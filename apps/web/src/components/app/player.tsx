@@ -6,11 +6,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { PLAYER_CHANNEL, playerItemSchema, playerStateSchema, type MusicView, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
+import { type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
+import { NativePlayer } from "@/lib/native-player";
+import { collectionParams, itemCollection } from "@/lib/browser-catalog";
 import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
-import { CollectionActions } from "./collection-actions";
+import { MusicBrowser } from "./music-browser";
 import { InstallApp } from "../install-app";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
@@ -23,8 +25,8 @@ interface PlayerContext {
 }
 const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
-  registerFrame: (element: HTMLIFrameElement | null) => void; generation: number; music: boolean; nowPlaying: boolean; ready: boolean; failed: boolean;
-  panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void; reload: () => void;
+  music: boolean; nowPlaying: boolean; ready: boolean;
+  panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void;
   returnTo: string; rememberReturn: () => void;
 }
 const ShellContext = createContext<ShellContext | null>(null);
@@ -44,16 +46,13 @@ export function MusicNavigation() {
   </nav>;
 }
 
-export function PlayerProvider({ children }: { children: React.ReactNode }) {
-  const frame = useRef<HTMLIFrameElement>(null);
-  const registerFrame = useCallback((element: HTMLIFrameElement | null) => { frame.current = element; }, []);
-  const pending = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; resolve: (ok: boolean) => void }>());
+export function PlayerProvider({ children, memberId }: { children: React.ReactNode; memberId: string }) {
+  const first = useRef<HTMLAudioElement>(null), second = useRef<HTMLAudioElement>(null);
+  const engine = useRef<NativePlayer | null>(null);
   const selectionRequest = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ready, setReady] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const [generation, setGeneration] = useState(0);
   const [state, setState] = useState<PlayerState>(empty);
+  const ready = state.dsp !== undefined;
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Menu | null>(null);
   const [returnTo, setReturnTo] = useState("/app/music?view=library");
@@ -65,75 +64,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const setPanel = useCallback((value: ShellContext["panel"]) => setPanelSelection({ surface, value }), [surface]);
   const router = useRouter();
   const music = pathname === "/app/music";
-  const rawView = params.get("view");
-  const view: MusicView = rawView === "search" || rawView === "library" || rawView === "now-playing" ? rawView : "home";
-  const nowPlaying = music && view === "now-playing";
+  const nowPlaying = music && params.get("view") === "now-playing";
   const rememberReturn = useCallback(() => setReturnTo(`${location.pathname}${location.search}`), []);
 
   const command = useCallback((command: PlayerCommand): Promise<boolean> => {
-    if (!ready || !frame.current?.contentWindow) { setError("The music engine is still starting. Try again in a moment."); return Promise.resolve(false); }
+    if (!engine.current) { setError("The player is still starting. Try again in a moment."); return Promise.resolve(false); }
+    setError(null);
     const id = crypto.randomUUID();
-    if (["play", "collection", "sonic"].includes(command.action)) { selectionRequest.current = id; setBusy(true); }
-    const target = frame.current.contentWindow;
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        pending.current.delete(id);
-        resolve(false);
-        if (selectionRequest.current === id) { selectionRequest.current = null; setBusy(false); }
-        setError("The music engine did not respond. Reload the player and try again.");
-        setFailed(true);
-      }, command.action === "collection" || command.action === "sonic" ? 60_000 : 20_000);
-      pending.current.set(id, { timer, resolve });
-      target.postMessage({ channel: PLAYER_CHANNEL, type: "command", id, command }, location.origin);
+    if (["play", "collection", "next-in-queue", "add-to-queue"].includes(command.action)) { selectionRequest.current = id; setBusy(true); }
+    return engine.current.execute(command).then(() => true).catch((error: unknown) => {
+      if (!(error instanceof DOMException && error.name === "AbortError")) setError(error instanceof Error ? error.message : "This playback action failed. Try again.");
+      return false;
+    }).finally(() => {
+      if (selectionRequest.current === id) { selectionRequest.current = null; setBusy(false); }
     });
-  }, [ready]);
+  }, []);
 
   useEffect(() => {
-    function receive(event: MessageEvent) {
-      if (event.origin !== location.origin || event.source !== frame.current?.contentWindow || event.data?.channel !== PLAYER_CHANNEL) return;
-      const data = event.data;
-      if (data.type === "ready") { setReady(true); setFailed(false); setError(null); }
-      if (data.type === "state") {
-        const parsed = playerStateSchema.safeParse(data.state);
-        if (parsed.success) setState(parsed.data);
-        else { console.error("Invalid music engine state", parsed.error.issues); setError("The music engine returned incompatible data. Reload Mint after updating both web and worker."); }
+    if (!first.current || !second.current) return;
+    const player = new NativePlayer({ memberId, elements: [first.current, second.current], update: setState, error: setError });
+    engine.current = player;
+    const controller = new AbortController();
+    const verify = async () => {
+      try {
+        const response = await fetch("/api/player/session", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
+        if (controller.signal.aborted) return;
+        if (response.status === 401) player.revoke("Playback access has expired. Sign in again.");
+        else if (!response.ok) player.revoke("Mint could not verify playback access. Check your connection and press Play to retry.");
+        else if ((await response.json()).memberId !== memberId) player.revoke("The signed-in account changed. Reload Mint before listening.");
+      } catch {
+        if (!controller.signal.aborted) player.revoke("Mint could not verify playback access. Check your connection and press Play to retry.");
       }
-      if (data.type === "error" && typeof data.message === "string") setError(data.message.slice(0, 500));
-      if (data.type === "dismiss-menu") setSelection(null);
-      if (data.type === "now-playing" && new URLSearchParams(location.search).get("view") !== "now-playing") {
-        rememberReturn(); router.push("/app/music?view=now-playing");
-      }
-      if (data.type === "result" && typeof data.id === "string" && pending.current.has(data.id)) {
-        const request = pending.current.get(data.id)!;
-        clearTimeout(request.timer);
-        request.resolve(data.ok === true);
-        pending.current.delete(data.id);
-        if (selectionRequest.current === data.id) { selectionRequest.current = null; setBusy(false); }
-        if (data.ok !== true) setError(typeof data.message === "string" ? data.message.slice(0, 500) : "This playback action failed. Try again.");
-      }
-      if (data.type === "menu") {
-        const item = playerItemSchema.safeParse(data.item);
-        const rect = frame.current?.getBoundingClientRect();
-        if (item.success && rect && Number.isFinite(data.point?.x) && Number.isFinite(data.point?.y)) {
-          setSelection({ item: item.data, x: rect.x + data.point.x, y: rect.y + data.point.y, path: `${location.pathname}?${new URLSearchParams(location.search).toString()}`, returnTo: frame.current });
-        }
-      }
-    }
-    window.addEventListener("message", receive);
-    const timers = pending.current;
-    return () => { window.removeEventListener("message", receive); timers.forEach(({ timer, resolve }) => { clearTimeout(timer); resolve(false); }); timers.clear(); };
-  }, [router, rememberReturn]);
-
-  useEffect(() => {
-    if (ready) return;
-    const timer = setTimeout(() => { setFailed(true); setError("The music engine could not start. Reload the player, or check that the web image includes its player assets."); }, 30_000);
-    return () => clearTimeout(timer);
-  }, [ready, generation]);
-  useEffect(() => {
-    if (!ready || !music) return;
-    const timer = setTimeout(() => { if (!nowPlaying) void command({ action: "navigate", view }); }, 0);
-    return () => clearTimeout(timer);
-  }, [ready, music, nowPlaying, view, command]);
+    };
+    const timer = setInterval(() => { void verify(); }, 15_000);
+    const pagehide = () => player.pause();
+    window.addEventListener("pagehide", pagehide);
+    return () => {
+      controller.abort(); clearInterval(timer); window.removeEventListener("pagehide", pagehide);
+      player.dispose(); engine.current = null;
+    };
+  }, [memberId]);
   useEffect(() => {
     if (!nowPlaying) return;
     const escape = (event: KeyboardEvent) => {
@@ -155,28 +125,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const closeMenu = useCallback(() => { selection?.returnTo?.focus(); setSelection(null); }, [selection]);
   const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
-  const browse = (item: PlayerItem) => { router.push("/app/music?view=library"); command({ action: "browse", item }); };
-  const reload = () => {
-    pending.current.forEach(({ timer, resolve }) => { clearTimeout(timer); resolve(false); }); pending.current.clear();
-    setReady(false); setBusy(false); selectionRequest.current = null; setFailed(false); setError(null); setState(empty); setGeneration((n) => n + 1);
+  const browse = (item: PlayerItem) => {
+    const query = collectionParams(itemCollection(item));
+    query.set("view", "library"); query.set("type", item.type === "artist" ? "album" : "track");
+    router.push(`/app/music?${query}`);
   };
 
   return (
     <Context.Provider value={{ ready, busy, state, command, menu: showMenu }}>
-      <ShellContext.Provider value={{ registerFrame, generation, music, nowPlaying, ready, failed, panel, setPanel, reload, returnTo, rememberReturn }}>
+      <ShellContext.Provider value={{ music, nowPlaying, ready, panel, setPanel, returnTo, rememberReturn }}>
         {children}
       </ShellContext.Provider>
       {(error || selection) && createPortalSafe(
         <div className="contents">
           {error && <div role="alert" className="fixed top-3 right-3 left-3 z-[100] mx-auto flex max-w-2xl items-center gap-3 rounded-lg bg-elevated p-4 text-sm text-fg shadow-[0_12px_30px_-8px_#000] ring-1 ring-line">
             <p className="flex-1">{error}</p>
-            {failed && <button onClick={reload} className="shrink-0 rounded-full bg-mint px-3 py-2 font-semibold text-mint-ink">Reload player</button>}
             <button aria-label="Dismiss message" onClick={() => setError(null)} className="rounded-full p-2 hover:bg-hover"><X className="size-4" /></button>
           </div>}
           {selection && selection.path === surface && <TrackMenu selection={selection} close={closeMenu} command={command} browse={browse} />}
         </div>,
       )}
       <div className="hidden" data-player-mounted={ready ? "ready" : "loading"} />
+      <audio ref={first} id="mint-browser-audio" hidden />
+      <audio ref={second} id="mint-browser-standby" hidden />
     </Context.Provider>
   );
 }
@@ -185,7 +156,7 @@ function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 export function MusicStage({ children }: { children: React.ReactNode }) {
-  const { registerFrame, generation, music, nowPlaying, ready, failed, panel, setPanel, reload, returnTo } = useContext(ShellContext)!;
+  const { music, nowPlaying, ready, panel, setPanel, returnTo } = useContext(ShellContext)!;
   const player = usePlayer()!;
   const closeQueue = useCallback(() => {
     setPanel(null);
@@ -193,18 +164,7 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
     <main className="h-full overflow-y-auto px-4 pb-12 pt-5 scrollbar-thin sm:px-6" hidden={music}>{children}</main>
-    <div className={`absolute inset-0 flex flex-col ${music && !nowPlaying ? "" : "invisible pointer-events-none"}`} aria-hidden={!music || nowPlaying} inert={!music || nowPlaying}>
-      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6"><CollectionActions collection={{ kind: "library" }} />
-        <span className="hidden text-xs text-muted md:block">Made for your music.</span></div>
-      <iframe key={generation} ref={registerFrame} src="/listen/engine" title="Music library, powered by Plexamp"
-        allow="autoplay" className="min-h-0 w-full flex-1 border-0" />
-      {!ready && <div className="absolute inset-0 grid place-items-center bg-surface p-8 text-center">
-        <div><p className="text-xl font-semibold">{failed ? "Music needs a moment" : "Opening your music…"}</p>
-          <p className="mt-2 text-muted">Your player stays connected while you move around Mint.</p>
-          {failed && <button onClick={reload} className="mt-5 rounded-full bg-mint px-5 py-3 font-semibold text-mint-ink">Reload player</button>}
-        </div>
-      </div>}
-    </div>
+    {music && !nowPlaying && <main className="h-full overflow-y-auto px-4 pb-12 pt-5 scrollbar-thin sm:px-6"><MusicBrowser /></main>}
     {nowPlaying && <NowPlaying state={player.state} ready={ready} command={player.command} panel={panel} setPanel={setPanel} returnTo={returnTo} onMore={(track, button) => {
       const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
     }} />}
@@ -278,16 +238,16 @@ function TrackMenu({ selection, close, command, browse }: {
     <p className="truncate border-b border-line px-3 py-3 text-xs font-semibold text-muted">{item.title}</p>
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", item })}>Play {item.type === "track" ? "now" : item.type}</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", item, shuffle: true })}>Shuffle {item.type}</button>}
-    {item.type === "track" && item.grandparentKey && <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", shuffle: true,
-      item: { key: item.grandparentKey!, ratingKey: item.grandparentKey!.split("/").pop()!, type: "artist", title: item.artist ?? "Artist" } })}>Shuffle this artist</button>}
+    {item.type === "track" && item.artistId && <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", shuffle: true,
+      item: { id: item.artistId!, type: "artist", title: item.artist ?? "Artist" } })}>Shuffle this artist</button>}
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "next-in-queue", item })}>Play next</button>
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "add-to-queue", item })}>Add to queue</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => { close(); browse(item); }}>Open {item.type}</button>}
-    {item.parentKey && <button role="menuitem" className={menuClass} onClick={() => {
-      close(); browse({ key: `${item.parentKey}/children`, ratingKey: item.parentKey!.split("/").pop()!, type: "album", title: item.album ?? "Album", artist: item.artist });
+    {item.albumId && <button role="menuitem" className={menuClass} onClick={() => {
+      close(); browse({ id: item.albumId!, type: "album", title: item.album ?? "Album", artist: item.artist });
     }}>Go to album</button>}
-    {item.grandparentKey && <button role="menuitem" className={menuClass} onClick={() => {
-      close(); browse({ key: `${item.grandparentKey}/children`, ratingKey: item.grandparentKey!.split("/").pop()!, type: "artist", title: item.artist ?? "Artist" });
+    {item.artistId && <button role="menuitem" className={menuClass} onClick={() => {
+      close(); browse({ id: item.artistId!, type: "artist", title: item.artist ?? "Artist" });
     }}>Go to artist</button>}
     {item.queueId && <button role="menuitem" className={menuClass} onClick={() => act({ action: "remove", queueId: item.queueId! })}>Remove from queue</button>}
   </div>;

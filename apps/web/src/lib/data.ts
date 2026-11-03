@@ -1,4 +1,5 @@
 import "server-only";
+import { trackArtwork } from "./artwork-query";
 import { computeStats, toTrackView, toWorkerView, type Stats, type TrackView } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
@@ -38,9 +39,7 @@ export async function getRecentlyReady(limit = 18): Promise<TrackView[]> {
 
 /** Distinct real covers from the whole landed library, not just its newest songs. */
 export async function getLibraryArtwork(): Promise<Array<Pick<TrackView, "artworkUrl">>> {
-  const artwork = sql<string>`coalesce(nullif(${t.artworkUrl}, ''), case
-    when nullif(${t.youtubeVideoId}, '') is not null
-    then 'https://i.ytimg.com/vi/' || ${t.youtubeVideoId} || '/mqdefault.jpg' end)`;
+  const artwork = trackArtwork;
   return db().select({ artworkUrl: artwork }).from(t)
     .where(and(inArray(t.stage, [...LIBRARY_STAGES]), sql`${artwork} is not null`))
     .groupBy(artwork)

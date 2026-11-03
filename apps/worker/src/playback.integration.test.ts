@@ -27,7 +27,7 @@ test("approved-member streaming, range seeking, session revocation and member-pr
   const { signToken, sha256 } = await import("@mint/core/crypto");
   const { eq } = await import("drizzle-orm");
   const { servePlayback, serveSonic } = await import("./playback");
-  const { catalogItems, catalogResponse, playerArtworkUrl } = await import("../../web/src/lib/player-catalog");
+  const { catalogItems } = await import("../../web/src/lib/player-catalog");
   const { albumPlayerId, artistPlayerId, trackPlayerItem, playerItemSchema } = await import("../../web/src/lib/player-protocol");
   const server = createServer((req, res) => {
     const sonic = req.url!.startsWith("/sonic/");
@@ -37,11 +37,6 @@ test("approved-member streaming, range seeking, session revocation and member-pr
     await runMigrations(path.resolve("../../packages/core/migrations"));
     const db = getDb();
     const artwork = "https://i.ytimg.com/vi/fixture/mqdefault.jpg";
-    assert.equal(playerArtworkUrl(`/photo/:/transcode?url=${encodeURIComponent(artwork)}`, "https://mint.example.test"), artwork);
-    assert.equal(playerArtworkUrl(`/photo/:/transcode?url=${encodeURIComponent(`/photo/:/transcode?url=${encodeURIComponent(artwork)}`)}`, "https://mint.example.test"), artwork);
-    for (const target of ["https://untrusted.example/image.jpg", "http://127.0.0.1/private", "/photo/:/transcode?url=http://worker:8080/private", "https://secret@i.ytimg.com/image.jpg"]) {
-      assert.throws(() => playerArtworkUrl(target, "https://mint.example.test"));
-    }
     const unicodeArtist = "Björk / 宇多田ヒカル", unicodeAlbum = "世界 / Début";
     assert.equal(albumPlayerId(unicodeArtist, unicodeAlbum), `al_${Buffer.from(JSON.stringify([unicodeArtist, unicodeAlbum])).toString("base64url")}`);
     assert.equal(artistPlayerId(unicodeArtist), `ar_${Buffer.from(unicodeArtist).toString("base64url")}`);
@@ -56,24 +51,30 @@ test("approved-member streaming, range seeking, session revocation and member-pr
     const bytes = Buffer.from("RIFF fixture media content for byte range assertions");
     await writeFile(file, bytes);
     const [song, queued] = await db.insert(schema.tracks).values([
-      { title: "Available", artist: "Artist", album: "Album", stage: "ready" as const, filePath: file },
+      { title: "Available", artist: "Artist", album: "Album", stage: "ready" as const, filePath: file, youtubeVideoId: "fixture", artworkUrl: "" },
       { title: "Not downloaded", artist: "Artist", stage: "queued" as const },
     ]).returning();
     await db.insert(schema.userTracks).values({ userId: member!.id, trackId: song!.id });
     const [privatePlaylist] = await db.insert(schema.playlists).values({ userId: other!.id, youtubePlaylistId: "private-fixture", title: "Private to Two" }).returning();
     await db.insert(schema.playlistTracks).values({ playlistId: privatePlaylist!.id, trackId: song!.id, position: 0 });
     assert.equal((await catalogItems({ userId: member!.id })).items.length, 1);
-    assert.equal((await catalogItems({ userId: other!.id, playlist: "liked" })).items.length, 0);
-    assert.equal((await catalogItems({ userId: member!.id, playlist: privatePlaylist!.id })).items.length, 0);
-    assert.equal((await catalogItems({ userId: other!.id, playlist: privatePlaylist!.id })).items.length, 1);
+    assert.equal((await catalogItems({ userId: other!.id, collection: { kind: "liked" } })).items.length, 0);
+    assert.equal((await catalogItems({ userId: member!.id, collection: { kind: "playlist", id: privatePlaylist!.id } })).items.length, 0);
+    assert.equal((await catalogItems({ userId: other!.id, collection: { kind: "playlist", id: privatePlaylist!.id } })).items.length, 1);
+    assert.equal((await catalogItems({ userId: member!.id, type: "playlist" })).total, 0);
+    assert.equal((await catalogItems({ userId: other!.id, type: "playlist" })).items[0]!.title, "Private to Two");
     assert.equal((await catalogItems({ userId: member!.id, q: "Available" })).total, 1);
     await assert.rejects(catalogItems({ userId: member!.id, size: Infinity }), /pagination/);
-    await assert.rejects(catalogItems({ userId: member!.id, id: "al_invalid" }), /Invalid album/);
+    await assert.rejects(catalogItems({ userId: member!.id, collection: { kind: "album", id: "al_invalid" } }), /Invalid album/);
     assert.ok(!JSON.stringify(await catalogItems({ userId: member!.id })).includes(file));
-    const album = (await catalogItems({ userId: member!.id, type: "9" })).items[0]!;
-    const result = await catalogResponse(`/library/metadata/${album.ratingKey}`, new URLSearchParams(), member!.id);
-    assert.ok(result && "MediaContainer" in result);
-    assert.equal((result.MediaContainer as { Metadata: Array<{ type: string }> }).Metadata[0]!.type, "album");
+    const album = (await catalogItems({ userId: member!.id, type: "album" })).items[0]!;
+    assert.equal(album.thumb, artwork, "album cards reuse the YouTube fallback when stored artwork is empty");
+    const result = await catalogItems({ userId: member!.id, collection: { kind: "album", id: album.id } });
+    assert.equal(result.items[0]!.id, song!.id);
+    assert.equal(result.items[0]!.type, "track");
+    assert.equal(result.items[0]!.thumb, artwork);
+    assert.equal((await catalogItems({ userId: member!.id, type: "album", start: 100 })).total, 1, "empty grouped pages retain total");
+    assert.equal((await catalogItems({ userId: member!.id, q: "%" })).total, 0, "search escapes wildcard characters");
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const addr = server.address();
     assert.ok(addr && typeof addr !== "string");

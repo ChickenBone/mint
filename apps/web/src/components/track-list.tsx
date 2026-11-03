@@ -27,7 +27,7 @@ function Row({
   const player = usePlayer();
   const playable = player && (track.stage === "ready" || track.stage === "analyzing");
   const item = trackPlayerItem(track);
-  const play = () => player?.command(collection ? { action: "collection", collection, shuffle: false, key: item.key } : { action: "play", item });
+  const play = () => player?.command(collection ? { action: "collection", collection, shuffle: false, id: item.id } : { action: "play", item });
   const inFlight = track.stage !== "ready" && track.stage !== "analyzing" && track.stage !== "failed";
   return (
     <li
@@ -73,7 +73,7 @@ function Row({
             )}
           </>
         ) : track.sonicAnalyzed ? (
-          <span className="inline-flex items-center gap-1 text-xs text-muted" title="Plex sonic analysis complete. Works with Sonic Radio and Sweet Fades.">
+          <span className="inline-flex items-center gap-1 text-xs text-muted" title="Plex sonic analysis complete. Mint analysis and smart fades are tracked separately.">
             <Sparkles className="size-3.5 text-warn" aria-hidden /> Sonic
           </span>
         ) : null}

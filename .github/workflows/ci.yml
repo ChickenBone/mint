@@ -42,7 +42,6 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint
-      - run: node --test deploy/plexamp/*.test.mjs
       - name: Install audio integration test tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: npm test

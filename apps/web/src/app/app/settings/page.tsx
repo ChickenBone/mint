@@ -119,7 +119,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
         <Section title="Listen">
           <div className="mb-6"><InstallApp /></div>
-          <p className="mb-4 max-w-2xl text-muted">Play downloaded music here with the Plexamp browser interface, or open the installed Plexamp app. Browser listening uses your approved Mint account; the installed app needs a separate Plex library invitation.</p>
+          <p className="mb-4 max-w-2xl text-muted">Listen to downloaded music directly in Mint. Browsing, playback, queues, lyrics and sound controls belong to Mint; Plex remains the private library server. The separate installed Plexamp app is optional and needs its own Plex library invitation.</p>
           <div className="mb-6 flex flex-wrap gap-3">
             <Link href="/app/music" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Open music</Link>
             <a href="plexamp://" className="rounded-full bg-elevated px-5 py-2.5 font-semibold hover:bg-hover">Open Plexamp</a>

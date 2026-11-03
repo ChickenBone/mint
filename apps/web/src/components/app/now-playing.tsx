@@ -46,7 +46,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
       <Link href="/app/music?view=library" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">Browse music</Link>
     </div> : <div className="now-playing-grid">
       <section aria-label="Current song" className="mx-auto flex w-full min-w-0 max-w-lg flex-col px-5 pb-6 pt-5 sm:px-8">
-        <Artwork key={track.thumb ?? track.ratingKey} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art mx-auto w-full max-w-[min(34dvh,22rem)] rounded-lg shadow-[0_16px_40px_-16px_#000]" />
+        <Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art mx-auto w-full max-w-[min(34dvh,22rem)] rounded-lg shadow-[0_16px_40px_-16px_#000]" />
         <div className="mt-6 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{track.title}</h2>
@@ -57,7 +57,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
             className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MoreHorizontal className="size-5" /></button>
         </div>
         <div className="mt-5 hidden xl:block">
-          <SeekControl key={track.queueId ?? track.ratingKey} state={state} ready={ready} command={command} />
+          <SeekControl key={track.queueId ?? track.id} state={state} ready={ready} command={command} />
           <div className="mt-3"><PlaybackControls state={state} ready={ready} command={command} expanded /></div>
           <div className="mt-5 flex items-center justify-between gap-4">
             <p className="text-xs text-muted" role="status">{state.transitioning ? "Blending into the next song" : state.playing ? "Playing from your library" : "Paused"}</p>
@@ -91,7 +91,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
       </section>
     </div>}
     {track && <footer aria-label="Now playing controls" className="shrink-0 border-t border-line bg-surface px-4 pb-3 pt-1 xl:hidden">
-      <SeekControl key={track.queueId ?? track.ratingKey} state={state} ready={ready} command={command} />
+      <SeekControl key={track.queueId ?? track.id} state={state} ready={ready} command={command} />
       <PlaybackControls state={state} ready={ready} command={command} expanded />
     </footer>}
   </main>;

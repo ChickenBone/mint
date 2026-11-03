@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Pause, Play, Repeat, Shuffle, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Pause, Play, Repeat, Shuffle, X } from "lucide-react";
 import { defaultDsp, type DspSettings, type PlayerCommand, type PlayerState } from "@/lib/player-protocol";
 import { lyricsSchema, parseLrc, type Lyrics } from "@/lib/lyrics";
 import { InstallApp } from "../install-app";
@@ -111,11 +111,13 @@ export function QueueContents({ state, command }: { state: PlayerState; command:
     </div>
     {remaining > upcoming.length && <p className="mb-3 text-xs text-muted">Showing the next {upcoming.length} of {remaining} songs.</p>}
     <ol className="space-y-1">
-      {upcoming.map((track) => <li key={track.queueId} className="group flex items-center gap-1 rounded-md hover:bg-hover">
+      {upcoming.map((track, index) => <li key={track.queueId} className="group flex items-center gap-1 rounded-md hover:bg-hover">
         <button onClick={() => command({ action: "skip", queueId: track.queueId! })} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left" aria-label={`Play ${track.title}`}>
           <Artwork track={{ artworkUrl: track.thumb ?? "" }} className="size-10" />
           <span className="min-w-0"><span className="block truncate text-sm font-semibold">{track.title}</span><span className="block truncate text-xs text-muted">{track.artist}</span></span>
         </button>
+        <button aria-label={`Move ${track.title} earlier`} disabled={index === 0} onClick={() => command({ action: "move", queueId: track.queueId!, before: upcoming[index - 1]!.queueId! })} className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg disabled:opacity-30"><ArrowUp className="size-4" /></button>
+        <button aria-label={`Move ${track.title} later`} disabled={index === upcoming.length - 1} onClick={() => command({ action: "move", queueId: upcoming[index + 1]!.queueId!, before: track.queueId! })} className="grid size-9 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg disabled:opacity-30"><ArrowDown className="size-4" /></button>
         <button aria-label={`Remove ${track.title} from queue`} onClick={() => command({ action: "remove", queueId: track.queueId! })} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg"><X className="size-4" /></button>
       </li>)}
     </ol>
@@ -124,7 +126,7 @@ export function QueueContents({ state, command }: { state: PlayerState; command:
 }
 
 export function LyricsPanel({ state, command }: { state: PlayerState; command: (command: PlayerCommand) => void }) {
-  const id = state.track?.ratingKey;
+  const id = state.track?.id;
   return id ? <TrackLyrics key={id} id={id} state={state} command={command} /> : <p className="text-sm text-muted">Choose a song to see its lyrics.</p>;
 }
 function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; command: (command: PlayerCommand) => void }) {
