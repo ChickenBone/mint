@@ -42,6 +42,7 @@ export interface SonicJob {
 export interface TorboxJob {
   torrentId: number;
   name: string;
+  protocol?: "torrent" | "usenet";
 }
 
 export type MaintenanceJob =
@@ -58,6 +59,6 @@ export const jobId = {
   acquire: (trackId: string) => `acquire-${trackId}`,
   finalize: (trackId: string) => `finalize-${trackId}`,
   sonic: (trackId: string) => `sonic-${trackId}`,
-  torbox: (torrentId: number) => `torbox-${torrentId}`,
+  torbox: (torrentId: number, protocol: "torrent" | "usenet" = "torrent") => protocol === "torrent" ? `torbox-${torrentId}` : `torbox-usenet-${torrentId}`,
   plexPlaylists: (userId: string) => `plex-playlists-${userId}`,
 };

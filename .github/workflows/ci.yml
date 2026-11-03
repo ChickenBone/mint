@@ -48,6 +48,7 @@ jobs:
         env:
           MINT_LIBRARY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
           MINT_LIBRARY_TEST_REDIS_URL: redis://localhost:6379/0
+          MINT_TORBOX_TEST_REDIS_URL: redis://localhost:6379/14
           MINT_AUDIO_TEST: "true"
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=moderate

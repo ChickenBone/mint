@@ -55,7 +55,7 @@ writeFileSync(`${dir}/admin_password`, adminPassword, { mode: 0o600 });
 chownSync(dir, uid, gid);
 for (const f of [file, `${dir}/admin_password`]) chownSync(f, uid, gid);
 
-for (const p of ["/music", "/blackhole", "/blackhole/torrents", "/blackhole/downloads", "/data/staging"]) {
+for (const p of ["/music", "/blackhole", "/blackhole/torrents", "/blackhole/nzbs", "/blackhole/downloads", "/blackhole/usenet-downloads", "/data/staging"]) {
   if (!existsSync(p.split("/").slice(0, 2).join("/"))) continue;
   mkdirSync(p, { recursive: true });
   const st = statSync(p);

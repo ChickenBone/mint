@@ -63,7 +63,9 @@ Passwords, keys, database, music and Plex configuration persist in the project's
 
 The NAS file uses standard Compose service definitions, YAML anchors and bind folders, without optional env-file syntax, inline `configs`, or override tags. It requires a Compose implementation that supports health checks and `service_completed_successfully`. Its configuration is validated, but it has not been run on a physical UGREEN NAS.
 
-**Optional Lidarr indexers:** the default port is loopback-only. Without SSH, temporarily change Lidarr's port mapping to `<NAS-LAN-IP>:8686:8686` in the editor, configure authentication and indexers from your LAN, then restore the original mapping. Never forward 8686 on your router. This is unnecessary for Cobalt-only downloads.
+**Automatic indexers:** with `TORBOX_API_KEY` set, Mint configures bundled Prowlarr and Lidarr automatically. See [Lidarr + TorBox](#lidarr--torbox) for the public sources and optional Usenet indexer account. To manage additional indexers, Prowlarr is loopback-only on port 9696: use `ssh -L 9696:127.0.0.1:9696 <NAS-user>@<NAS-IP>`. Without SSH, temporarily bind `<NAS-LAN-IP>:9696:9696`, configure Prowlarr authentication before adding credentials, then restore loopback. Never forward 9696 or Lidarr's 8686 on your router.
+
+**Updating for automatic setup:** replace the project's compose text with the current template, restoring **all** your settings and custom mounts (especially existing music), then pull/recreate the project at its unchanged storage path. Pulling only the worker image does not add the new Prowlarr service. Its `./data/prowlarr` folder is new and initializes automatically; do not rerun the ten-volume migration or delete any old data. Keep your existing Plex token, section ID and read-only settings; no new claim is needed.
 
 ### Use an existing Plex music library read-only
 
@@ -107,12 +109,12 @@ docker compose logs init        # prints the site URL and the admin login
 3. **Sign in** with the login from `docker compose logs init` (lost it? `docker compose run --rm init`).
 4. **Open Admin.** A *To finish setup* box lists whatever is still missing, in plain words. Usually that's:
    - **Google sign‑in** so members can link YouTube Music → [Google](#google-youtube-music-linking)
-   - **TorBox + a Lidarr indexer** for full releases. Optional: without them, Mint rips YouTube audio with Cobalt → [Lidarr + TorBox](#lidarr--torbox)
+   - **TorBox** for full releases with automatic public indexers. Optional: without it, Mint rips YouTube audio with Cobalt → [Lidarr + TorBox](#lidarr--torbox)
 
    Put the values in a `.env` next to `docker-compose.yml` (all keys are listed in [`.env.example`](.env.example)), then run `docker compose up -d` again.
 5. **Share the Plex library** with each member you approve. Their likes show up in Plexamp.
 
-The worker wires the rest itself on every start: it reads Plex's token once Plex is claimed, creates the Music library at `/music`, reads Lidarr's API key, and adds Lidarr's root folder and TorBox download client. Share the Plex library with each member you approve.
+The worker wires the rest itself on every start: it reads Plex's token once Plex is claimed, creates the Music library at `/music`, reads the private Lidarr/Prowlarr API keys, and configures the root folder, TorBox torrent/Usenet download clients and public indexers. Existing read-only Plex is only indexed, never claimed or modified. Share the Plex library with each member you approve.
 
 **Updating:** `docker compose pull && docker compose up -d`. To make that automatic, see [CI/CD](#cicd).
 
@@ -159,9 +161,10 @@ flowchart LR
     worker[worker · pipeline] --> pg & redis
     subgraph media[media network · the barrier]
       lidarr[Lidarr] --- cobalt[Cobalt]
+      prowlarr[Prowlarr] --> lidarr
       plex[Plex :32400]
     end
-    worker --> lidarr & cobalt & plex
+    worker --> lidarr & prowlarr & cobalt & plex
     hub -- staging volume --> worker
   end
   subgraph vol[Volunteer worker]
@@ -197,7 +200,7 @@ flowchart LR
 
 Cover art comes from the Cover Art Archive when the song matched a MusicBrainz release, and from the YouTube thumbnail otherwise. It's embedded in the file and saved as `cover.jpg` for Plex. The website shows the same remote image, so the home server never serves media to the public.
 
-**The barrier.** Only the `worker` joins the `media` network, where Lidarr, Cobalt and Plex live. Cobalt and Plex's API have no route from the internet except Plex's own port, and Lidarr is bound to `127.0.0.1:8686`. The website never talks to the media side directly: it reads and writes the database and sends work through Redis queues, the same way whether it runs in compose or on Vercel. The hub has no Plex, Lidarr or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
+**The barrier.** Only the pipeline `worker` connects the data and media tiers; Lidarr, Prowlarr, Cobalt and Plex live on `media`. Cobalt and Plex's API have no route from the internet except Plex's own port; Lidarr/Prowlarr management ports are bound to loopback. The website never talks to the media side directly: it reads and writes the database and sends work through Redis queues, the same way whether it runs in compose or on Vercel. The hub has no Plex, Lidarr, Prowlarr, Usenet indexer or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
 
 **How a volunteer job flows.**
 
@@ -258,9 +261,17 @@ Liked songs come from the YouTube "Liked videos" playlist, filtered to music. Me
 
 ### Lidarr + TorBox
 
-Set `TORBOX_API_KEY` in the compose settings or `.env`. On its next start, the worker turns Lidarr on (`LIDARR_ENABLED=auto`), adds the `/music` root folder and a **Torrent Blackhole** download client. The one manual step is **indexers**: open Lidarr (`http://localhost:8686` on the server, through an SSH tunnel, or the temporary LAN binding described in [NAS setup](#nas-setup-copy-paste-deploy)) → Settings → Indexers, and add them directly or through Prowlarr.
+Set `TORBOX_API_KEY` in the compose settings or `.env`. The worker turns Lidarr on (`LIDARR_ENABLED=auto`), adds `/music`, and creates **Torrent Blackhole** and **Usenet Blackhole** clients. Both Compose deployments include private, persistent Prowlarr. Mint discovers its API key from the read-only config mount and links it to Lidarr using **add-only** synchronization, restricted to music categories. Existing indexers, application links, disabled sources and download clients are preserved.
 
-The worker sends each blackhole torrent or magnet to TorBox, polls it, and downloads the finished files into the watch folder for Lidarr to import. If nothing is grabbed within `LIDARR_GRAB_TIMEOUT_MINUTES`, the track falls back to Cobalt. `LIDARR_ENABLED=false` means Cobalt only. `true` keeps Lidarr on without TorBox, if you've given it your own download client.
+**Public torrent sources:** Mint attempts Internet Archive, The Pirate Bay, LimeTorrents and 1337x, without accounts. This is a bounded starter list, not a promise of availability or lossless coverage. Prowlarr tests before saving; blocked sites, CAPTCHA/Cloudflare challenges, DNS failures and empty music feeds are reported in Admin setup notes or private Prowlarr/Lidarr events. Missing sources retry every ten minutes; unavailable Prowlarr retries in one minute. Mint does not install CAPTCHA bypass services or force-save broken sources. The Pirate Bay's default feed is narrowed to Audio. Use only material you are entitled to download.
+
+**Usenet:** TorBox Pro supplies the download/provider side, not an independent searchable music catalog. Set `USENET_INDEXER_URL` to a music-capable Newznab base URL and `USENET_INDEXER_API_KEY` to that indexer's key; Mint registers it in Prowlarr and syncs it to Lidarr. These are **not** your TorBox key or NNTP credentials. API access, free-tier limits, signup and any indexer fees depend on that service. For nonstandard endpoints, use `USENET_INDEXER_API_PATH` (default `/api`) in the worker environment. You can also add multiple account-based sources in Prowlarr. Newly provisioned settings are preserved afterward: change saved account keys/settings in Prowlarr, not by expecting Mint to overwrite them on restart.
+
+NZBIndex was tested as a no-signup alternative, but its Prowlarr definition exposes no music categories and its categorized feed returns no results, so it cannot reliably sync to Lidarr. Mint deliberately does not install it as a working automatic source. A TorBox Pro account alone therefore does not make Usenet searching ready; Admin states when the separate indexer is missing.
+
+The bridge submits `.torrent`/`.magnet` files from `/blackhole/torrents` and `.nzb` files from `/blackhole/nzbs` to the corresponding TorBox APIs, reports remote/local progress, and streams completed releases into separate torrent (`/blackhole/downloads`) and Usenet (`/blackhole/usenet-downloads`) watch folders so Lidarr cannot import one release through both clients. Queue IDs distinguish torrent and Usenet downloads even when TorBox reuses numeric IDs. Original files remain read-only; existing-library upgrades still require a verified lossy-to-lossless improvement and are stored separately.
+
+Set `AUTO_CONFIGURE_INDEXERS=false` to leave all indexer setup to you. `PROWLARR_PUBLIC_INDEXERS` selects the comma-separated public definitions to attempt (empty disables seeding). Already saved sources are never removed by changing this list. Prowlarr is unnecessary for Cobalt-only use. If nothing is grabbed within `LIDARR_GRAB_TIMEOUT_MINUTES`, unmatched new tracks fall back to Cobalt; existing-library upgrades never do. `LIDARR_ENABLED=false` means Cobalt only. `true` keeps Lidarr on without TorBox, if you've given it your own download client.
 
 ### Cobalt
 

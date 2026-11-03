@@ -20,7 +20,7 @@ export async function exists(p: string) {
 export async function downloadToFile(
   url: string,
   dest: string,
-  onProgress?: (fraction: number | null, bytes: number) => void,
+  onProgress?: (fraction: number | null, bytes: number) => void | Promise<void>,
   headers: Record<string, string> = {},
 ): Promise<{ bytes: number; contentType: string | null; filename: string | null }> {
   await ensureDir(path.dirname(dest));
@@ -35,7 +35,11 @@ export async function downloadToFile(
       const now = Date.now();
       if (onProgress && now - lastEmit > 750) {
         lastEmit = now;
-        onProgress(total ? bytes / total : null, bytes);
+        Promise.resolve().then(() => onProgress(total ? bytes / total : null, bytes)).then(
+          () => cb(null, chunk),
+          (err: Error) => cb(err),
+        );
+        return;
       }
       cb(null, chunk);
     },
@@ -43,7 +47,7 @@ export async function downloadToFile(
   const tmp = `${dest}.part`;
   await pipeline(Readable.fromWeb(res.body as never), meter, createWriteStream(tmp));
   await fs.rename(tmp, dest);
-  onProgress?.(1, bytes);
+  await onProgress?.(1, bytes);
   const disposition = res.headers.get("content-disposition");
   const filename = disposition?.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i)?.[1] ?? null;
   return { bytes, contentType: res.headers.get("content-type"), filename: filename ? decodeURIComponent(filename) : null };

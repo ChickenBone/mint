@@ -5,6 +5,7 @@ import { config } from "./config";
 import { log } from "./log";
 import * as lidarr from "./services/lidarr";
 import * as plex from "./services/plex";
+import { setupIndexers } from "./services/prowlarr";
 
 /**
  * Zero-config wiring for the bundled Plex and Lidarr. Runs at startup and on every health tick until
@@ -87,8 +88,30 @@ async function wireLidarr(notes: string[]) {
     notes.push("Lidarr is off because TORBOX_API_KEY isn't set. Every song is ripped from YouTube with Cobalt.");
     return;
   }
-  if (lidarrReady) return;
+  if (!lidarrReady) {
+    await configureLidarr();
+    lidarrReady = true;
+  }
+  if (process.env.PROWLARR_URL && process.env.AUTO_CONFIGURE_INDEXERS !== "false") {
+    if (!process.env.PROWLARR_API_KEY) {
+      const key = await readAttr(path.join(optionalEnv("PROWLARR_CONFIG_DIR", "/prowlarr-config"), "config.xml"), /<ApiKey>([^<]+)<\/ApiKey>/);
+      if (!key) {
+        notes.push("Prowlarr is starting; automatic indexer setup will retry when its API key is available.");
+        return;
+      }
+      process.env.PROWLARR_API_KEY = key;
+    }
+    notes.push(...await setupIndexers());
+  }
+  const indexers = await lidarr.api<Array<{ enableAutomaticSearch?: boolean; enableInteractiveSearch?: boolean }>>("/indexer");
+  if (!indexers.some((indexer) => indexer.enableAutomaticSearch || indexer.enableInteractiveSearch)) {
+    notes.push(process.env.PROWLARR_URL
+      ? "No searchable indexers in Lidarr yet. Automatic Prowlarr setup/sync is pending; check its setup notes."
+      : "Lidarr has no searchable indexers. Enable bundled Prowlarr for automatic setup, or configure your own sources.");
+  }
+}
 
+async function configureLidarr() {
   const rootPath = optionalEnv("LIDARR_ROOT_FOLDER", config.musicDir);
   const roots = await lidarr.api<Array<{ path: string }>>("/rootfolder", { timeoutMs: 5000, retries: 0 });
   if (!roots.some((r) => r.path.replace(/\/$/, "") === rootPath)) {
@@ -109,12 +132,18 @@ async function wireLidarr(notes: string[]) {
   }
 
   const clients = await lidarr.api<ClientSchema[]>("/downloadclient");
-  if (!clients.some((c) => c.implementation === "TorrentBlackhole")) {
-    const schema = (await lidarr.api<ClientSchema[]>("/downloadclient/schema")).find((c) => c.implementation === "TorrentBlackhole");
-    if (!schema) throw new Error("Lidarr has no Torrent Blackhole download client");
+  const schemas = await lidarr.api<ClientSchema[]>("/downloadclient/schema");
+  for (const [implementation, protocol] of [
+    ["TorrentBlackhole", "torrents"],
+    ["UsenetBlackhole", "Usenet"],
+  ] as const) {
+    if (clients.some((c) => c.implementation === implementation)) continue;
+    const schema = schemas.find((c) => c.implementation === implementation);
+    if (!schema) throw new Error(`Lidarr has no ${implementation} download client`);
     const values: Record<string, unknown> = {
       torrentFolder: config.blackholeTorrents,
-      watchFolder: config.blackholeDownloads,
+      nzbFolder: config.blackholeUsenet,
+      watchFolder: implementation === "UsenetBlackhole" ? config.blackholeUsenetDownloads : config.blackholeDownloads,
       saveMagnetFiles: true,
       magnetFileExtension: ".magnet",
       readOnly: false,
@@ -123,7 +152,7 @@ async function wireLidarr(notes: string[]) {
       method: "POST",
       body: {
         ...schema,
-        name: "TorBox (Mint)",
+        name: `TorBox ${protocol} (Mint)`,
         enable: true,
         priority: 1,
         removeCompletedDownloads: true,
@@ -132,12 +161,8 @@ async function wireLidarr(notes: string[]) {
         fields: schema.fields.map((f) => (f.name in values ? { ...f, value: values[f.name] } : f)),
       },
     });
-    log.info("added TorBox blackhole download client to Lidarr");
+    log.info({ protocol }, "added TorBox blackhole download client to Lidarr");
   }
-
-  const indexers = await lidarr.api<unknown[]>("/indexer");
-  if (!indexers.length) notes.push("Lidarr has no indexers, so it can't find releases. Add some in Lidarr (or Prowlarr). Until then songs come from YouTube.");
-  else lidarrReady = true;
 }
 
 export async function wireIntegrations(): Promise<string[]> {

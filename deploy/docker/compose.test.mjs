@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const source = readFileSync(new URL("../../docker-compose.nas.yml", import.meta.url), "utf8");
@@ -16,7 +18,7 @@ const resolve = (yaml) =>
 
 test("NAS template is self-contained and uses project-relative bind folders", () => {
   const config = resolve(source);
-  assert.equal(Object.keys(config.services).length, 12);
+  assert.equal(Object.keys(config.services).length, 13);
   assert.equal(config.configs, undefined);
   for (const service of Object.values(config.services)) {
     assert.equal(service.env_file, undefined);
@@ -81,10 +83,53 @@ test("data and media remain behind the public gateway", () => {
     assert.equal(services[name].ports, undefined);
   }
   assert.equal(services.lidarr.ports[0].host_ip, "127.0.0.1");
+  assert.equal(services.prowlarr.ports[0].host_ip, "127.0.0.1");
+  assert.deepEqual(Object.keys(services.prowlarr.networks), ["media"]);
   assert.ok(!Object.hasOwn(services.web.networks, "media"));
   assert.ok(!Object.hasOwn(services.hub.networks, "media"));
   assert.equal(services.worker.depends_on.init.condition, "service_completed_successfully");
   assert.equal(services.postgres.depends_on.init.condition, "service_completed_successfully");
+});
+
+test("Prowlarr auto-setup is private, persistent and configurable", () => {
+  const { services } = resolve(source);
+  assert.equal(services.worker.environment.PROWLARR_URL, "http://prowlarr:9696");
+  assert.equal(services.worker.environment.AUTO_CONFIGURE_INDEXERS, "true");
+  assert.equal(services.worker.environment.BLACKHOLE_NZB_DIR, "/blackhole/nzbs");
+  assert.equal(services.worker.environment.BLACKHOLE_NZB_DOWNLOAD_DIR, "/blackhole/usenet-downloads");
+  const configMount = services.prowlarr.volumes.find((v) => v.target === "/config");
+  const workerMount = services.worker.volumes.find((v) => v.target === "/prowlarr-config");
+  assert.equal(configMount.source, workerMount.source);
+  assert.equal(workerMount.read_only, true);
+  for (const name of ["web", "hub", "realtime", "cloudflared"]) {
+    assert.equal(services[name].volumes?.some((v) => v.target === "/prowlarr-config") ?? false, false);
+    for (const key of ["PROWLARR_API_KEY", "USENET_INDEXER_API_KEY"]) assert.equal(services[name].environment?.[key], undefined);
+  }
+  const disabled = resolve(source.replace('&auto-indexers "true"', '&auto-indexers "false"'));
+  assert.equal(disabled.services.worker.environment.AUTO_CONFIGURE_INDEXERS, "false");
+});
+
+test("CLI stack does not leak media credentials from shared env-file into public services", () => {
+  const root = mkdtempSync(path.join(os.tmpdir(), "mint-compose-test-"));
+  try {
+    const file = path.join(root, "fixture.env");
+    const composePath = docker.endsWith(".exe") && process.platform !== "win32"
+      ? execFileSync("wslpath", ["-w", file], { encoding: "utf8" }).trim()
+      : file;
+    const keys = ["TORBOX_API_KEY", "PLEX_TOKEN", "PLEX_CLAIM", "LIDARR_API_KEY", "PROWLARR_API_KEY", "USENET_INDEXER_API_KEY"];
+    writeFileSync(file, keys.map((key) => `${key}=fixture-only`).join("\n"));
+    const yaml = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8").replace("path: .env", `path: ${JSON.stringify(composePath)}`);
+    const { services } = resolve(yaml);
+    for (const key of keys) {
+      assert.equal(services.worker.environment[key], "fixture-only");
+      for (const name of ["web", "hub", "realtime"]) assert.equal(services[name].environment[key], "");
+    }
+    assert.equal(services.worker.volumes.find((v) => v.target === "/prowlarr-config").read_only, true);
+    assert.deepEqual(Object.keys(services.prowlarr.networks), ["media"]);
+    assert.equal(services.prowlarr.ports[0].host_ip, "127.0.0.1");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("Cloudflare Tunnel uses HTTP internally while public URLs remain HTTPS", () => {

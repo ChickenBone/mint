@@ -31,6 +31,12 @@ x-settings:
   CADDY_CONFIG_FOLDER: &caddy-config-folder "./data/caddy-config"
   PLEX_CONFIG_FOLDER: &plex-config-folder "./data/plex"
   LIDARR_CONFIG_FOLDER: &lidarr-config-folder "./data/lidarr"
+  PROWLARR_CONFIG_FOLDER: &prowlarr-config-folder "./data/prowlarr"
+  AUTO_CONFIGURE_INDEXERS: &auto-indexers "true"
+  PROWLARR_PUBLIC_INDEXERS: &public-indexers "internetarchive,thepiratebay,limetorrents,1337x"
+  # Optional Newznab indexer account; separate from TorBox's Usenet provider access.
+  USENET_INDEXER_URL: &usenet-indexer-url ""
+  USENET_INDEXER_API_KEY: &usenet-indexer-key ""
   # Optional existing Plex. Replace URL, token, section ID and folder mapping together.
   PLEX_URL: &plex-url "http://plex:32400"
   PLEX_TOKEN: &plex-token ""
@@ -223,9 +229,17 @@ services:
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
+      BLACKHOLE_NZB_DIR: /blackhole/nzbs
       BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
+      BLACKHOLE_NZB_DOWNLOAD_DIR: /blackhole/usenet-downloads
       LIDARR_URL: http://lidarr:8686
       LIDARR_CONFIG_DIR: /lidarr-config
+      PROWLARR_URL: http://prowlarr:9696
+      PROWLARR_CONFIG_DIR: /prowlarr-config
+      AUTO_CONFIGURE_INDEXERS: *auto-indexers
+      PROWLARR_PUBLIC_INDEXERS: *public-indexers
+      USENET_INDEXER_URL: *usenet-indexer-url
+      USENET_INDEXER_API_KEY: *usenet-indexer-key
       COBALT_URL: http://cobalt:9000
       PLEX_URL: *plex-url
       PLEX_TOKEN: *plex-token
@@ -260,6 +274,10 @@ services:
       - type: bind
         source: *existing-music-folder
         target: /existing-music
+        read_only: true
+      - type: bind
+        source: *prowlarr-config-folder
+        target: /prowlarr-config
         read_only: true
     networks: [data, media]
     depends_on: *needs-data
@@ -337,6 +355,23 @@ services:
       API_URL: http://cobalt:9000/
       API_PORT: "9000"
     networks: [media]
+
+  prowlarr:
+    <<: *app
+    image: lscr.io/linuxserver/prowlarr:latest
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Etc/UTC
+    volumes:
+      - type: bind
+        source: *prowlarr-config-folder
+        target: /config
+    ports: ["127.0.0.1:9696:9696"]
+    networks: [media]
+    depends_on:
+      init:
+        condition: service_completed_successfully
 
   plex:
     <<: *app

@@ -13,7 +13,7 @@
 #   hub       volunteer uploads in. No Plex/Lidarr/TorBox access.
 #   worker    the pipeline: sync, Lidarr/TorBox, Cobalt, tagging, Plex, sonic analysis. Wires up Plex and Lidarr itself.
 #   postgres, redis                                               (data network, no published ports)
-#   lidarr, cobalt, plex                                          (media network: the barrier)
+#   lidarr, prowlarr, cobalt, plex                                (media network: the barrier)
 #
 # Website on Vercel instead? Add docker-compose.vercel.yml (see the README).
 
@@ -31,6 +31,16 @@ x-app: &app
     options: { max-size: "10m", max-file: "3" }
 
 x-mint-image: &mint-worker-image ghcr.io/${GHCR_OWNER:-chickenbone}/mint-worker:${MINT_TAG:-latest}
+
+# The optional .env is shared for database/session configuration, not media credentials.
+x-public-env: &public-env
+  MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
+  TORBOX_API_KEY: ""
+  PLEX_TOKEN: ""
+  PLEX_CLAIM: ""
+  LIDARR_API_KEY: ""
+  PROWLARR_API_KEY: ""
+  USENET_INDEXER_API_KEY: ""
 
 services:
   init:
@@ -73,6 +83,7 @@ services:
   web:
     <<: *app
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-web:${MINT_TAG:-latest}
+    environment: *public-env
     volumes: [secrets:/secrets:ro]
     networks: [edge, data]
     depends_on: &needs-data
@@ -83,6 +94,7 @@ services:
   realtime:
     <<: *app
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-realtime:${MINT_TAG:-latest}
+    environment: *public-env
     volumes: [secrets:/secrets:ro]
     networks: [edge, data]
     depends_on: *needs-data
@@ -93,6 +105,7 @@ services:
     command: ["node", "--enable-source-maps", "dist/hub.js"]
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
+      <<: *public-env
       MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
       STAGING_DIR: /data/staging
       HUB_PORT: "8090"
@@ -117,9 +130,13 @@ services:
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
+      BLACKHOLE_NZB_DIR: /blackhole/nzbs
       BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
+      BLACKHOLE_NZB_DOWNLOAD_DIR: /blackhole/usenet-downloads
       LIDARR_URL: http://lidarr:8686
       LIDARR_CONFIG_DIR: /lidarr-config
+      PROWLARR_URL: http://prowlarr:9696
+      PROWLARR_CONFIG_DIR: /prowlarr-config
       COBALT_URL: ${LOCAL_COBALT_URL-http://cobalt:9000}
       PLEX_URL: http://plex:32400
       PLEX_CONFIG_DIR: /plex-config
@@ -131,6 +148,7 @@ services:
       # Read-only, so the worker can pick up the Plex token and Lidarr API key by itself.
       - plex_config:/plex-config:ro
       - lidarr_config:/lidarr-config:ro
+      - prowlarr_config:/prowlarr-config:ro
     networks: [data, media]
     depends_on: *needs-data
 
@@ -181,7 +199,7 @@ services:
       - lidarr_config:/config
       - ${MUSIC_PATH:-./data/music}:/music
       - ${BLACKHOLE_PATH:-./data/blackhole}:/blackhole
-    # Only needed to add indexers. Loopback only; from another machine: ssh -L 8686:127.0.0.1:8686 host
+    # Loopback only; from another machine: ssh -L 8686:127.0.0.1:8686 host
     ports: ["127.0.0.1:8686:8686"]
     networks: [media]
     depends_on:
@@ -200,6 +218,20 @@ services:
       # COOKIE_PATH: /cookies.json
     # volumes: [./cobalt-cookies.json:/cookies.json:ro]
     networks: [media]
+
+  prowlarr:
+    <<: *app
+    image: lscr.io/linuxserver/prowlarr:latest
+    env_file: []
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+    volumes: [prowlarr_config:/config]
+    ports: ["127.0.0.1:9696:9696"]
+    networks: [media]
+    depends_on:
+      init: { condition: service_completed_successfully }
 
   plex:
     <<: *app
@@ -278,4 +310,5 @@ volumes:
   redis: {}
   staging: {}
   lidarr_config: {}
+  prowlarr_config: {}
   plex_config: {}

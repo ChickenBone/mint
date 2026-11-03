@@ -45,7 +45,7 @@ export async function addTorrent(input: { magnet?: string; file?: { name: string
   form.set("name", name);
   form.set("seed", "3");
   form.set("allow_zip", "false");
-  return call<{ torrent_id: number; hash: string }>("/torrents/createtorrent", { method: "POST", body: form, timeoutMs: 60_000 });
+  return call<{ torrent_id: number; hash: string }>("/torrents/createtorrent", { method: "POST", body: form, timeoutMs: 60_000, retries: 0 });
 }
 
 export async function getTorrent(id: number): Promise<TorboxTorrent | null> {
@@ -59,5 +59,28 @@ export async function fileLink(torrentId: number, fileId: number): Promise<strin
 }
 
 export async function removeTorrent(id: number) {
-  await call("/torrents/controltorrent", { method: "POST", body: { torrent_id: id, operation: "delete" } }).catch(() => undefined);
+  await call("/torrents/controltorrent", { method: "POST", body: { torrent_id: id, operation: "delete" } });
+}
+
+export async function addUsenet(file: { name: string; data: Buffer }) {
+  const form = new FormData();
+  form.set("file", new Blob([new Uint8Array(file.data)]), file.name);
+  const result = await call<{ usenetdownload_id: number | string }>("/usenet/createusenetdownload", { method: "POST", body: form, timeoutMs: 60_000, retries: 0 });
+  const id = Number(result.usenetdownload_id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error("TorBox returned an invalid Usenet download ID");
+  return id;
+}
+
+export async function getUsenet(id: number): Promise<TorboxTorrent | null> {
+  return call<TorboxTorrent | null>("/usenet/mylist", { query: { id, bypass_cache: true } });
+}
+
+export async function usenetFileLink(usenetId: number, fileId: number): Promise<string> {
+  return call<string>("/usenet/requestdl", {
+    query: { token: requireEnv("TORBOX_API_KEY"), usenet_id: usenetId, file_id: fileId, redirect: false },
+  });
+}
+
+export async function removeUsenet(id: number) {
+  await call("/usenet/controlusenetdownload", { method: "POST", body: { usenet_id: id, operation: "delete" } });
 }
