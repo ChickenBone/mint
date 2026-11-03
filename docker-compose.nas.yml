@@ -1,9 +1,12 @@
 # Paste this whole file into your NAS Docker / Compose project editor.
 # Edit ONLY this settings block, then deploy. No .env, shell, build or extra files.
-# HTTPS requires a real hostname pointing at your NAS, with ports 80/443 forwarded.
+# Direct HTTPS needs ports 80/443 forwarded. With Cloudflare Tunnel, set CADDY_SCHEME to http.
 # Do not publish your filled-in copy: it contains your personal integration keys.
 x-settings:
   MINT_DOMAIN: &domain "mint.example.com"
+  # https: Caddy obtains certificates. http: Cloudflare Tunnel handles public HTTPS.
+  # Keep MINT_DOMAIN as the public hostname, not the NAS IP, in either mode.
+  CADDY_SCHEME: &caddy-scheme "https"
   ADMIN_EMAIL: &admin-email "admin@mint.local"
   # From https://plex.tv/claim just before deploying; expires in 4 minutes.
   PLEX_CLAIM: &plex-claim ""
@@ -51,6 +54,7 @@ services:
     image: caddy:2
     environment:
       MINT_DOMAIN: *domain
+      CADDY_SCHEME: *caddy-scheme
     ports:
       - "80:80"
       - "443:443"
@@ -62,7 +66,7 @@ services:
         {
           admin off
         }
-        {$$MINT_DOMAIN} {
+        {$$CADDY_SCHEME}://{$$MINT_DOMAIN} {
           encode zstd gzip
           handle /ws* {
             reverse_proxy realtime:3001 {

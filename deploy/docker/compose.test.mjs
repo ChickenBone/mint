@@ -51,3 +51,13 @@ test("data and media remain behind the public gateway", () => {
   assert.equal(services.worker.depends_on.init.condition, "service_completed_successfully");
   assert.equal(services.postgres.depends_on.init.condition, "service_completed_successfully");
 });
+
+test("Cloudflare Tunnel can use HTTP internally while public URLs remain HTTPS", () => {
+  const { services } = resolve(source.replace('&caddy-scheme "https"', '&caddy-scheme "http"'));
+  assert.equal(services.caddy.environment.CADDY_SCHEME, "http");
+  for (const name of ["web", "realtime", "hub", "worker"]) {
+    assert.equal(services[name].environment.CADDY_SCHEME, undefined);
+    assert.equal(services[name].environment.MINT_DOMAIN, "mint.example.com");
+  }
+  assert.ok(services.caddy.command[0].includes("CADDY_SCHEME"));
+});
