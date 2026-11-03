@@ -31,7 +31,7 @@ async function wirePlex(notes: string[]) {
   if (!process.env.PLEX_TOKEN) {
     const token = await readAttr(path.join(optionalEnv("PLEX_CONFIG_DIR", "/plex-config"), PLEX_PREFS), /PlexOnlineToken="([^"]+)"/);
     if (!token) {
-      notes.push("Plex isn't claimed yet. Get a code from plex.tv/claim, set PLEX_CLAIM in .env and run `docker compose up -d plex` within 4 minutes. Or set PLEX_TOKEN.");
+      notes.push("Plex isn't claimed yet. Get a code from plex.tv/claim, set PLEX_CLAIM in your compose settings and recreate Plex within 4 minutes. Or open Plex on your local network to claim it.");
       return;
     }
     process.env.PLEX_TOKEN = token;

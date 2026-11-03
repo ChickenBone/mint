@@ -17,8 +17,7 @@ export async function createSession(userId: string) {
     .values({ id: sha256(token), userId, expiresAt, ip: await clientIp(), userAgent: (await userAgent())?.slice(0, 300) });
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
-    // Plain-HTTP LAN installs (no domain yet) still need a working login.
-    secure: publicUrl().startsWith("https://"),
+    secure: process.env.NODE_ENV === "production" || publicUrl().startsWith("https://"),
     sameSite: "lax",
     path: "/",
     expires: expiresAt,

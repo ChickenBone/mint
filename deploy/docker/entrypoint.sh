@@ -14,7 +14,7 @@ if [ -r "$secrets" ]; then
 fi
 
 if [ -z "${PUBLIC_URL:-}" ]; then
-  if [ -n "${MINT_DOMAIN:-}" ]; then PUBLIC_URL="https://${MINT_DOMAIN}"; else PUBLIC_URL="http://localhost"; fi
+  PUBLIC_URL="https://${MINT_DOMAIN:-mint.example.com}"
   export PUBLIC_URL
 fi
 if [ -z "${DATABASE_URL:-}" ] && [ -n "${POSTGRES_PASSWORD:-}" ]; then

@@ -1,9 +1,9 @@
 # Mint: everything on one machine.
 #
-#   docker compose up -d                  then open http://<this machine> (or https://$MINT_DOMAIN)
+#   docker compose up -d                  then open https://$MINT_DOMAIN
 #   docker compose run --rm init          shows the admin login again
 #
-# No .env is required to start. Secrets, the database password and the admin login are generated
+# Set MINT_DOMAIN to your HTTPS hostname. Secrets, the database password and the admin login are generated
 # on first boot by the `init` service and kept in the `secrets` volume. See .env.example for options.
 #
 # Services
@@ -24,6 +24,8 @@ x-app: &app
   env_file:
     - path: .env
       required: false
+  environment:
+    MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "3" }
@@ -39,6 +41,7 @@ services:
     entrypoint: ["node", "init.mjs"]
     command: []
     environment:
+      MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
       PUID: ${PUID:-1000}
       PGID: ${PGID:-1000}
     volumes:
@@ -90,6 +93,7 @@ services:
     command: ["node", "--enable-source-maps", "dist/hub.js"]
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
+      MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
       STAGING_DIR: /data/staging
       HUB_PORT: "8090"
     volumes:
@@ -109,6 +113,7 @@ services:
     image: *mint-worker-image
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
+      MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
@@ -222,7 +227,7 @@ configs:
       {
       	admin off
       }
-      ${MINT_DOMAIN:-:80} {
+      ${MINT_DOMAIN:-mint.example.com} {
       	encode zstd gzip
 
       	handle /ws* {

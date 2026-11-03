@@ -63,12 +63,12 @@ for (const p of ["/music", "/blackhole", "/blackhole/torrents", "/blackhole/down
 }
 
 const email = process.env.ADMIN_EMAIL || "admin@mint.local";
-const url = process.env.PUBLIC_URL || (process.env.MINT_DOMAIN ? `https://${process.env.MINT_DOMAIN}` : "http://localhost");
+const url = process.env.PUBLIC_URL || `https://${process.env.MINT_DOMAIN || "mint.example.com"}`;
 console.log(created.length ? `mint init: generated ${created.join(", ")}` : "mint init: secrets already in place");
 console.log(`\n  Mint is starting at ${url}`);
 console.log(`  Admin login: ${email}`);
 console.log(
   process.env.ADMIN_PASSWORD === adminPassword
-    ? "  Password:    the ADMIN_PASSWORD you set in .env\n"
-    : `  Password:    ${values.ADMIN_PASSWORD}\n  Show this again with: docker compose run --rm init\n`,
+    ? "  Password:    the ADMIN_PASSWORD you configured\n"
+    : `  Password:    ${values.ADMIN_PASSWORD}\n  Keep this login private. Show it again by running the init container.\n`,
 );

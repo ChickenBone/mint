@@ -27,9 +27,26 @@ Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs eac
   <img src="docs/screenshots/browse.png" alt="Public library browser" width="420">
 </p>
 
-## Deploy in 5 minutes
+## NAS setup: copy, paste, deploy
 
-All you need is a Linux machine with Docker (Compose 2.24 or newer). One compose file runs everything: the site, the database, Plex, Lidarr, Cobalt and the pipeline. Passwords and keys are generated on first boot.
+**UGREEN NAS OS, Portainer, or another Docker project editor:** open [`docker-compose.nas.yml`](docker-compose.nas.yml), copy the **entire file**, and paste it into a new Compose project named `mint`. No terminal, `.env`, Git checkout, build, or extra config files.
+
+1. **Edit the settings at the top.** Set `MINT_DOMAIN` to your own hostname, such as `mint.example.com`. Get a fresh `PLEX_CLAIM` from https://plex.tv/claim immediately before deploying; it expires in four minutes. If image downloads take too long, get another token and recreate Plex from the NAS UI. Leave Google and TorBox keys blank until you need them.
+2. **Deploy the project.** Point that hostname's DNS at your public IP and forward TCP ports 80 and 443 to the NAS. Caddy obtains an HTTPS certificate automatically. Keep DNS proxying off if your provider limits upload sizes.
+3. **Open the `init` container's logs** in the NAS Docker UI. They show the generated admin login. Keep these logs private. `init` finishing successfully is normal, not a failed container.
+4. **Open `https://<your-hostname>` and sign in.** Admin lists any remaining setup steps. Add Google credentials to the same settings block and redeploy to enable YouTube Music linking.
+
+Passwords, keys, database, music and Plex configuration persist in Docker-managed volumes. Do not delete the project's volumes when updating. Use the NAS UI to pull newer images and recreate the project. Keep using the same project name.
+
+**HTTPS is required for production login.** If NAS services already occupy 80/443, move them or configure your existing HTTPS reverse proxy; changing port numbers alone does not make certificate issuance work. For a LAN-only installation, use a hostname ending in `.local` with local DNS pointing at the NAS; Caddy uses a local certificate authority, whose root certificate in `caddy_data` must be trusted on your devices.
+
+The NAS file uses standard Compose service definitions, YAML anchors and named volumes, without optional env-file syntax, inline `configs`, or override tags. It requires a Compose implementation that supports health checks and `service_completed_successfully`. Its configuration is validated, but it has not been run on a physical UGREEN NAS.
+
+**Optional Lidarr indexers:** the default port is loopback-only. Without SSH, temporarily change Lidarr's port mapping to `<NAS-LAN-IP>:8686:8686` in the editor, configure authentication and indexers from your LAN, then restore the original mapping. Never forward 8686 on your router. This is unnecessary for Cobalt-only downloads.
+
+### Command-line setup
+
+Prefer a terminal and a `.env`? Use `docker-compose.yml` (Compose 2.24 or newer). It runs the same services and supports more environment overrides.
 
 ```bash
 mkdir mint && cd mint
@@ -39,7 +56,7 @@ docker compose logs init        # prints the site URL and the admin login
 ```
 
 1. **Get a Plex claim token** at https://plex.tv/claim right before `up`. It expires after 4 minutes and is only needed the first time.
-2. **`MINT_DOMAIN`** is the domain pointing at this machine, with ports 80 and 443 open. Caddy gets the HTTPS certificate on its own. Leave it out to try Mint over plain http on your LAN (`http://<machine-ip>`).
+2. **`MINT_DOMAIN`** is your domain pointing at this machine, with ports 80 and 443 open. Caddy gets the HTTPS certificate on its own. Do not leave the example hostname unchanged; production sessions require HTTPS.
 3. **Sign in** with the login from `docker compose logs init` (lost it? `docker compose run --rm init`).
 4. **Open Admin.** A *To finish setup* box lists whatever is still missing, in plain words. Usually that's:
    - **Google sign‑in** so members can link YouTube Music → [Google](#google-youtube-music-linking)
@@ -48,11 +65,11 @@ docker compose logs init        # prints the site URL and the admin login
    Put the values in a `.env` next to `docker-compose.yml` (all keys are listed in [`.env.example`](.env.example)), then run `docker compose up -d` again.
 5. **Share the Plex library** with each member you approve. Their likes show up in Plexamp.
 
-The worker wires the rest itself on every start: it reads Plex's token once Plex is claimed, creates the Music library at `/music`, reads Lidarr's API key, and adds Lidarr's root folder and TorBox download client.
+The worker wires the rest itself on every start: it reads Plex's token once Plex is claimed, creates the Music library at `/music`, reads Lidarr's API key, and adds Lidarr's root folder and TorBox download client. Share the Plex library with each member you approve.
 
 **Updating:** `docker compose pull && docker compose up -d`. To make that automatic, see [CI/CD](#cicd).
 
-> The repository is private, so `curl` needs a token. Either run `gh api repos/ChickenBone/mint/contents/docker-compose.yml -H "Accept: application/vnd.github.raw" > docker-compose.yml`, or copy the file across. The GHCR images must be public, or the host needs `docker login ghcr.io` (see [CI/CD](#cicd)).
+> While the repository is private, downloads require GitHub authentication. For a terminal-free installation by other users, make the repository and all four Mint GHCR packages public first. Repository visibility does not automatically change existing package visibility. See [Publishing safely](#publishing-safely).
 
 ### Optional: the website on Vercel
 
@@ -179,20 +196,20 @@ sequenceDiagram
 | `plex` | :32400 | For Plexamp. Turn on Remote Access in Plex |
 | `init` | — | Runs once per `up`: generates secrets in the `secrets` volume and fixes folder ownership |
 
-Music lands in `./data/music` (`MUSIC_PATH`) and is owned by `PUID:PGID` (1000 by default). Secrets live in the `secrets` volume. Set any of them in `.env` and that value wins; a generated value is never overwritten.
+In the NAS file, music lives in the Docker `music` volume. In the command-line file it lands in `./data/music` (`MUSIC_PATH`). Files are owned by UID:GID 1000 by default. Secrets live in the `secrets` volume. Existing generated secrets are preserved across restarts; editing an encryption key or database password is not a rotation procedure. Do not delete the secrets volume independently of the database.
 
 ### Google (YouTube Music linking)
 
 1. In Google Cloud, create a project and enable **YouTube Data API v3**.
 2. Set up the OAuth consent screen with the scope `https://www.googleapis.com/auth/youtube.readonly`. While the app is in *Testing*, add each member's Google account as a test user (maximum 100). Otherwise, submit the app for verification.
 3. Create a **Web application** OAuth client with the redirect URI `https://<MINT_DOMAIN>/api/oauth/google/callback`. Google allows plain http only for `localhost`, so linking needs HTTPS or a browser on the server itself.
-4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in the NAS file's settings block, or in `.env` for the command-line stack.
 
 Liked songs come from the YouTube "Liked videos" playlist, filtered to music. Members turn individual playlists on or off.
 
 ### Lidarr + TorBox
 
-Set `TORBOX_API_KEY` in `.env`. On its next start, the worker turns Lidarr on (`LIDARR_ENABLED=auto`), adds the `/music` root folder and a **Torrent Blackhole** download client. The one manual step is **indexers**: open Lidarr (`http://localhost:8686` on the server, or through the SSH tunnel above) → Settings → Indexers, and add them directly or through Prowlarr.
+Set `TORBOX_API_KEY` in the compose settings or `.env`. On its next start, the worker turns Lidarr on (`LIDARR_ENABLED=auto`), adds the `/music` root folder and a **Torrent Blackhole** download client. The one manual step is **indexers**: open Lidarr (`http://localhost:8686` on the server, through an SSH tunnel, or the temporary LAN binding described in [NAS setup](#nas-setup-copy-paste-deploy)) → Settings → Indexers, and add them directly or through Prowlarr.
 
 The worker sends each blackhole torrent or magnet to TorBox, polls it, and downloads the finished files into the watch folder for Lidarr to import. If nothing is grabbed within `LIDARR_GRAB_TIMEOUT_MINUTES`, the track falls back to Cobalt. `LIDARR_ENABLED=false` means Cobalt only. `true` keeps Lidarr on without TorBox, if you've given it your own download client.
 
@@ -213,7 +230,17 @@ Cobalt runs internally only. If YouTube starts answering "sign in to confirm you
 - `docker compose ps` should show every service `running` (healthy) and `init` exited with code 0.
 - `docker compose logs worker` prints the same setup notes as the Admin page.
 - **Port 80 or 443 already in use:** set `HTTP_PORT`/`HTTPS_PORT` in `.env`. HTTPS certificates need the real 80/443, so put another proxy in front, or free the ports.
-- **Worker setup or Google links point at `localhost`:** without `MINT_DOMAIN`, Mint assumes `PUBLIC_URL=http://localhost`. Set `PUBLIC_URL=http://<machine-ip>` in `.env` if you browse from another device.
+- **Login does not persist:** use HTTPS, not an HTTP IP address. Production session cookies are always Secure. Check that `MINT_DOMAIN` matches the hostname in your browser.
+
+### Publishing safely
+
+The local publication audit found no embedded credentials in tracked files or reachable Git history, including a redacted Gitleaks scan. This is a point-in-time check, not a guarantee that every vulnerability is absent.
+
+- Git author/committer metadata contains the maintainer's personal email address. Publishing exposes it. Decide whether that is acceptable before changing visibility; rewriting history requires a separate, coordinated migration.
+- Never commit `.env`, a filled-in NAS settings block, exported cookies, logs, database backups, or Docker volume contents. The committed screenshots use fictional demo data and generated cover art.
+- Production dependency auditing and Git-history secret scanning run in CI. Development-tool dependency advisories may still need upstream fixes; do not expose development servers to the internet.
+- After making the repository public, visit each package's **Package settings → Change visibility → Public**: `mint-web`, `mint-worker`, `mint-realtime`, and `mint-agent`. Verify unauthenticated pulls before advertising the setup as ready for other users.
+- Use downloads only for content you are authorized to acquire and share.
 
 ## Volunteer workers
 
