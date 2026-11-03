@@ -2,7 +2,8 @@
 
 Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs each member's YouTube Music likes and playlists, downloads the songs to the host, and serves them through Plex and Plexamp.
 
-- **Public site.** A hero wall built from real cover art in the library, live stats, a live pipeline board (downloading → importing → sonic scan), a searchable library that links each song out to YouTube Music, and a request‑access form. The site never streams audio; listening happens in Plexamp.
+- **Public site.** A hero wall built from real cover art in the library, live stats, a live pipeline board (downloading → importing → sonic scan), a searchable library that links each song out to YouTube Music, and a request‑access form. Public visitors cannot stream audio.
+- **Member listening.** Approved members can open **Listen** for full browser playback in the genuine Plexamp interface, or launch the installed Plexamp app.
 - **Member dashboard.** A Spotify‑style app with liked songs, playlists, the library, per‑track job progress, sync settings, and an admin area for approving people.
 - **Pipeline.** Lidarr and TorBox are tried first; a self‑hosted Cobalt rip is the fallback. Files are tagged and moved into the shared library, Plex scans them, sonic analysis runs, and per‑user Plex playlists are created.
 
@@ -140,6 +141,22 @@ You don't need this; the compose stack serves the site itself. Use it if you'd r
 
 ## Architecture
 
+### Browser listening MVP
+
+`/listen` hosts the pinned Plexamp **4.13.2** browser frontend with Mint's own catalog and HTMLAudio adapter. Builds download the official archive and verify its SHA-256; vendor code is not checked into this repository. This is a Mint compatibility integration, not an official Plex web player or a replacement for native Plexamp.
+
+Approved, signed-in Mint members can browse artists/albums, search, listen to liked songs and their synced playlists, and use playback/seek/volume, queue, shuffle and repeat controls. Preferences and recent plays stay in member-namespaced browser storage; queues stay in the current tab. **Open Plexamp** launches the installed app, whose Plex sign-in and library invitation remain separate.
+
+The web service has no music mount or media-network access. It proxies `/listen/api/audio/...` to `PLAYBACK_WORKER_URL=http://worker:8080` over the private data network, using a short-lived, session/track-bound signed claim. The worker rechecks approval and session expiry, confines reads to its configured library folders and supports HTTP byte ranges. Access is checked during streaming and every 15 seconds in the player, including when audio is already buffered. **Do not publish worker port 8080**, and never put a Plex administrator token in browser settings.
+
+MP3, FLAC, M4A/MP4, AAC, Ogg/Opus and WAV are served without transcoding; actual codec support depends on the browser. Native DSP, loudness analysis, sonic radio, remote casting, downloads/offline mode and Plex cloud/premium services are not implemented by this adapter. Existing Plex entitlements are not bypassed. Unsupported actions report errors rather than granting features.
+
+Docker builds include the assets automatically. For local development, run `npm run player:prepare` once (Node 22+, `tar` and `bzip2`), set `PLAYBACK_WORKER_URL=http://localhost:8080`, and start the web and worker normally. Browser playback currently targets the all-in-one Docker deployment. Vercel cannot reach `http://worker:8080`; private gateway connectivity, asset packaging and streaming limits must be validated before enabling this integration there. Do not expose the worker publicly as a workaround.
+
+**Updating an existing NAS project:** wait for the GitHub **Release** workflow for the desired commit to finish successfully before pulling `latest`. In UGREEN Docker → Project, keep your current Compose settings, storage path and custom mounts. Add `PLAYBACK_WORKER_URL: http://worker:8080` under the `web` service's `environment`, then pull the new `mint-web` and `mint-worker` images and recreate both containers. A restart alone does not use a newly pulled image. Alternatively, with the current Compose file, run `docker compose pull web worker && docker compose up -d --no-deps web worker`. Do not delete project data, rerun the old volume migration or obtain a new Plex claim.
+
+Keep `/volume2/MusicVol2` mounted read-only at `/existing-music` in the worker. If Plex also sees those originals at `/existing-music`, keep `EXISTING_PLEX_MUSIC_DIR=/existing-music`, your existing Plex token, section ID `2` and read-only configuration. After recreating both services, sign in at `https://mint.chickenbone.dev`, choose **Listen**, and play an indexed, downloaded track. Missing tracks still need a successful existing-library index; this update does not fix a mismatched mount automatically. Public/logged-out access to `/listen` must redirect to login.
+
 Everything runs from one compose file on your server. Volunteer workers are optional extra machines. The NAS template adds `cloudflared → Caddy` as the public entry path, with no published Caddy ports. The diagram below shows the direct-hosting command-line stack; both use the same application and media boundaries.
 
 - **Your server** runs the website, the WebSocket gateway, the upload hub, Postgres, Redis, and the media side: Plex, Lidarr, Cobalt and the pipeline.
@@ -159,6 +176,7 @@ flowchart LR
     end
     web & rt & hub --> pg & redis
     worker[worker · pipeline] --> pg & redis
+    web -- approved member audio<br/>signed private request --> worker
     subgraph media[media network · the barrier]
       lidarr[Lidarr] --- cobalt[Cobalt]
       prowlarr[Prowlarr] --> lidarr
@@ -357,7 +375,7 @@ Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
 ## Notes
 
-- **No audio on the website.** The public site shows titles, artists and cover art, and links out to YouTube Music. Audio only leaves the server through Plex, to the members you share the library with. Plex sonic analysis drives the "Sonic analysis" lane on the board, and Plexamp's Sonic Radio and Sweet Fades.
+- **No public audio.** Public pages remain browse-only. Approved members can listen through Mint's authenticated browser gateway or through a separately shared Plex library. Plex sonic analysis still drives the "Sonic analysis" lane; native Plexamp's Sonic Radio and Sweet Fades are separate from the browser MVP.
 - **Upgrading from a version with previews.** Migration `0002_drop_previews` moves any track stuck in the old `previewing` stage to `scanning` and drops the preview columns. The `previews` Docker volume is no longer used; remove it with `docker volume rm mint_previews`.
 - **Unverified integrations.** Some assumptions about external APIs are untested against live instances: Lidarr's `?mbId=` and `?foreignAlbumId=` lookups, and Plex's `musicAnalysisVersion` as the "sonic done" marker. Check the worker logs on first run.
 - **Upgrading from the split Vercel setup.** `deploy/Caddyfile` and the `CADDYFILE`, `selfhost-web` and `local-db` options are gone; Caddy's config now lives inside the compose files. To keep the site on Vercel, add `COMPOSE_FILE=docker-compose.yml:docker-compose.vercel.yml` and `MINT_DOMAIN=mint.chickenbone.dev` to your existing `.env`, then run `docker compose up -d`. Your existing `ENCRYPTION_KEY`, `MINT_SIGNING_SECRET`, `DATABASE_URL` and `REDIS_URL` keep winning over generated values.

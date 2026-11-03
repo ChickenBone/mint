@@ -115,7 +115,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           </Section>
         )}
 
-        <Section title="Listening in Plexamp">
+        <Section title="Listen">
+          <p className="mb-4 max-w-2xl text-muted">Play downloaded music here with the Plexamp browser interface, or open the installed Plexamp app. Browser listening uses your approved Mint account; the installed app needs a separate Plex library invitation.</p>
+          <div className="mb-6 flex flex-wrap gap-3">
+            <a href="/listen" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Listen in browser</a>
+            <a href="plexamp://" className="rounded-full bg-elevated px-5 py-2.5 font-semibold hover:bg-hover">Open Plexamp</a>
+          </div>
           <ol className="flex max-w-2xl list-decimal flex-col gap-2 pl-5 text-muted marker:text-faint">
             <li>Install Plexamp on your phone or desktop and sign in with your Plex account.</li>
             <li>Accept the library invite from the server admin. If you don&rsquo;t have one, ask them to share Mint&rsquo;s music library with your Plex email.</li>

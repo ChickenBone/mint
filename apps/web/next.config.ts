@@ -24,6 +24,9 @@ const config: NextConfig = {
   // Vercel builds its own output; standalone is for the self-hosted Docker image.
   output: process.env.VERCEL ? undefined : "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
+  outputFileTracingIncludes: {
+    "/listen/assets/*": ["./plexamp-assets/index.js", "../../deploy/plexamp/bridge.js"],
+  },
   transpilePackages: ["@mint/core"],
   serverExternalPackages: ["@node-rs/argon2", "bullmq", "pg", "ioredis"],
   poweredByHeader: false,
@@ -39,6 +42,10 @@ const config: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
         ],
+      },
+      {
+        source: "/listen/:path*",
+        headers: [{ key: "Content-Security-Policy", value: csp.replace("font-src 'self'", "font-src 'self' data:").replace("media-src 'none'", "media-src 'self'") }],
       },
     ];
   },

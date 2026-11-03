@@ -23,6 +23,7 @@ import { processTorboxDownload } from "./jobs/torbox-bridge";
 import { log } from "./log";
 import { connection, queues } from "./queues";
 import { updateTrack } from "./track-state";
+import { servePlayback } from "./playback";
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL || "admin@mint.local";
@@ -91,6 +92,16 @@ async function main() {
   }
 
   const server = http.createServer(async (req, res) => {
+    const media = /^\/playback\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
+    if (media && (req.method === "GET" || req.method === "HEAD")) {
+      try { await servePlayback(req, res, media[1]!); }
+      catch (err) {
+        log.error({ err }, "playback request failed");
+        if (!res.headersSent) res.writeHead(503).end("Playback unavailable");
+        else res.destroy();
+      }
+      return;
+    }
     if (req.url !== "/healthz") return res.writeHead(404).end();
     try {
       await getRedis().ping();

@@ -167,6 +167,7 @@ services:
     image: ghcr.io/chickenbone/mint-web:latest
     environment:
       MINT_DOMAIN: *domain
+      PLAYBACK_WORKER_URL: http://worker:8080
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
     volumes:

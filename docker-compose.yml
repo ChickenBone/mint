@@ -83,7 +83,9 @@ services:
   web:
     <<: *app
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-web:${MINT_TAG:-latest}
-    environment: *public-env
+    environment:
+      <<: *public-env
+      PLAYBACK_WORKER_URL: http://worker:8080
     volumes: [secrets:/secrets:ro]
     networks: [edge, data]
     depends_on: &needs-data

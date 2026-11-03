@@ -11,6 +11,7 @@
     "./events": "./src/events.ts",
     "./stages": "./src/stages.ts",
     "./crypto": "./src/crypto.ts",
+    "./playback": "./src/playback.ts",
     "./queues": "./src/queues.ts",
     "./redis": "./src/redis.ts",
     "./env": "./src/env.ts",

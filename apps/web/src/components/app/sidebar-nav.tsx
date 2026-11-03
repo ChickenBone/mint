@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { Artwork } from "@/components/artwork";
-import { Activity, Heart, Home, Library, ListMusic, Server, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Heart, Home, Library, ListMusic, Play, Server, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -25,6 +25,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
   const items = [
     { href: "/app", label: "Home", icon: Home, exact: true },
     { href: "/app/library", label: "Library", icon: Library },
+    { href: "/listen", label: "Listen", icon: Play },
     { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
     { href: "/app/workers", label: "Workers", icon: Server },
     { href: "/app/settings", label: "Settings", icon: Settings },
@@ -37,7 +38,11 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
       <ul className="rounded-lg bg-surface p-2">
         {items.map(({ href, label, icon: Icon, exact, badge, alert }) => (
           <li key={href}>
-            <Link
+            {href === "/listen" ? (
+              <a href={href} className="flex items-center gap-4 rounded-md px-3 py-2.5 font-semibold text-muted transition-colors hover:text-fg">
+                <Icon className="size-5" aria-hidden /><span className="flex-1">{label}</span>
+              </a>
+            ) : <Link
               href={href}
               aria-current={isActive(href, exact) ? "page" : undefined}
               className={clsx(
@@ -50,7 +55,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
               {badge != null && (
                 <span className={clsx("rounded-full px-2 py-0.5 text-xs tabular", alert ? "bg-mint text-mint-ink" : "bg-hover text-muted")}>{badge}</span>
               )}
-            </Link>
+            </Link>}
           </li>
         ))}
       </ul>

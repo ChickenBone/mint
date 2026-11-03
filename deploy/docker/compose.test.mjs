@@ -88,6 +88,8 @@ test("data and media remain behind the public gateway", () => {
   assert.ok(!Object.hasOwn(services.web.networks, "media"));
   assert.ok(!Object.hasOwn(services.hub.networks, "media"));
   assert.equal(services.worker.depends_on.init.condition, "service_completed_successfully");
+  assert.equal(services.web.environment.PLAYBACK_WORKER_URL, "http://worker:8080");
+  assert.deepEqual(Object.keys(services.web.networks), ["data", "edge"]);
   assert.equal(services.postgres.depends_on.init.condition, "service_completed_successfully");
 });
 

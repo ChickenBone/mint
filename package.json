@@ -6,6 +6,7 @@
   "workspaces": ["packages/*", "apps/*"],
   "engines": { "node": ">=22" },
   "scripts": {
+    "player:prepare": "node deploy/plexamp/install.mjs",
     "dev:web": "npm run dev -w @mint/web",
     "dev:worker": "npm run dev -w @mint/worker",
     "dev:realtime": "npm run dev -w @mint/realtime",

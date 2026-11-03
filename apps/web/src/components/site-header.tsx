@@ -42,9 +42,9 @@ export function SiteFooter() {
   return (
     <footer className="border-t border-line/60">
       <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-sm text-faint sm:flex-row sm:items-center sm:justify-between sm:px-8">
-        <p>Mint is a private library for invited members. Songs are played in Plexamp, not on this site.</p>
+        <p>Mint is a private library for approved members. Public visitors can browse; members can listen.</p>
         <p>
-          Listen in full with <span className="text-muted">Plexamp</span>.
+          Listen in your browser or with <span className="text-muted">Plexamp</span>.
         </p>
       </div>
     </footer>
