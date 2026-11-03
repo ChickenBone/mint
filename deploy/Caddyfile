@@ -35,10 +35,6 @@ hub.{$MINT_DOMAIN} {
 		}
 	}
 
-	handle /media/* {
-		reverse_proxy hub:8090
-	}
-
 	handle {
 		respond 404
 	}

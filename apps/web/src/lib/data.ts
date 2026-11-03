@@ -30,7 +30,7 @@ export async function getRecentlyReady(limit = 18): Promise<TrackView[]> {
   const rows = await db()
     .select()
     .from(t)
-    .where(and(inArray(t.stage, [...LIBRARY_STAGES]), eq(t.hasPreview, true)))
+    .where(inArray(t.stage, [...LIBRARY_STAGES]))
     .orderBy(desc(sql`coalesce(${t.readyAt}, ${t.updatedAt})`))
     .limit(limit);
   return rows.map(toTrackView);
@@ -45,7 +45,7 @@ export interface LibraryPage {
 export async function searchLibrary(opts: { q?: string; cursor?: string | null; limit?: number }): Promise<LibraryPage> {
   const limit = Math.min(opts.limit ?? 50, 100);
   const q = opts.q?.trim().slice(0, 100);
-  const conds = [inArray(t.stage, [...LIBRARY_STAGES]), eq(t.hasPreview, true)];
+  const conds = [inArray(t.stage, [...LIBRARY_STAGES])];
   if (q) {
     const like = `%${q.replace(/[%_\\]/g, "\\$&")}%`;
     conds.push(or(ilike(t.title, like), ilike(t.artist, like), ilike(t.album, like))!);

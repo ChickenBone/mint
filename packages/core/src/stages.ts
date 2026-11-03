@@ -6,7 +6,6 @@ export const STAGES = [
   "importing",
   "tagging",
   "scanning",
-  "previewing",
   "analyzing",
   "ready",
   "failed",
@@ -24,7 +23,6 @@ export const STAGE_LABEL: Record<Stage, string> = {
   importing: "Importing",
   tagging: "Tagging",
   scanning: "Plex scan",
-  previewing: "Preview",
   analyzing: "Sonic analysis",
   ready: "Ready",
   failed: "Failed",
@@ -35,7 +33,7 @@ export const PIPELINE_LANES = [
   { id: "match", label: "Matching", stages: ["queued", "matching", "searching"] },
   { id: "download", label: "Downloading", stages: ["downloading"] },
   { id: "import", label: "Importing", stages: ["importing", "tagging"] },
-  { id: "scan", label: "Plex scan", stages: ["scanning", "previewing"] },
+  { id: "scan", label: "Plex scan", stages: ["scanning"] },
   { id: "sonic", label: "Sonic analysis", stages: ["analyzing"] },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; stages: readonly Stage[] }>;
 

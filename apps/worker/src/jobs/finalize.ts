@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm";
 import { config } from "../config";
 import { exists } from "../files";
 import { log } from "../log";
-import { makeArtwork, makePreview, probe, tagInto } from "../media";
+import { makeArtwork, probe, tagInto } from "../media";
 import { safeSegment } from "../parse";
 import { queues } from "../queues";
 import { coverArtUrl } from "../services/musicbrainz";
@@ -16,8 +16,9 @@ import { stage, updateTrack } from "../track-state";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-async function buildArtwork(track: typeof schema.tracks.$inferSelect): Promise<string | null> {
-  const dest = path.join(config.previewDir, "art", `${track.id}.jpg`);
+/** Fetches cover art into staging for embedding; the source URL is what the website shows. */
+async function buildArtwork(track: typeof schema.tracks.$inferSelect): Promise<{ file: string; url: string } | null> {
+  const dest = path.join(config.stagingDir, `${track.id}.cover.jpg`);
   const candidates = [
     track.mbReleaseGroupId ? coverArtUrl(track.mbReleaseGroupId) : null,
     `https://i.ytimg.com/vi/${track.youtubeVideoId}/maxresdefault.jpg`,
@@ -26,7 +27,7 @@ async function buildArtwork(track: typeof schema.tracks.$inferSelect): Promise<s
   for (const src of candidates) {
     try {
       await makeArtwork(src, dest);
-      return dest;
+      return { file: dest, url: src };
     } catch {
       /* try next source */
     }
@@ -40,8 +41,9 @@ export async function processFinalize(job: Job<FinalizeJob>) {
   if (!track) return { skipped: "deleted" };
 
   await stage(track.id, "tagging", "Tagging and artwork", 0.1);
-  const art = await buildArtwork(track);
-  if (art) await updateTrack(track.id, { hasArtwork: true });
+  const cover = await buildArtwork(track);
+  const art = cover?.file ?? null;
+  if (cover) await updateTrack(track.id, { artworkUrl: cover.url });
 
   let filePath = job.data.sourcePath;
   if (!job.data.inLibrary) {
@@ -77,11 +79,9 @@ export async function processFinalize(job: Job<FinalizeJob>) {
     bytes: stat.size,
     codec: info.codec,
     durationSec: info.durationSec ?? track.durationSec,
+    progress: 1,
   });
-
-  await stage(track.id, "previewing", "Cutting 30s preview", 0.5);
-  await makePreview(filePath, path.join(config.previewDir, `${track.id}.mp3`), config.previewSeconds);
-  await updateTrack(track.id, { hasPreview: true, progress: 1 });
+  if (art) await fs.unlink(art).catch(() => undefined);
 
   if (!config.plexEnabled) {
     await updateTrack(track.id, { stage: "ready", detail: null, readyAt: new Date(), progress: 1 }, "Ready (Plex not configured)");

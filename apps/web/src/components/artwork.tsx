@@ -1,18 +1,24 @@
+"use client";
+
 import type { TrackView } from "@mint/core/events";
 import clsx from "clsx";
 import { Music2 } from "lucide-react";
-import { artUrl } from "@/lib/media";
+import { useState } from "react";
 
-/** Square cover art served from the preview volume; falls back to a quiet tile. */
-export function Artwork({ track, className }: { track: Pick<TrackView, "id" | "hasArtwork" | "album" | "title">; className?: string; sizes?: string }) {
+/** Square cover art from Cover Art Archive or YouTube; falls back to a quiet tile. */
+export function Artwork({ track, className, eager }: { track: Pick<TrackView, "artworkUrl">; className?: string; eager?: boolean }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const src = track.artworkUrl && failed !== track.artworkUrl ? track.artworkUrl : null;
   return (
     <div className={clsx("relative aspect-square shrink-0 overflow-hidden rounded-md bg-elevated", className)}>
-      {track.hasArtwork ? (
+      {src ? (
         <img
-          src={artUrl(track.id)}
+          src={src}
           alt=""
-          loading="lazy"
+          loading={eager ? "eager" : "lazy"}
           decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(src)}
           className="size-full object-cover"
         />
       ) : (

@@ -9,7 +9,7 @@ import { publicUrl } from "@/lib/request";
 export const metadata: Metadata = { title: "Workers" };
 
 const FACTS: Array<[string, string]> = [
-  ["What it does", "Asks Mint for a song, rips the audio with its own Cobalt, and uploads it. The home server tags it, cuts the preview and hands it to Plex."],
+  ["What it does", "Asks Mint for a song, rips the audio with its own Cobalt, and uploads it. The home server tags it and hands it to Plex."],
   ["What it needs", "Docker, a few hundred MB of disk, and outbound HTTPS. No open ports, no port forwarding."],
   ["What it never sees", "Plex, Lidarr, TorBox, the database, or anyone's account. Its token can only claim jobs and upload audio."],
 ];

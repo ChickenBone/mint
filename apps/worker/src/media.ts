@@ -89,19 +89,6 @@ export async function tagInto(src: string, destNoExt: string, meta: TagMeta, cov
   return dest;
 }
 
-/** First 30 seconds, loudness-normalised, short fade out — served publicly as the preview. */
-export async function makePreview(src: string, dest: string, seconds = 30) {
-  await ensureDir(path.dirname(dest));
-  const fade = Math.max(0, seconds - 3);
-  await run("ffmpeg", [
-    "-y", "-v", "error", "-t", String(seconds), "-i", src, "-vn", "-ac", "2", "-ar", "44100",
-    "-af", `loudnorm=I=-14:TP=-1.5:LRA=11,afade=t=in:d=0.3,afade=t=out:st=${fade}:d=3`,
-    "-c:a", "libmp3lame", "-b:a", "160k", "-id3v2_version", "0", `${dest}.tmp.mp3`,
-  ]);
-  const fs = await import("node:fs/promises");
-  await fs.rename(`${dest}.tmp.mp3`, dest);
-}
-
 /** Center-crops any image (URL or path) to a 600px square JPEG. */
 export async function makeArtwork(input: string, dest: string) {
   await ensureDir(path.dirname(dest));

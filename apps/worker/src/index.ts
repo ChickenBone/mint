@@ -40,7 +40,7 @@ async function seedAdmin() {
 async function main() {
   await runMigrations(process.env.MIGRATIONS_DIR ?? path.resolve(process.cwd(), "migrations"));
   await seedAdmin();
-  await Promise.all([config.stagingDir, config.previewDir, path.join(config.previewDir, "art")].map(ensureDir));
+  await ensureDir(config.stagingDir);
 
   const acquireWorker = new Worker(QUEUE.acquire, processAcquire as Processor, { connection, concurrency: config.concurrency.acquire });
   const finalizeWorker = new Worker(QUEUE.finalize, processFinalize, { connection, concurrency: config.concurrency.finalize });

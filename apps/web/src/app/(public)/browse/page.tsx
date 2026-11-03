@@ -3,7 +3,7 @@ import { LibraryBrowser } from "@/components/library-browser";
 import { getStats, searchLibrary } from "@/lib/data";
 import { formatCount } from "@/lib/format";
 
-export const metadata: Metadata = { title: "Browse", description: "Search the Mint library and play 30-second previews." };
+export const metadata: Metadata = { title: "Browse", description: "Search every song in the Mint library." };
 export const dynamic = "force-dynamic";
 
 export default async function Browse({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
@@ -14,7 +14,7 @@ export default async function Browse({ searchParams }: { searchParams: Promise<{
     <div className="mx-auto max-w-7xl px-5 py-12 sm:px-8">
       <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl">The library</h1>
       <p className="mt-3 max-w-2xl text-muted">
-        {formatCount(stats.tracks)} songs from {formatCount(stats.artists)} artists. Press play on any of them for a 30-second preview.
+        {formatCount(stats.tracks)} songs from {formatCount(stats.artists)} artists. Open any of them on YouTube Music.
       </p>
       <div className="mt-10">
         <LibraryBrowser initial={page} initialQuery={query} />

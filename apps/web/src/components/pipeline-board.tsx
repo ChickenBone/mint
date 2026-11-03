@@ -26,10 +26,10 @@ export function PipelineBoard({ initialTracks, initialStats }: { initialTracks: 
             lane.stages.reduce((n, s) => n + (stats.byStage[s] ?? 0), 0),
           );
           return (
-            <li key={lane.id} className="flex min-h-64 flex-col rounded-xl bg-surface p-3">
+            <li key={lane.id} className="flex min-h-72 flex-col rounded-xl bg-surface p-3">
               <div className="flex items-baseline justify-between px-1 pb-3">
                 <h3 className="text-sm font-semibold">{lane.label}</h3>
-                <span className="text-xs text-muted tabular">{formatCount(total)}</span>
+                <span className="text-2xl font-extrabold tracking-tight tabular">{formatCount(total)}</span>
               </div>
               {laneTracks.length === 0 ? (
                 <p className="px-1 text-sm text-faint">Nothing here right now.</p>
@@ -37,8 +37,8 @@ export function PipelineBoard({ initialTracks, initialStats }: { initialTracks: 
                 <ul className="flex flex-col gap-1">
                   {laneTracks.slice(0, PER_LANE).map((t) => (
                     <li key={`${t.id}-${flash[t.id] ?? 0}`} className={clsx("rounded-lg p-2", flash[t.id] && "stage-flash")}>
-                      <div className="flex items-center gap-2.5">
-                        <Artwork track={t} className="size-9 rounded" />
+                      <div className="flex items-center gap-3">
+                        <Artwork track={t} className="size-12 rounded" />
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">{t.title}</p>
                           <p className="truncate text-xs text-muted">{t.artist}</p>

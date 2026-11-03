@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LinkYoutubeCallout } from "@/components/app/link-youtube";
 import { LiveTrackList } from "@/components/app/live-track-list";
-import { PageHeader } from "@/components/app/page-header";
+import { firstCover, PageHeader } from "@/components/app/page-header";
 import { SyncPanel } from "@/components/app/sync-panel";
 import { FreshShelf } from "@/components/fresh-shelf";
 import { requireUser } from "@/lib/auth";
@@ -28,7 +28,7 @@ export default async function Home() {
     <>
       <PageHeader
         title={`${greeting()}, ${user.name.split(" ")[0]}`}
-        className="bg-[linear-gradient(180deg,color-mix(in_oklab,var(--color-mint)_18%,transparent),transparent)]"
+        backdrop={firstCover(yourRecent) ?? firstCover(fresh)}
         sub={
           acct ? (
             <p className="tabular">
@@ -50,7 +50,7 @@ export default async function Home() {
       {acct && jobs.length > 0 && (
         <section className="mt-4">
           <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-2xl font-bold tracking-tight">On the way</h2>
+            <h2 className="text-3xl font-extrabold tracking-[-0.025em]">On the way</h2>
             <Link href="/app/jobs" className="text-sm font-semibold text-muted hover:text-fg">All jobs</Link>
           </div>
           <LiveTrackList initial={jobs.slice(0, 6)} mode="jobs" />
@@ -60,7 +60,7 @@ export default async function Home() {
       {yourRecent.length > 0 && (
         <section className="mt-10">
           <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-2xl font-bold tracking-tight">Your recent likes</h2>
+            <h2 className="text-3xl font-extrabold tracking-[-0.025em]">Your recent likes</h2>
             <Link href="/app/liked" className="text-sm font-semibold text-muted hover:text-fg">Show all</Link>
           </div>
           <FreshShelf initial={yourRecent} liveAdd={false} />
@@ -68,8 +68,8 @@ export default async function Home() {
       )}
 
       <section className="mt-10">
-        <h2 className="mb-3 text-2xl font-bold tracking-tight">New on the server</h2>
-        <FreshShelf initial={fresh} />
+        <h2 className="mb-3 text-3xl font-extrabold tracking-[-0.025em]">New on the server</h2>
+        <FreshShelf initial={fresh} feature={false} />
       </section>
     </>
   );

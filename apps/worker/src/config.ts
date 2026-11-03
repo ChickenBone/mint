@@ -3,7 +3,6 @@ import { numberEnv, optionalEnv } from "@mint/core/env";
 export const config = {
   musicDir: optionalEnv("MUSIC_DIR", "/music"),
   stagingDir: optionalEnv("STAGING_DIR", "/data/staging"),
-  previewDir: optionalEnv("PREVIEW_DIR", "/data/previews"),
   blackholeTorrents: optionalEnv("BLACKHOLE_TORRENT_DIR", "/blackhole/torrents"),
   blackholeDownloads: optionalEnv("BLACKHOLE_DOWNLOAD_DIR", "/blackhole/downloads"),
   syncIntervalMin: numberEnv("SYNC_INTERVAL_MINUTES", 30),
@@ -17,7 +16,6 @@ export const config = {
     torbox: numberEnv("TORBOX_CONCURRENCY", 2),
   },
   plexEnabled: Boolean(process.env.PLEX_URL && process.env.PLEX_TOKEN && process.env.PLEX_MUSIC_SECTION_ID),
-  previewSeconds: numberEnv("PREVIEW_SECONDS", 30),
   /** auto: hand YouTube rips to volunteer workers when any are online (or when no local Cobalt). */
   remoteMode: optionalEnv("REMOTE_DOWNLOADS", "auto") as "auto" | "always" | "never",
   /** Take a job back from the remote pool and rip it locally after this long without a taker. */

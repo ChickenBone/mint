@@ -2,65 +2,38 @@
 
 import type { TrackView } from "@mint/core/events";
 import clsx from "clsx";
-import { Clock3, Sparkles } from "lucide-react";
-import { formatDuration } from "@/lib/format";
+import { ArrowUpRight, Clock3, Sparkles } from "lucide-react";
+import { formatDuration, youtubeMusicUrl } from "@/lib/format";
 import { Artwork } from "./artwork";
-import { PlayButton, useIsCurrent } from "./play-button";
-import { usePlayer } from "./player";
 import { ProgressBar, StageBadge } from "./stage-badge";
-
-function Equalizer() {
-  return (
-    <span className="eq flex h-3.5 items-end gap-0.5" aria-label="Playing">
-      <span className="h-full" />
-      <span className="h-full" />
-      <span className="h-full" />
-    </span>
-  );
-}
 
 function Row({
   track,
   index,
-  context,
   showStage,
   actions,
   flash,
 }: {
   track: TrackView;
   index: number;
-  context: TrackView[];
   showStage: boolean;
   actions?: (t: TrackView) => React.ReactNode;
   flash?: number;
 }) {
-  const player = usePlayer();
-  const { isCurrent, playing } = useIsCurrent(track.id);
   const inFlight = track.stage !== "ready" && track.stage !== "analyzing" && track.stage !== "failed";
   return (
     <li
       key={flash}
-      onDoubleClick={() => track.hasPreview && player.play(track, context)}
       className={clsx(
         "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_3.5rem]",
         flash && "stage-flash",
       )}
     >
-      <div className="relative grid size-8 place-items-center text-sm text-muted tabular">
-        <span className={clsx("group-hover:invisible group-focus-within:invisible", isCurrent && "invisible")}>{index + 1}</span>
-        <div className={clsx("absolute inset-0 grid place-items-center", isCurrent ? "visible" : "invisible group-hover:visible group-focus-within:visible")}>
-          {playing ? (
-            <span className="group-hover:hidden">
-              <Equalizer />
-            </span>
-          ) : null}
-          <PlayButton track={track} context={context} size="sm" className={clsx(playing && "hidden group-hover:grid")} />
-        </div>
-      </div>
+      <span className="text-center text-sm text-muted tabular">{index + 1}</span>
       <div className="flex min-w-0 items-center gap-3">
-        <Artwork track={track} className="size-10" />
+        <Artwork track={track} className={clsx("size-11 transition-[filter] duration-500", inFlight && "grayscale-[0.7]")} />
         <div className="min-w-0">
-          <p className={clsx("truncate font-medium", isCurrent ? "text-mint" : "text-fg")}>{track.title}</p>
+          <p className="truncate font-medium text-fg">{track.title}</p>
           <p className="truncate text-sm text-muted">{track.artist}</p>
         </div>
       </div>
@@ -75,8 +48,8 @@ function Row({
             )}
           </>
         ) : track.sonicAnalyzed ? (
-          <span className="inline-flex items-center gap-1 text-xs text-muted" title="Plex sonic analysis complete — works with Sonic Radio and Sweet Fades">
-            <Sparkles className="size-3.5 text-mint" aria-hidden /> Sonic
+          <span className="inline-flex items-center gap-1 text-xs text-muted" title="Plex sonic analysis complete. Works with Sonic Radio and Sweet Fades.">
+            <Sparkles className="size-3.5 text-warn" aria-hidden /> Sonic
           </span>
         ) : null}
       </div>
@@ -113,31 +86,37 @@ export function TrackList({
       </div>
       <ol className="mt-2">
         {tracks.map((t, i) => (
-          <Row key={t.id} track={t} index={i} context={tracks} showStage={showStage} actions={actions} flash={flash?.[t.id]} />
+          <Row key={t.id} track={t} index={i} showStage={showStage} actions={actions} flash={flash?.[t.id]} />
         ))}
       </ol>
     </div>
   );
 }
 
-/** Album-art card used on the landing page and home shelves. */
-export function TrackCard({ track, context }: { track: TrackView; context: TrackView[] }) {
-  const { isCurrent } = useIsCurrent(track.id);
+/** Album-art card. The cover is the whole point; it links out to the song on YouTube Music. */
+export function TrackCard({ track, feature = false, landing = false }: { track: TrackView; feature?: boolean; landing?: boolean }) {
   return (
-    <div className="group relative rounded-lg p-3 transition-colors duration-300 hover:bg-elevated">
-      <div className="relative">
-        <Artwork track={track} className="w-full shadow-[0_10px_30px_-12px_rgb(0_0_0/0.8)]" sizes="(min-width: 1024px) 200px, 45vw" />
-        <PlayButton
+    <a
+      href={youtubeMusicUrl(track.youtubeVideoId)}
+      target="_blank"
+      rel="noreferrer"
+      className={clsx("group relative block rounded-lg outline-offset-4", feature && "col-span-2 row-span-2", landing && "land")}
+    >
+      <div className="relative overflow-hidden rounded-md shadow-[0_18px_40px_-18px_rgb(0_0_0/0.9)]">
+        <Artwork
           track={track}
-          context={context}
-          className={clsx(
-            "absolute right-2 bottom-2 transition duration-300 ease-out-expo",
-            isCurrent ? "translate-y-0 opacity-100" : "translate-y-2 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100",
-          )}
+          eager={feature}
+          className="w-full rounded-none transition duration-700 ease-out-expo group-hover:scale-[1.04] group-focus-visible:scale-[1.04]"
         />
+        <span className="absolute top-2 right-2 grid size-8 translate-y-1 place-items-center rounded-full bg-bg/80 text-fg opacity-0 backdrop-blur-sm transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+          <ArrowUpRight className="size-4" aria-hidden />
+        </span>
       </div>
-      <p className={clsx("mt-3 truncate font-semibold", isCurrent ? "text-mint" : "text-fg")}>{track.title}</p>
-      <p className="truncate text-sm text-muted">{track.artist}</p>
-    </div>
+      <p className={clsx("mt-3 truncate font-semibold text-fg", feature && "sm:text-xl")}>{track.title}</p>
+      <p className={clsx("truncate text-sm text-muted", feature && "sm:text-base")}>
+        {track.artist}
+        <span className="sr-only"> (opens YouTube Music)</span>
+      </p>
+    </a>
   );
 }

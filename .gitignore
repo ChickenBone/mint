@@ -5,6 +5,7 @@ dist
 .env.*
 !.env.example
 !.env.development.example
+!.env.vercel.example
 *.log
 .DS_Store
 coverage

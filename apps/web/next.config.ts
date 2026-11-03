@@ -4,15 +4,14 @@ import type { NextConfig } from "next";
 const dev = process.env.NODE_ENV === "development";
 // Headers are baked in at build time, so stay origin-agnostic: 'self' covers same-origin wss:// for /ws.
 const extraConnect = [process.env.NEXT_PUBLIC_WS_URL, dev && "ws://localhost:3001"].filter(Boolean).join(" ");
-// On Vercel, previews and art stream straight from the home-server hub.
-const media = process.env.NEXT_PUBLIC_MEDIA_URL ? new URL(process.env.NEXT_PUBLIC_MEDIA_URL).origin : "";
 
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'" + (dev ? " 'unsafe-eval'" : ""),
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com ${media}`.trim(),
-  `media-src 'self' blob: ${media}`.trim(),
+  // Cover art is always remote: Cover Art Archive (redirects to archive.org) or YouTube thumbnails.
+  "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://*.archive.org",
+  "media-src 'none'",
   "font-src 'self'",
   `connect-src 'self' ${extraConnect}`.trim(),
   "frame-ancestors 'none'",

@@ -1,10 +1,9 @@
 /**
  * Mint hub: the only home-server HTTP surface besides the WebSocket gateway.
  *  - PUT  /ingest/:trackId   volunteer workers upload finished audio (signed, lease-bound token)
- *  - GET  /media/preview/:id.mp3, /media/art/:id.jpg   public 30s previews and cover art
- * It holds no Plex/Lidarr/TorBox credentials and only mounts the staging (rw) and preview (ro) volumes.
+ * It holds no Plex/Lidarr/TorBox credentials and only mounts the staging volume.
  */
-import { createReadStream, createWriteStream } from "node:fs";
+import { createWriteStream } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -37,44 +36,6 @@ class HttpFail extends Error {
 
 function json(res: http.ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" }).end(JSON.stringify(body));
-}
-
-// ---------- media ----------
-
-async function serveMedia(req: http.IncomingMessage, res: http.ServerResponse, rel: string, type: string) {
-  const root = path.resolve(config.previewDir);
-  const file = path.resolve(root, rel);
-  if (!file.startsWith(root + path.sep)) return json(res, 404, { error: "not found" });
-  const info = await fs.stat(file).catch(() => null);
-  if (!info?.isFile()) return json(res, 404, { error: "not found" });
-
-  const etag = `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
-  const headers: Record<string, string> = {
-    "content-type": type,
-    "accept-ranges": "bytes",
-    "cache-control": "public, max-age=86400, stale-while-revalidate=604800",
-    "access-control-allow-origin": "*",
-    "cross-origin-resource-policy": "cross-origin",
-    "x-content-type-options": "nosniff",
-    etag,
-    "last-modified": info.mtime.toUTCString(),
-  };
-  if (req.headers["if-none-match"] === etag) return res.writeHead(304, headers).end();
-
-  const m = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
-  if (m && (m[1] || m[2])) {
-    let start = m[1] ? Number(m[1]) : info.size - Number(m[2]);
-    let end = m[1] && m[2] ? Number(m[2]) : info.size - 1;
-    start = Math.max(0, start);
-    end = Math.min(end, info.size - 1);
-    if (start > end) return res.writeHead(416, { "content-range": `bytes */${info.size}` }).end();
-    res.writeHead(206, { ...headers, "content-range": `bytes ${start}-${end}/${info.size}`, "content-length": String(end - start + 1) });
-    if (req.method === "HEAD") return res.end();
-    return void pipeline(createReadStream(file, { start, end }), res).catch(() => undefined);
-  }
-  res.writeHead(200, { ...headers, "content-length": String(info.size) });
-  if (req.method === "HEAD") return res.end();
-  return void pipeline(createReadStream(file), res).catch(() => undefined);
 }
 
 // ---------- ingest ----------
@@ -166,14 +127,6 @@ const server = http.createServer((req, res) => {
   const p = url.pathname;
 
   if (p === "/healthz") return json(res, 200, { ok: true, uploading });
-
-  if (req.method === "GET" || req.method === "HEAD") {
-    const preview = /^\/media\/preview\/([0-9a-f-]{36})\.mp3$/i.exec(p);
-    if (preview && UUID.test(preview[1]!)) return void serveMedia(req, res, `${preview[1]!.toLowerCase()}.mp3`, "audio/mpeg");
-    const art = /^\/media\/art\/([0-9a-f-]{36})\.jpg$/i.exec(p);
-    if (art && UUID.test(art[1]!)) return void serveMedia(req, res, `art/${art[1]!.toLowerCase()}.jpg`, "image/jpeg");
-    return json(res, 404, { error: "not found" });
-  }
 
   const up = /^\/ingest\/([0-9a-f-]{36})$/i.exec(p);
   if (req.method === "PUT" && up && UUID.test(up[1]!)) {

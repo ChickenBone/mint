@@ -2,9 +2,34 @@
 
 Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs each member's YouTube Music likes and playlists, downloads the songs to the host, and serves them through Plex and Plexamp.
 
-- **Public site.** Live stats, a live pipeline board (downloading → importing → sonic scan), library browsing with 30‑second previews, and a request‑access form.
+- **Public site.** A hero wall built from real cover art in the library, live stats, a live pipeline board (downloading → importing → sonic scan), a searchable library that links each song out to YouTube Music, and a request‑access form. The site never streams audio; listening happens in Plexamp.
 - **Member dashboard.** A Spotify‑style app with liked songs, playlists, the library, per‑track job progress, sync settings, and an admin area for approving people.
 - **Pipeline.** Lidarr and TorBox are tried first; a self‑hosted Cobalt rip is the fallback. Files are tagged and moved into the shared library, Plex scans them, sonic analysis runs, and per‑user Plex playlists are created.
+
+## Quick deploy (prod)
+
+The short version. Each step links to the detailed section below if something needs explaining.
+
+1. **Make the data stores.** Create a [Neon](https://neon.tech) Postgres database and an [Upstash](https://upstash.com) Redis database (fixed‑price plan). Keep the Neon *direct* URL, the Neon *pooled* URL and the Upstash `rediss://` URL. → [details](#1-data-neon--upstash)
+2. **Point DNS at your home server.** Create A records for `ws.mint.chickenbone.dev` and `hub.mint.chickenbone.dev`, DNS only (no Cloudflare proxy). Open ports 80, 443 and 32400.
+3. **Start the home server.**
+
+   ```bash
+   mkdir -p /srv/mint/deploy && cd /srv/mint
+   curl -O https://raw.githubusercontent.com/ChickenBone/mint/main/docker-compose.yml
+   curl -o deploy/Caddyfile https://raw.githubusercontent.com/ChickenBone/mint/main/deploy/Caddyfile
+   curl -o .env https://raw.githubusercontent.com/ChickenBone/mint/main/.env.example
+   mkdir -p music blackhole/torrents blackhole/downloads && sudo chown -R 1000:1000 music blackhole
+   nano .env          # fill in the URLs from step 1, the keys (openssl rand -base64 32 / 48), PLEX_CLAIM, ADMIN_EMAIL
+   docker compose pull && docker compose up -d
+   ```
+
+   → [details](#2-home-server)
+4. **Deploy the website on Vercel.** Import `ChickenBone/mint`, set Root Directory to `apps/web`, paste the variables from [`apps/web/.env.vercel.example`](apps/web/.env.vercel.example), and add the domain `mint.chickenbone.dev`. → [details](#3-vercel)
+5. **Wire up the services once.** Set up the Google OAuth client, add the Lidarr blackhole client, create the Plex Music library at `/music`, then put the API keys into `.env` and run `docker compose up -d` again. → [Google](#google-youtube-music-linking) · [Lidarr](#lidarr--torbox) · [Plex](#plex)
+6. **Sign in** at https://mint.chickenbone.dev with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, approve requests under **Admin**, and share the Plex library with each member.
+
+To update later, push to `main`: CI builds the images, and Vercel redeploys the site. On the server, run `docker compose pull && docker compose up -d`, or turn on [auto‑deploy](#cicd).
 
 ## Architecture
 
@@ -26,7 +51,7 @@ flowchart LR
   subgraph home[Home server]
     caddy[Caddy :443]
     caddy -- ws.mint --> rt[realtime]
-    caddy -- hub.mint --> hub[hub<br/>uploads in · previews out]
+    caddy -- hub.mint --> hub[hub<br/>volunteer uploads in]
     worker[worker · pipeline]
     subgraph media[media network · the barrier]
       lidarr[Lidarr] --- cobalt[Cobalt]
@@ -49,13 +74,48 @@ flowchart LR
 | --- | --- |
 | `apps/web` | Next.js 16: landing, browse, auth, dashboard, server actions, worker registration, and the agent API (`/api/agent/v1/*`) |
 | `apps/realtime` | WebSocket gateway. Relays Redis pub/sub to public, per‑user and admin channels. Browsers authenticate with a signed 60‑second ticket from `/api/realtime/ticket` |
-| `apps/worker` | Two entry points. `index.js` runs the pipeline: YouTube sync → match (MusicBrainz) → acquire (Lidarr+TorBox / volunteer pool / local Cobalt) → finalize (tag, preview, move) → Plex scan → sonic watch → playlists. `hub.js` takes volunteer uploads and serves previews and artwork |
+| `apps/worker` | Two entry points. `index.js` runs the pipeline: YouTube sync → match (MusicBrainz) → acquire (Lidarr+TorBox / volunteer pool / local Cobalt) → finalize (tag, embed artwork, move) → Plex scan → sonic watch → playlists. `hub.js` takes volunteer uploads and validates them with ffprobe |
 | `apps/agent` | The volunteer worker (`ghcr.io/chickenbone/mint-agent`) |
 | `packages/core` | Drizzle schema and migrations, env, crypto, the agent protocol, event bus, queue names, stats |
+
+**How a like becomes a file.** Every track moves through the same stages, and each change is published over the WebSocket, so the public board and the member dashboard update live.
+
+```mermaid
+flowchart LR
+  like([Like in YouTube Music]) --> queued --> matching[matching<br/>MusicBrainz] --> searching
+  searching -- release found --> dl[downloading<br/>Lidarr + TorBox]
+  searching -- no release / timeout --> rip[downloading<br/>volunteer or local Cobalt]
+  dl --> importing
+  rip --> tagging
+  importing --> tagging[tagging<br/>tags + cover art]
+  tagging --> scanning[scanning<br/>Plex scan] --> analyzing[analyzing<br/>sonic analysis] --> ready([ready in Plexamp])
+  matching & dl & rip & scanning -. gives up .-> failed([failed])
+```
+
+Cover art comes from the Cover Art Archive when the song matched a MusicBrainz release, and from the YouTube thumbnail otherwise. It's embedded in the file and saved as `cover.jpg` for Plex. The website shows the same remote image, so the home server never serves media to the public.
 
 **The barrier.** Only the `worker` joins the `media` network, where Lidarr, Cobalt and Plex live. Cobalt and Plex's API have no route from the internet except Plex's own port, and Lidarr is bound to `127.0.0.1:8686`. Vercel never talks to the home server directly: it reads and writes the database and sends work through Redis queues. The hub has no Plex, Lidarr or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
 
 **How a volunteer job flows.**
+
+```mermaid
+sequenceDiagram
+  participant W as worker (home)
+  participant V as web (Vercel)
+  participant A as mint-agent (volunteer)
+  participant H as hub (home)
+  W->>W: Lidarr/TorBox fails or times out
+  W->>V: put track in remote pool (via DB)
+  A->>V: claim (bearer token)
+  V-->>A: video ID + 5 min lease + signed upload token
+  A->>A: rip audio with its own Cobalt
+  A->>V: progress (extends lease)
+  A->>H: PUT /ingest/:id
+  H->>H: ffprobe checks duration and lease
+  H->>W: queue finalize
+  W->>W: tag, file, Plex scan, sonic analysis
+```
+
 1. Lidarr/TorBox fails or times out.
 2. If a volunteer worker is online (`REMOTE_DOWNLOADS=auto`), the track goes into the remote pool. Otherwise the home server rips it with its own Cobalt.
 3. An agent claims the track. Claims use `FOR UPDATE SKIP LOCKED` and give a five‑minute lease that progress reports extend.
@@ -179,5 +239,6 @@ Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
 ## Notes
 
-- **Previews.** Previews are 30‑second clips cut by the worker. Plex sonic analysis drives the "sonic scan" stage on the board, and Plexamp's Sonic Radio and Sweet Fades. You are responsible for making sure that sharing previews of your library publicly is lawful where you operate. Put the public pages behind auth if in doubt.
+- **No audio on the website.** The public site shows titles, artists and cover art, and links out to YouTube Music. Audio only leaves the server through Plex, to the members you share the library with. Plex sonic analysis drives the "Sonic analysis" lane on the board, and Plexamp's Sonic Radio and Sweet Fades.
+- **Upgrading from a version with previews.** Migration `0002_drop_previews` moves any track stuck in the old `previewing` stage to `scanning` and drops the preview columns. The `previews` Docker volume is no longer used; remove it with `docker volume rm mint_previews`.
 - **Unverified integrations.** Some assumptions about external APIs are untested against live instances: Lidarr's `?mbId=` and `?foreignAlbumId=` lookups, and Plex's `musicAnalysisVersion` as the "sonic done" marker. Check the worker logs on first run.

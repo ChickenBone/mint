@@ -15,8 +15,7 @@ export function toTrackView(t: Track): TrackView {
     detail: t.detail,
     source: t.source,
     sonicAnalyzed: t.sonicAnalyzed,
-    hasPreview: t.hasPreview,
-    hasArtwork: t.hasArtwork,
+    artworkUrl: t.artworkUrl ?? `https://i.ytimg.com/vi/${t.youtubeVideoId}/mqdefault.jpg`,
     youtubeVideoId: t.youtubeVideoId,
     updatedAt: t.updatedAt.toISOString(),
   };

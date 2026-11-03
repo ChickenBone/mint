@@ -9,7 +9,6 @@ const tone: Record<Stage, string> = {
   importing: "text-mint",
   tagging: "text-mint",
   scanning: "text-mint",
-  previewing: "text-mint",
   analyzing: "text-warn",
   ready: "text-fg",
   failed: "text-danger",

@@ -4,7 +4,7 @@
 # This stack is everything that must live next to the music:
 #   caddy     ws.<domain> -> realtime, hub.<domain> -> hub        (the only public entry points)
 #   realtime  WebSocket gateway (Redis pub/sub -> browsers)
-#   hub       volunteer uploads in, 30s previews and cover art out. No Plex/Lidarr/TorBox access.
+#   hub       volunteer uploads in. No Plex/Lidarr/TorBox access.
 #   worker    the pipeline: sync, Lidarr/TorBox, local Cobalt fallback, tagging, Plex, sonic
 #   lidarr, cobalt, plex                                            (media network only)
 #
@@ -45,10 +45,6 @@ services:
     <<: *app
     profiles: [selfhost-web]
     image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-web:${MINT_TAG:-latest}
-    environment:
-      PREVIEW_DIR: /data/previews
-    volumes:
-      - previews:/data/previews:ro
     networks: [edge, data]
     depends_on:
       postgres: { condition: service_healthy, required: false }
@@ -68,11 +64,9 @@ services:
     command: ["node", "--enable-source-maps", "dist/hub.js"]
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      PREVIEW_DIR: /data/previews
       STAGING_DIR: /data/staging
       HUB_PORT: "8090"
     volumes:
-      - previews:/data/previews:ro
       - staging:/data/staging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -89,7 +83,6 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       MUSIC_DIR: /music
-      PREVIEW_DIR: /data/previews
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
       BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
@@ -99,7 +92,6 @@ services:
     volumes:
       - ${MUSIC_PATH:-./data/music}:/music
       - ${BLACKHOLE_PATH:-./data/blackhole}:/blackhole
-      - previews:/data/previews
       - staging:/data/staging
     networks: [data, media]
     depends_on:
@@ -197,7 +189,6 @@ volumes:
   caddy_config: {}
   postgres: {}
   redis: {}
-  previews: {}
   staging: {}
   lidarr_config: {}
   plex_config: {}

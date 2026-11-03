@@ -130,8 +130,8 @@ export const tracks = pgTable(
     codec: text("codec"),
     plexRatingKey: text("plex_rating_key"),
     sonicAnalyzed: boolean("sonic_analyzed").notNull().default(false),
-    hasPreview: boolean("has_preview").notNull().default(false),
-    hasArtwork: boolean("has_artwork").notNull().default(false),
+    /** Remote cover art (Cover Art Archive or YouTube thumbnail); also embedded into the file. */
+    artworkUrl: text("artwork_url"),
     stage: stageEnum("stage").notNull().default("queued"),
     progress: real("progress").notNull().default(0),
     detail: text("detail"),

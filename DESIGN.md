@@ -6,7 +6,7 @@ Mint is dark, quiet and record‑shop warm. The music, meaning the artwork and t
 
 | Token | Value | Use |
 | --- | --- | --- |
-| `bg` | `#0a0d0c` | Page background, player bar |
+| `bg` | `#0a0d0c` | Page background |
 | `surface` | `#121614` | Panels: sidebar, main pane, cards |
 | `elevated` | `#1a1f1d` | Raised cards inside panels, inputs |
 | `hover` | `#232a27` | Row and button hover, scrollbar |
@@ -27,29 +27,29 @@ The typeface is **Figtree** (variable, via `next/font`), and nothing else.
 
 | Role | Size and weight |
 | --- | --- |
-| Display (hero, page titles) | `text-5xl`–`text-7xl`, `font-extrabold`, `tracking-tight` |
-| Section headings | `text-2xl font-bold` |
+| Display (hero, page titles) | hero `clamp(2.75rem,9vw,7.5rem)` at `leading-[0.92]`; titles `text-4xl`–`text-7xl`, `font-extrabold`, `tracking-[-0.035em]` |
+| Section headings | public `text-4xl sm:text-6xl font-extrabold`; app `text-3xl font-extrabold` |
 | Rows and cards | `text-sm`/`text-base font-semibold` for titles, `text-sm text-muted` for artists |
 
 Headings use `text-wrap: balance` and paragraphs use `pretty`.
 
 ## Layout
 
-- **Public pages.** A sticky blurred `SiteHeader` above a `max-w-7xl` column with `px-5 sm:px-8`, and the `PlayerBar` fixed at the bottom.
-- **Dashboard.** A Spotify‑style three‑zone shell: the sidebar (nav and "Your music"), the main pane with a gradient `PageHeader`, and the persistent player. Panels are `rounded-xl bg-surface` with an 8px gutter.
+- **Public pages.** A sticky blurred `SiteHeader` above a `max-w-7xl` column with `px-5 sm:px-8`. The landing hero sits on `ArtWall`: drifting rows of real library covers behind a left-to-right scrim.
+- **Dashboard.** A Spotify‑style two‑zone shell: the sidebar (nav and "Your music"), the main pane whose `PageHeader` takes a blurred real cover as its `backdrop`. Panels are `rounded-xl bg-surface` with an 8px gutter.
 - **Below `lg`.** The sidebar collapses into a top bar.
 - **Small screens.** No horizontal scroll at 320 px. Header actions are `whitespace-nowrap`, and secondary links hide on narrow screens.
 
 ## Components (`apps/web/src/components`)
 
 - **TrackList / TrackCard.** These are the only ways to show tracks.
-  - Rows show the number, which becomes an EQ when playing and a play button on hover. Next come artwork, title and artist, the stage badge, and the duration.
-  - Cards are square artwork with a hover play button.
+  - Rows show the number, artwork (greyed while in flight), title and artist, the stage badge, and the duration.
+  - Cards are square artwork that link to the song on YouTube Music, with an arrow that appears on hover/focus. `FreshShelf` leads with one 2×2 feature card.
 - **StageBadge + ProgressBar.** Each pipeline stage has one colour and one label everywhere: queued, matching, downloading, importing, sonic scan, ready, failed. Failed rows show the error detail and a retry.
 - **PipelineBoard.** Live lanes for each stage, fed by `useLiveTracks`.
-- **LiveStats.** Counters that update from the `stats` channel.
+- **LiveStats.** The library as one live sentence (numbers in `fg`, words in `faint`), plus the source and sonic ratio bars. Never a grid of big numbers.
+- **CoverMosaic.** Four real covers tiled as a playlist cover; falls back to an icon tile.
 - **LiveDot.** Shows the WebSocket state (Live, Connecting, Offline). Show it once per page.
-- **Player.** There is one shared `<audio>` element. Previews are capped at 30 s and wired to MediaSession. PlayButton must never start a second audio source.
 - **Form (`Field`, `SubmitButton`).** Labels sit above inputs, errors sit inline under the field, and submitting shows a pending state. Server actions echo values back, so fields survive errors. Passwords are never echoed.
 - **Buttons.** Fully rounded.
   - Primary is `bg-mint text-mint-ink`.
@@ -63,4 +63,5 @@ Headings use `text-wrap: balance` and paragraphs use `pretty`.
 2. Artwork falls back to a neutral music‑note tile, never a gradient placeholder.
 3. Empty states say what will happen next ("Link YouTube Music to start"). Never just "No data".
 4. Every live region has a non‑live fallback. Server‑rendered data comes first, and the WebSocket only adds to it.
-5. Icons are `lucide-react` at 16–20 px, `strokeWidth` 2. There are no brand logos.
+5. One authored motion moment: a song that lands while the page is open drops onto the shelf with the `land` reveal (blur to sharp, clip-path open). `drift`, `rise` and `stage-flash` support it. All stop under `prefers-reduced-motion`.
+6. Icons are `lucide-react` at 16–20 px, `strokeWidth` 2. There are no brand logos.

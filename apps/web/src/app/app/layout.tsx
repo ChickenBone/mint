@@ -4,7 +4,6 @@ import { logout } from "@/app/actions/auth";
 import { SidebarNav } from "@/components/app/sidebar-nav";
 import { LiveDot } from "@/components/live-dot";
 import { Logo } from "@/components/logo";
-import { PlayerBar } from "@/components/player-bar";
 import { requireUser } from "@/lib/auth";
 import { getPendingCount, getPlaylists, getUserSummary } from "@/lib/data";
 
@@ -19,7 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
 
   return (
-    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 bg-bg p-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
+    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)] gap-2 bg-bg p-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
       <aside className="hidden min-h-0 flex-col gap-2 lg:flex">
         <div className="flex items-center justify-between rounded-lg bg-surface px-5 py-4">
           <Logo />
@@ -57,7 +56,6 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <main className="px-6 pb-12">{children}</main>
       </div>
 
-      <PlayerBar className="rounded-lg border-t-0 lg:col-span-2" />
     </div>
   );
 }

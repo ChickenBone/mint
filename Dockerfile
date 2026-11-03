@@ -54,7 +54,7 @@ WORKDIR /app
 COPY --from=worker-deps /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/worker/dist ./dist
 COPY --from=build /repo/packages/core/migrations ./migrations
-RUN mkdir -p /data/previews /data/staging /music /blackhole && chown -R node:node /data /music /blackhole
+RUN mkdir -p /data/staging /music /blackhole && chown -R node:node /data /music /blackhole
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

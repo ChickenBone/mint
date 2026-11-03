@@ -2,7 +2,7 @@ import { ListMusic } from "lucide-react";
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { LiveTrackList } from "@/components/app/live-track-list";
-import { PageHeader } from "@/components/app/page-header";
+import { firstCover, PageHeader } from "@/components/app/page-header";
 import { PlaylistToggle } from "@/components/app/playlist-toggle";
 import { requireUser } from "@/lib/auth";
 import { getPlaylist } from "@/lib/data";
@@ -21,10 +21,11 @@ export default async function PlaylistPage({ params }: { params: Promise<{ id: s
     <>
       <PageHeader
         title={playlist.title}
+        backdrop={playlist.artworkUrl ?? firstCover(tracks)}
         art={
-          <div className="relative size-40 shrink-0 overflow-hidden rounded-lg bg-elevated shadow-[0_20px_50px_-15px_rgb(0_0_0/0.8)] sm:size-52">
+          <div className="relative size-40 shrink-0 overflow-hidden rounded-lg bg-elevated shadow-[0_24px_60px_-18px_rgb(0_0_0/0.9)] sm:size-56">
             {playlist.artworkUrl ? (
-              <img src={playlist.artworkUrl} alt="" className="size-full object-cover" />
+              <img src={playlist.artworkUrl} alt="" referrerPolicy="no-referrer" className="size-full object-cover" />
             ) : (
               <ListMusic className="absolute inset-0 m-auto size-16 text-faint" aria-hidden />
             )}

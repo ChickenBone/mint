@@ -33,3 +33,5 @@ export function timeAgo(iso: string | Date | null | undefined) {
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;
   return `${Math.round(s / 86400)} d ago`;
 }
+
+export const youtubeMusicUrl = (videoId: string) => `https://music.youtube.com/watch?v=${encodeURIComponent(videoId)}`;

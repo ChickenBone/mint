@@ -9,10 +9,6 @@
 		}
 	}
 
-	handle /media/* {
-		reverse_proxy hub:8090
-	}
-
 	@ingest path /ingest/*
 	handle @ingest {
 		request_body {

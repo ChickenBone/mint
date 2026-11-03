@@ -37,8 +37,8 @@ export interface TrackView {
   detail: string | null;
   source: Source | null;
   sonicAnalyzed: boolean;
-  hasPreview: boolean;
-  hasArtwork: boolean;
+  /** Remote cover art URL; never served from the home server. */
+  artworkUrl: string;
   youtubeVideoId: string;
   updatedAt: string;
 }
