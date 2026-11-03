@@ -1,0 +1,26 @@
+{
+  "name": "@mint/realtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/index.js --external:ioredis --external:pg --external:drizzle-orm --external:pino --external:ws --sourcemap",
+    "start": "node --enable-source-maps dist/index.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mint/core": "*",
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "^5.11.1",
+    "pino": "^10.4.0",
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

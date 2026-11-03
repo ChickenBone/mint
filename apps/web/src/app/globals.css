@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+
+  --color-bg: #0a0d0c;
+  --color-surface: #121614;
+  --color-elevated: #1a1f1d;
+  --color-hover: #232a27;
+  --color-line: #2a322f;
+  --color-fg: #f2f5f3;
+  --color-muted: #a3ada8;
+  --color-faint: #7d8883;
+  --color-mint: #3fe0a0;
+  --color-mint-strong: #5cf0b4;
+  --color-mint-ink: #04140d;
+  --color-danger: #ff7a6b;
+  --color-warn: #f5c86b;
+
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    background: var(--color-bg);
+    color: var(--color-fg);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: color-mix(in oklab, var(--color-mint) 35%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-mint);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+  p {
+    text-wrap: pretty;
+  }
+  input,
+  textarea {
+    font: inherit;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hover) transparent;
+}
+
+/* Equalizer bars shown on the playing track. */
+@keyframes eq {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+.eq span {
+  display: block;
+  width: 3px;
+  border-radius: 1px;
+  background: var(--color-mint);
+  transform-origin: bottom;
+  animation: eq 0.9s ease-in-out infinite;
+}
+.eq span:nth-child(2) { animation-delay: -0.3s; }
+.eq span:nth-child(3) { animation-delay: -0.6s; }
+
+/* Live job flash: a single moment when a track changes stage. */
+@keyframes stage-flash {
+  from { background-color: color-mix(in oklab, var(--color-mint) 18%, transparent); }
+  to { background-color: transparent; }
+}
+.stage-flash {
+  animation: stage-flash 1.2s var(--ease-out-expo);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .eq span, .stage-flash { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}

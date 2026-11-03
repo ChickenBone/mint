@@ -1,0 +1,173 @@
+# Mint production stack.
+#
+# Network barrier:
+#   edge  – Caddy, web, realtime         (the only things the internet can reach)
+#   data  – Postgres, Redis + app tiers  (internal, no egress)
+#   media – worker, Lidarr, Cobalt, Plex (web and realtime are NOT on this network)
+#
+# web/realtime can only read Postgres/Redis and the read-only preview volume.
+# Only the worker talks to Lidarr, Cobalt, Plex and TorBox.
+
+name: mint
+
+x-app: &app
+  restart: unless-stopped
+  env_file: .env
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  caddy:
+    <<: *app
+    image: caddy:2
+    env_file: []
+    environment:
+      MINT_DOMAIN: ${MINT_DOMAIN:-mint.chickenbone.dev}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [edge]
+    depends_on:
+      web: { condition: service_healthy }
+      realtime: { condition: service_healthy }
+
+  web:
+    <<: *app
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-web:${MINT_TAG:-latest}
+    environment:
+      PREVIEW_DIR: /data/previews
+    volumes:
+      - previews:/data/previews:ro
+    networks: [edge, data]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      worker: { condition: service_started }
+
+  realtime:
+    <<: *app
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-realtime:${MINT_TAG:-latest}
+    networks: [edge, data]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    <<: *app
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-worker:${MINT_TAG:-latest}
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      MUSIC_DIR: /music
+      PREVIEW_DIR: /data/previews
+      STAGING_DIR: /data/staging
+      BLACKHOLE_TORRENT_DIR: /blackhole/torrents
+      BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
+      LIDARR_URL: http://lidarr:8686
+      COBALT_URL: http://cobalt:9000
+      PLEX_URL: http://plex:32400
+    volumes:
+      - ${MUSIC_PATH:-./data/music}:/music
+      - ${BLACKHOLE_PATH:-./data/blackhole}:/blackhole
+      - previews:/data/previews
+      - staging:/data/staging
+    networks: [data, media]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  postgres:
+    <<: *app
+    image: postgres:17-alpine
+    env_file: []
+    environment:
+      POSTGRES_USER: mint
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: mint
+    volumes: [postgres:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mint -d mint"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    <<: *app
+    image: redis:7-alpine
+    env_file: []
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes: [redis:/data]
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------- media tier (behind the barrier) ----------
+
+  lidarr:
+    <<: *app
+    image: lscr.io/linuxserver/lidarr:latest
+    env_file: []
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+    volumes:
+      - lidarr_config:/config
+      - ${MUSIC_PATH:-./data/music}:/music
+      - ${BLACKHOLE_PATH:-./data/blackhole}:/blackhole
+    # Admin UI on the host loopback only; reach it over SSH: ssh -L 8686:127.0.0.1:8686 host
+    ports: ["127.0.0.1:8686:8686"]
+    networks: [media]
+
+  cobalt:
+    <<: *app
+    image: ghcr.io/imputnet/cobalt:11
+    env_file: []
+    init: true
+    read_only: true
+    environment:
+      API_URL: http://cobalt:9000/
+      API_PORT: "9000"
+      # Optional: YouTube cookies if rips start failing with "login required".
+      # COOKIE_PATH: /cookies.json
+    # volumes: [./deploy/cobalt-cookies.json:/cookies.json:ro]
+    networks: [media]
+
+  plex:
+    <<: *app
+    image: lscr.io/linuxserver/plex:latest
+    env_file: []
+    environment:
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+      VERSION: docker
+      PLEX_CLAIM: ${PLEX_CLAIM:-}
+    volumes:
+      - plex_config:/config
+      - ${MUSIC_PATH:-./data/music}:/music:ro
+    # Plexamp clients connect here directly (enable Remote Access with manual port 32400).
+    ports: ["32400:32400"]
+    networks: [media]
+
+networks:
+  edge: {}
+  data:
+    internal: true
+  media: {}
+
+volumes:
+  caddy_data: {}
+  caddy_config: {}
+  postgres: {}
+  redis: {}
+  previews: {}
+  staging: {}
+  lidarr_config: {}
+  plex_config: {}

@@ -1,0 +1,19 @@
+{
+  "name": "mint",
+  "private": true,
+  "version": "0.1.0",
+  "license": "MIT",
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "dev:web": "npm run dev -w @mint/web",
+    "dev:worker": "npm run dev -w @mint/worker",
+    "dev:realtime": "npm run dev -w @mint/realtime",
+    "build": "npm run build -w @mint/worker -w @mint/realtime -w @mint/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "db:generate": "npm run db:generate -w @mint/core",
+    "db:migrate": "npm run db:migrate -w @mint/core"
+  }
+}

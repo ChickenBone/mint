@@ -1,0 +1,39 @@
+{
+  "name": "@mint/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db": "./src/db/index.ts",
+    "./db/migrate": "./src/db/migrate.ts",
+    "./schema": "./src/db/schema.ts",
+    "./events": "./src/events.ts",
+    "./stages": "./src/stages.ts",
+    "./crypto": "./src/crypto.ts",
+    "./queues": "./src/queues.ts",
+    "./redis": "./src/redis.ts",
+    "./env": "./src/env.ts",
+    "./views": "./src/views.ts",
+    "./stats": "./src/stats.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx src/db/migrate-cli.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.4",
+    "ioredis": "^5.11.1",
+    "pg": "^8.16.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3"
+  }
+}

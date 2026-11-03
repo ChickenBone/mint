@@ -1,0 +1,102 @@
+"use client";
+
+import clsx from "clsx";
+import { Activity, Heart, Home, Library, ListMusic, Settings, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useState } from "react";
+import { useRealtime } from "../realtime";
+
+interface Props {
+  isAdmin: boolean;
+  pendingRequests: number;
+  activeJobs: number;
+  playlists: Array<{ id: string; title: string; syncEnabled: boolean; itemCount: number }>;
+}
+
+export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: Props) {
+  const path = usePathname();
+  const [pending, setPending] = useState(pendingRequests);
+  useRealtime((e) => {
+    if (e.type === "access-request") setPending(e.data.pending);
+  });
+
+  const items = [
+    { href: "/app", label: "Home", icon: Home, exact: true },
+    { href: "/app/library", label: "Library", icon: Library },
+    { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
+    { href: "/app/settings", label: "Settings", icon: Settings },
+    ...(isAdmin ? [{ href: "/app/admin", label: "Admin", icon: ShieldCheck, badge: pending || undefined, alert: pending > 0 }] : []),
+  ];
+  const isActive = (href: string, exact?: boolean) => (exact ? path === href : path === href || path.startsWith(`${href}/`));
+
+  return (
+    <nav className="flex min-h-0 flex-1 flex-col gap-2" aria-label="Dashboard">
+      <ul className="rounded-lg bg-surface p-2">
+        {items.map(({ href, label, icon: Icon, exact, badge, alert }) => (
+          <li key={href}>
+            <Link
+              href={href}
+              aria-current={isActive(href, exact) ? "page" : undefined}
+              className={clsx(
+                "flex items-center gap-4 rounded-md px-3 py-2.5 font-semibold transition-colors",
+                isActive(href, exact) ? "text-fg" : "text-muted hover:text-fg",
+              )}
+            >
+              <Icon className="size-5" aria-hidden />
+              <span className="flex-1">{label}</span>
+              {badge != null && (
+                <span className={clsx("rounded-full px-2 py-0.5 text-xs tabular", alert ? "bg-mint text-mint-ink" : "bg-hover text-muted")}>{badge}</span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex min-h-0 flex-1 flex-col rounded-lg bg-surface p-2">
+        <p className="flex items-center gap-3 px-3 py-2.5 font-semibold text-muted">
+          <ListMusic className="size-5" aria-hidden /> Your music
+        </p>
+        <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+          <li>
+            <Link
+              href="/app/liked"
+              aria-current={path === "/app/liked" ? "page" : undefined}
+              className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover", path === "/app/liked" && "bg-hover")}
+            >
+              <span className="grid size-12 place-items-center rounded bg-gradient-to-br from-mint to-[#1d6b4e] text-mint-ink">
+                <Heart className="size-5" fill="currentColor" aria-hidden />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate font-medium">Liked songs</span>
+                <span className="block truncate text-sm text-muted">Synced from YouTube Music</span>
+              </span>
+            </Link>
+          </li>
+          {playlists.map((p) => {
+            const href = `/app/playlists/${p.id}`;
+            return (
+              <li key={p.id}>
+                <Link
+                  href={href}
+                  aria-current={path === href ? "page" : undefined}
+                  className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover", path === href && "bg-hover")}
+                >
+                  <span className="grid size-12 place-items-center rounded bg-elevated text-faint">
+                    <ListMusic className="size-5" aria-hidden />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={clsx("block truncate font-medium", !p.syncEnabled && "text-muted")}>{p.title}</span>
+                    <span className="block truncate text-sm text-muted">
+                      {p.syncEnabled ? "Syncing" : "Not synced"} · {p.itemCount} songs
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </nav>
+  );
+}
