@@ -42,6 +42,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
       - run: npm run lint
+      - name: Install audio integration test tools
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - run: npm test
         env:
           MINT_LIBRARY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
