@@ -25,15 +25,18 @@
   const initial = {
     "user:token": "mint-session", "user:id": 1, "user:name": window.mintMember.name,
     "player:identifier": "local", "server:identifier": "mint", "server:library": "/library/sections/1",
+    "settings:showFullScreenPlayerOnPlay": false,
   };
   for (const [key, value] of Object.entries(initial)) {
-    storage.setItem(`@Plexamp:${key}`, `${typeof value === "number" ? "N" : "S"}${value}`);
+    storage.setItem(`@Plexamp:${key}`, `${typeof value === "number" ? "N" : typeof value === "boolean" ? "B" : "S"}${value}`);
   }
+  if (window.mintEmbedded) storage.setItem("@Plexamp:settings:theme", "Sdark");
   // Queues stay per tab; never restore another member's or a stale playback state.
   storage.removeItem("@Plexamp:state");
   window.playerIdentifier = "local";
   let audio;
   let metadataClass;
+  let browserController;
   let queueSequence = 0;
 
   function report(message) {
@@ -44,6 +47,7 @@
     dismiss.onclick = () => { alert.hidden = true; };
     alert.appendChild(dismiss);
     alert.hidden = false;
+    window.mintShell?.error(message);
   }
 
   async function signOut() {
@@ -54,7 +58,8 @@
     }
     audio?.stop();
     storage.clear();
-    location.assign("/");
+    if (window.mintEmbedded) window.parent.location.assign("/");
+    else location.assign("/");
   }
 
   async function loadTracks(key) {
@@ -258,6 +263,7 @@
         controllable: true, key: track?.key, machineIdentifier: "mint", playQueueIndex: this.index,
       };
       this.onStateChanged?.(this.state);
+      window.mintShell?.update();
       if ("mediaSession" in navigator && track) {
         navigator.mediaSession.metadata = new MediaMetadata({
           title: track.title, artist: track.grandparentTitle, album: track.parentTitle,
@@ -314,6 +320,7 @@
           constructor(...args) { super(...args); this.source = "local"; }
           async initialize(app) {
             this.app = app;
+            browserController = this;
             app.audioController.onStateChanged = () => this.emit();
             if ("mediaSession" in navigator) {
               const actions = { play: () => this.doResume(), pause: () => this.doPause(),
@@ -376,6 +383,7 @@
         exports.__esModule = true;
         exports.default = BrowserController;
       };
+      window.mintShell?.install(require, factories, { getAudio: () => audio, getController: () => browserController });
     },
   };
 })();

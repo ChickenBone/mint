@@ -20,7 +20,7 @@ Mint is a single live pipeline from "liked" to "on my own server," and every ste
 ## Operating Context
 - Hosted at mint.chickenbone.dev with Docker Compose. Images are published to GHCR from GitHub Actions.
 - Lidarr, TorBox (debrid), Cobalt, and Plex live on an internal network. The public app never talks to them directly; it uses Postgres and Redis queues.
-- Members listen in Plexamp. The web app is for managing and monitoring, not playback.
+- Approved members can listen inside Mint's persistent Plexamp-powered browser shell, or use the installed Plexamp app with a separate Plex invitation. Public pages remain browse-only.
 
 ## Capabilities and Constraints
 - Access is by request only. A visitor submits a name, email, and password; the account stays inactive until an admin approves it.
@@ -34,7 +34,7 @@ Mint is a single live pipeline from "liked" to "on my own server," and every ste
 
 ## Brand Commitments
 - Name: **Mint**.
-- The member app must feel like Spotify: a sidebar library, a track table and artwork-led headers. There is no player bar.
+- The member app must feel like Spotify: a sidebar library, playable track tables, artwork-led music views and a persistent Mint player bar. Playback continues across member pages without rebuilding Plexamp's music interface.
 
 ## Evidence on Hand
 - There are no users, testimonials, or metrics yet. All stats on the front page must come from the live database and must never be invented.

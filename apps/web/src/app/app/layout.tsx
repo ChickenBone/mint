@@ -1,7 +1,7 @@
 import { LogOut } from "lucide-react";
-import Link from "next/link";
 import { logout } from "@/app/actions/auth";
-import { SidebarNav } from "@/components/app/sidebar-nav";
+import { MobileNav, SidebarNav } from "@/components/app/sidebar-nav";
+import { MusicNavigation, MusicStage, PlayerBar, PlayerProvider } from "@/components/app/player";
 import { LiveDot } from "@/components/live-dot";
 import { Logo } from "@/components/logo";
 import { requireUser } from "@/lib/auth";
@@ -18,7 +18,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   ]);
 
   return (
-    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)] gap-2 bg-bg p-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+    <PlayerProvider>
+    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 bg-bg p-2 lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
       <aside className="hidden min-h-0 flex-col gap-2 lg:flex">
         <div className="flex items-center justify-between rounded-lg bg-surface px-5 py-4">
           <Logo />
@@ -32,31 +33,24 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
       </aside>
 
-      {/* Compact top bar below lg: the sidebar collapses into a scrollable row. */}
-      <header className="flex items-center gap-4 overflow-x-auto rounded-lg bg-surface px-4 py-3 text-sm font-semibold text-muted scrollbar-thin lg:hidden">
-        <Logo />
-        <Link href="/app" className="hover:text-fg">Home</Link>
-        <Link href="/app/liked" className="hover:text-fg">Liked</Link>
-        <Link href="/app/library" className="hover:text-fg">Library</Link>
-        <a href="/listen" className="hover:text-fg">Listen</a>
-        <Link href="/app/jobs" className="hover:text-fg">Jobs</Link>
-        <Link href="/app/workers" className="hover:text-fg">Workers</Link>
-        <Link href="/app/settings" className="hover:text-fg">Settings</Link>
-        {user.role === "admin" && <Link href="/app/admin" className="hover:text-fg">Admin{pending ? ` (${pending})` : ""}</Link>}
-      </header>
+      <MobileNav isAdmin={user.role === "admin"} pendingRequests={pending} />
 
-      <div className="relative min-h-0 overflow-y-auto rounded-lg bg-surface scrollbar-thin">
-        <div className="sticky top-0 z-20 flex h-14 items-center justify-end gap-3 bg-surface/90 px-6 backdrop-blur-md">
-          <span className="text-sm text-muted">{user.name}</span>
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-surface">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line px-4 sm:px-6">
+          <MusicNavigation />
+          <div className="flex shrink-0 items-center gap-3">
+          <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
           <form action={logout}>
-            <button type="submit" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold text-muted transition hover:bg-elevated hover:text-fg">
-              <LogOut className="size-4" aria-hidden /> Sign out
+            <button type="submit" aria-label="Sign out" className="inline-flex items-center gap-1.5 rounded-full px-3 py-2.5 text-sm font-semibold text-muted transition hover:bg-elevated hover:text-fg">
+              <LogOut className="size-4" aria-hidden /><span className="hidden sm:inline">Sign out</span>
             </button>
           </form>
+          </div>
         </div>
-        <main className="px-6 pb-12">{children}</main>
+        <MusicStage>{children}</MusicStage>
       </div>
-
+      <PlayerBar />
     </div>
+    </PlayerProvider>
   );
 }

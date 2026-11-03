@@ -2,7 +2,9 @@
 
 import type { TrackView } from "@mint/core/events";
 import clsx from "clsx";
-import { ArrowUpRight, Clock3, Sparkles } from "lucide-react";
+import { ArrowUpRight, Clock3, Play, Sparkles } from "lucide-react";
+import { TrackMenuButton, usePlayer } from "@/components/app/player";
+import { trackPlayerItem } from "@/lib/player-protocol";
 import { formatDuration, youtubeMusicUrl } from "@/lib/format";
 import { Artwork } from "./artwork";
 import { ProgressBar, StageBadge } from "./stage-badge";
@@ -20,20 +22,40 @@ function Row({
   actions?: (t: TrackView) => React.ReactNode;
   flash?: number;
 }) {
+  const player = usePlayer();
+  const playable = player && (track.stage === "ready" || track.stage === "analyzing");
+  const item = trackPlayerItem(track);
   const inFlight = track.stage !== "ready" && track.stage !== "analyzing" && track.stage !== "failed";
   return (
     <li
       key={flash}
+      onContextMenu={playable ? (event) => {
+        if ((event.target as HTMLElement).closest("a,input,textarea")) return;
+        event.preventDefault();
+        player.menu(item, { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button"));
+      } : undefined}
+      onKeyDown={playable ? (event) => {
+        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+          event.preventDefault();
+          const rect = event.currentTarget.getBoundingClientRect();
+          player.menu(item, { x: rect.x + 48, y: rect.y + 32 }, event.target as HTMLElement);
+        }
+      } : undefined}
       className={clsx(
-        "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_3.5rem]",
+        "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_6.5rem]",
         flash && "stage-flash",
       )}
     >
-      <span className="text-center text-sm text-muted tabular">{index + 1}</span>
+      {playable ? <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={() => player.command({ action: "play", item })}
+        className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated hover:text-mint disabled:opacity-40">
+        <span className="text-sm tabular group-hover:hidden">{index + 1}</span><Play className="hidden size-4 group-hover:block" fill="currentColor" />
+      </button> : <span className="text-center text-sm text-muted tabular">{index + 1}</span>}
       <div className="flex min-w-0 items-center gap-3">
         <Artwork track={track} className={clsx("size-11 transition-[filter] duration-500", inFlight && "grayscale-[0.7]")} />
         <div className="min-w-0">
-          <p className="truncate font-medium text-fg">{track.title}</p>
+          {playable ? <button onClick={() => player.command({ action: "play", item })} disabled={!player.ready}
+            className="block max-w-full truncate text-left font-medium text-fg hover:underline disabled:opacity-40">{track.title}</button>
+            : <p className="truncate font-medium text-fg">{track.title}</p>}
           <p className="truncate text-sm text-muted">{track.artist}</p>
         </div>
       </div>
@@ -55,6 +77,7 @@ function Row({
       </div>
       <div className="flex items-center justify-end gap-2 text-sm text-muted tabular">
         {actions?.(track)}
+        {playable && <TrackMenuButton item={item} />}
         <span>{formatDuration(track.durationSec)}</span>
       </div>
     </li>
@@ -77,7 +100,7 @@ export function TrackList({
   if (!tracks.length) return <>{empty}</>;
   return (
     <div>
-      <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_3.5rem] gap-3 border-b border-line px-3 pb-2 text-xs font-medium text-faint sm:grid">
+      <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_6.5rem] gap-3 border-b border-line px-3 pb-2 text-xs font-medium text-faint sm:grid">
         <span className="text-center">#</span>
         <span>Title</span>
         <span>Album</span>
@@ -93,8 +116,21 @@ export function TrackList({
   );
 }
 
-/** Album-art card. The cover is the whole point; it links out to the song on YouTube Music. */
 export function TrackCard({ track, feature = false, landing = false }: { track: TrackView; feature?: boolean; landing?: boolean }) {
+  const player = usePlayer();
+  const playable = player && (track.stage === "ready" || track.stage === "analyzing");
+  if (playable) return <div className={clsx("group relative", feature && "col-span-2 row-span-2")}
+    onContextMenu={(event) => { event.preventDefault(); player.menu(trackPlayerItem(track), { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button")); }}>
+    <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={() => player.command({ action: "play", item: trackPlayerItem(track) })}
+      className="block w-full rounded-md text-left disabled:opacity-50">
+      <div className="relative overflow-hidden rounded-md"><Artwork track={track} eager={feature} className="w-full" />
+        <span className="absolute right-3 bottom-3 grid size-11 place-items-center rounded-full bg-mint text-mint-ink shadow-lg transition-transform group-hover:scale-105"><Play className="size-5" fill="currentColor" /></span>
+      </div>
+      <p className={clsx("mt-3 truncate font-semibold", feature && "sm:text-xl")}>{track.title}</p>
+      <p className="truncate text-sm text-muted">{track.artist}</p>
+    </button>
+    <div className="absolute top-2 right-2 rounded-full bg-bg/90"><TrackMenuButton item={trackPlayerItem(track)} /></div>
+  </div>;
   const Element = track.youtubeVideoId ? "a" : "div";
   return (
     <Element

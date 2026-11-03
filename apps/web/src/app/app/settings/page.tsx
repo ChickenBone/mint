@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { unlinkYoutube, updateSyncSettings } from "@/app/actions/member";
 import { ActionButton } from "@/components/app/admin-controls";
 import { LinkYoutubeCallout } from "@/components/app/link-youtube";
@@ -118,7 +119,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
         <Section title="Listen">
           <p className="mb-4 max-w-2xl text-muted">Play downloaded music here with the Plexamp browser interface, or open the installed Plexamp app. Browser listening uses your approved Mint account; the installed app needs a separate Plex library invitation.</p>
           <div className="mb-6 flex flex-wrap gap-3">
-            <a href="/listen" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Listen in browser</a>
+            <Link href="/app/music" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Open music</Link>
             <a href="plexamp://" className="rounded-full bg-elevated px-5 py-2.5 font-semibold hover:bg-hover">Open Plexamp</a>
           </div>
           <ol className="flex max-w-2xl list-decimal flex-col gap-2 pl-5 text-muted marker:text-faint">

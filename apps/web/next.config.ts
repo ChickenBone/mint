@@ -25,7 +25,7 @@ const config: NextConfig = {
   output: process.env.VERCEL ? undefined : "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
   outputFileTracingIncludes: {
-    "/listen/assets/*": ["./plexamp-assets/index.js", "../../deploy/plexamp/bridge.js"],
+    "/listen/assets/*": ["./plexamp-assets/index.js", "../../deploy/plexamp/bridge.js", "../../deploy/plexamp/integration.js", "../../deploy/plexamp/player.css"],
   },
   transpilePackages: ["@mint/core"],
   serverExternalPackages: ["@node-rs/argon2", "bullmq", "pg", "ioredis"],
@@ -46,6 +46,11 @@ const config: NextConfig = {
       {
         source: "/listen/:path*",
         headers: [{ key: "Content-Security-Policy", value: csp.replace("font-src 'self'", "font-src 'self' data:").replace("media-src 'none'", "media-src 'self'") }],
+      },
+      {
+        source: "/listen/engine",
+        headers: [{ key: "Content-Security-Policy", value: csp.replace("font-src 'self'", "font-src 'self' data:").replace("media-src 'none'", "media-src 'self'").replace("frame-ancestors 'none'", "frame-ancestors 'self'")
+          .replace("connect-src 'self'", "connect-src 'self' https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://archive.org https://*.archive.org") }],
       },
     ];
   },

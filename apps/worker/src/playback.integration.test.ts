@@ -27,13 +27,24 @@ test("approved-member streaming, range seeking, session revocation and member-pr
   const { signToken, sha256 } = await import("@mint/core/crypto");
   const { eq } = await import("drizzle-orm");
   const { servePlayback } = await import("./playback");
-  const { catalogItems, catalogResponse } = await import("../../web/src/lib/player-catalog");
+  const { catalogItems, catalogResponse, playerArtworkUrl } = await import("../../web/src/lib/player-catalog");
+  const { albumPlayerId, artistPlayerId, trackPlayerItem, playerItemSchema } = await import("../../web/src/lib/player-protocol");
   const server = createServer((req, res) => {
     void servePlayback(req, res, req.url!.slice(1)).catch((error: unknown) => { res.destroy(error instanceof Error ? error : undefined); });
   });
   try {
     await runMigrations(path.resolve("../../packages/core/migrations"));
     const db = getDb();
+    const artwork = "https://i.ytimg.com/vi/fixture/mqdefault.jpg";
+    assert.equal(playerArtworkUrl(`/photo/:/transcode?url=${encodeURIComponent(artwork)}`, "https://mint.example.test"), artwork);
+    assert.equal(playerArtworkUrl(`/photo/:/transcode?url=${encodeURIComponent(`/photo/:/transcode?url=${encodeURIComponent(artwork)}`)}`, "https://mint.example.test"), artwork);
+    for (const target of ["https://untrusted.example/image.jpg", "http://127.0.0.1/private", "/photo/:/transcode?url=http://worker:8080/private", "https://secret@i.ytimg.com/image.jpg"]) {
+      assert.throws(() => playerArtworkUrl(target, "https://mint.example.test"));
+    }
+    const unicodeArtist = "Björk / 宇多田ヒカル", unicodeAlbum = "世界 / Début";
+    assert.equal(albumPlayerId(unicodeArtist, unicodeAlbum), `al_${Buffer.from(JSON.stringify([unicodeArtist, unicodeAlbum])).toString("base64url")}`);
+    assert.equal(artistPlayerId(unicodeArtist), `ar_${Buffer.from(unicodeArtist).toString("base64url")}`);
+    assert.ok(playerItemSchema.safeParse(trackPlayerItem({ id: "00000000-0000-0000-0000-000000000001", title: "Test", artist: unicodeArtist, album: unicodeAlbum, artworkUrl: artwork })).success);
     const [member, other] = await db.insert(schema.users).values([
       { email: "one@example.test", name: "One", passwordHash: "fixture", status: "active" as const },
       { email: "two@example.test", name: "Two", passwordHash: "fixture", status: "active" as const },

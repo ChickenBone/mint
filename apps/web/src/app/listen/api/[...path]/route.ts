@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { SESSION_COOKIE, sha256, signToken } from "@mint/core/crypto";
 import { UUID, type PlaybackClaim } from "@mint/core/playback";
 import { destroySession, getUser } from "@/lib/auth";
-import { CatalogInputError, catalogResponse } from "@/lib/player-catalog";
+import { CatalogInputError, catalogResponse, playerArtworkUrl } from "@/lib/player-catalog";
 import { publicUrl } from "@/lib/request";
 
 export const runtime = "nodejs";
@@ -69,13 +69,10 @@ export async function GET(request: Request, context: { params: Promise<{ path: s
   if (endpoint === "/photo/:/transcode") {
     const target = url.searchParams.get("url");
     if (!target || target === "undefined" || target === "null") return Response.redirect(`${publicUrl()}/listen/assets/cover.svg`, 307);
-    let image: URL;
-    try { image = new URL(target); } catch { return json({ error: "Invalid artwork URL" }, 400); }
-    const allowed = image.protocol === "https:" && (
-      image.hostname === "coverartarchive.org" || image.hostname === "archive.org" || image.hostname.endsWith(".archive.org") ||
-      image.hostname === "i.ytimg.com" || image.hostname.endsWith(".ggpht.com") || image.hostname.endsWith(".googleusercontent.com"));
-    if (!allowed && target !== `${publicUrl()}/listen/assets/cover.svg`) return json({ error: "Unsupported artwork source" }, 400);
-    const headers = new Headers({ location: image.href, "cache-control": "private, no-store" });
+    let image: string;
+    try { image = playerArtworkUrl(target, publicUrl()); }
+    catch { return json({ error: "Invalid or unsupported artwork URL" }, 400); }
+    const headers = new Headers({ location: image, "cache-control": "private, no-store" });
     return new Response(null, { status: 307, headers });
   }
   for (const name of ["X-Plex-Container-Start", "X-Plex-Container-Size"]) {

@@ -5,7 +5,7 @@ import vm from "node:vm";
 import { adaptBundle } from "./install.mjs";
 
 const source = await readFile(new URL("./bridge.js", import.meta.url), "utf8");
-function browser(member, saved = new Map()) {
+function browser(member, saved = new Map(), embedded = false) {
   const requests = [];
   const intervals = [];
   const elements = new Map([["mint-player-error", { hidden: true, appendChild() {} }]]);
@@ -24,6 +24,7 @@ function browser(member, saved = new Map()) {
   }
   const window = {
     mintMember: { id: member, name: member },
+    mintEmbedded: embedded,
     localStorage: {
       get length() { return saved.size; },
       key: (index) => Array.from(saved.keys())[index] ?? null,
@@ -71,6 +72,13 @@ test("adapter hook fails closed if the pinned webpack bootstrap changes", () => 
   assert.equal(adaptBundle("a;r.n=e=>x"), "a;window.mintPlexamp.install(r,e);r.n=e=>x");
   assert.throws(() => adaptBundle("changed"), /requires review/);
   assert.throws(() => adaptBundle("r.n=e=>r.n=e=>"), /requires review/);
+});
+
+test("the embedded engine keeps Mint's dark theme and does not auto-open a duplicate full player", () => {
+  const saved = new Map([["mint:plexamp:embedded:@Plexamp:settings:theme", "Slight"]]);
+  const { window } = browser("embedded", saved, true);
+  assert.equal(window.localStorage.getItem("@Plexamp:settings:theme"), "Sdark");
+  assert.equal(window.localStorage.getItem("@Plexamp:settings:showFullScreenPlayerOnPlay"), "Bfalse");
 });
 
 test("browser queue loads every page and supports stable append, move and remove operations", async () => {

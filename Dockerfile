@@ -35,13 +35,13 @@ RUN --mount=type=cache,target=/root/.npm rm -rf node_modules && npm ci --omit=de
 # ---- web: Next.js standalone server ----
 FROM node:${NODE_VERSION}-bookworm-slim AS web
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-ENV PLEXAMP_ASSET_DIR=/app/plexamp-assets PLEXAMP_BRIDGE_PATH=/app/plexamp-bridge.js
+ENV PLEXAMP_ASSET_DIR=/app/plexamp-assets PLEXAMP_ADAPTER_DIR=/app/plexamp
 WORKDIR /app
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public
 COPY --from=build --chown=node:node /repo/apps/web/plexamp-assets ./plexamp-assets
-COPY --from=build --chown=node:node /repo/deploy/plexamp/bridge.js ./plexamp-bridge.js
+COPY --from=build --chown=node:node /repo/deploy/plexamp/bridge.js /repo/deploy/plexamp/integration.js /repo/deploy/plexamp/player.css ./plexamp/
 COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/mint-entrypoint
 RUN mkdir -p /secrets && chown node:node /secrets
 USER node

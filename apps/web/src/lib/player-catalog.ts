@@ -3,12 +3,23 @@ import { PLAYABLE, UUID } from "@mint/core/playback";
 import { toTrackView } from "@mint/core/views";
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import path from "node:path";
+import { albumPlayerId as albumId, artistPlayerId as artistId } from "./player-protocol";
 
 const t = schema.tracks;
-const albumId = (artist: string, album: string) => `al_${Buffer.from(JSON.stringify([artist, album])).toString("base64url")}`;
-const artistId = (artist: string) => `ar_${Buffer.from(artist).toString("base64url")}`;
 export type PlayerItem = Record<string, unknown> & { ratingKey: string; key: string; title: string; type: string };
 export class CatalogInputError extends Error {}
+
+export function playerArtworkUrl(target: string, origin: string) {
+  for (let depth = 0; depth < 3 && /^\/(?:listen\/api\/server\/)?photo\/:\/transcode\?/.test(target); depth++) {
+    target = new URL(target, origin).searchParams.get("url") ?? "";
+  }
+  const image = new URL(target);
+  const allowed = image.protocol === "https:" && (
+    image.hostname === "coverartarchive.org" || image.hostname === "archive.org" || image.hostname.endsWith(".archive.org") ||
+    image.hostname === "i.ytimg.com" || image.hostname.endsWith(".ggpht.com") || image.hostname.endsWith(".googleusercontent.com"));
+  if ((!allowed && image.href !== `${origin}/listen/assets/cover.svg`) || image.username || image.password) throw new CatalogInputError("Unsupported artwork source");
+  return image.href;
+}
 
 function trackItem(track: typeof t.$inferSelect, index: number): PlayerItem {
   const thumb = toTrackView(track).artworkUrl || undefined;

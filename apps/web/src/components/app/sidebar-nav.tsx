@@ -2,17 +2,44 @@
 
 import clsx from "clsx";
 import { Artwork } from "@/components/artwork";
-import { Activity, Heart, Home, Library, ListMusic, Play, Server, Settings, ShieldCheck } from "lucide-react";
+import { Activity, Heart, Home, Library, ListMusic, Menu, Music2, Server, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useRealtime } from "../realtime";
+import { Logo } from "@/components/logo";
 
 interface Props {
   isAdmin: boolean;
   pendingRequests: number;
   activeJobs: number;
   playlists: Array<{ id: string; title: string; syncEnabled: boolean; itemCount: number; artworkUrl: string | null }>;
+}
+
+export function MobileNav({ isAdmin, pendingRequests }: Pick<Props, "isAdmin" | "pendingRequests">) {
+  const path = usePathname();
+  const links = [
+    { href: "/app", label: "Home" }, { href: "/app/liked", label: "Liked songs" },
+    { href: "/app/jobs", label: "Jobs" }, { href: "/app/workers", label: "Workers" }, { href: "/app/settings", label: "Settings" },
+    ...(isAdmin ? [{ href: "/app/admin", label: `Admin${pendingRequests ? ` (${pendingRequests})` : ""}` }] : []),
+  ];
+  return <header className="relative z-40 flex h-14 items-center justify-between gap-3 rounded-lg bg-surface px-4 text-sm font-semibold lg:hidden">
+    <Logo />
+    <Link href="/app/music" aria-current={path === "/app/music" ? "page" : undefined} className={path === "/app/music" ? "text-mint" : "text-muted hover:text-fg"}>Music</Link>
+    <Link href="/app/library" aria-current={path === "/app/library" ? "page" : undefined} className={path === "/app/library" ? "text-mint" : "text-muted hover:text-fg"}>Library</Link>
+    <details className="group" onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
+    }} onKeyDown={(event) => {
+      if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); }
+    }}>
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-full p-2 text-muted hover:bg-hover hover:text-fg [&::-webkit-details-marker]:hidden"><Menu className="size-5" /><span className="sr-only">More pages</span></summary>
+      <nav aria-label="More pages" className="absolute top-full right-0 mt-2 w-56 rounded-lg bg-elevated p-2 shadow-[0_12px_30px_-8px_#000] ring-1 ring-line">
+        {links.map(({ href, label }) =>
+          <Link key={href} href={href} aria-current={path === href ? "page" : undefined} onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}
+            className={clsx("block rounded-md px-3 py-3 hover:bg-hover", path === href ? "text-mint" : "text-muted hover:text-fg")}>{label}</Link>)}
+      </nav>
+    </details>
+  </header>;
 }
 
 export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: Props) {
@@ -25,7 +52,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
   const items = [
     { href: "/app", label: "Home", icon: Home, exact: true },
     { href: "/app/library", label: "Library", icon: Library },
-    { href: "/listen", label: "Listen", icon: Play },
+    { href: "/app/music", label: "Music", icon: Music2 },
     { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
     { href: "/app/workers", label: "Workers", icon: Server },
     { href: "/app/settings", label: "Settings", icon: Settings },
@@ -38,11 +65,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
       <ul className="rounded-lg bg-surface p-2">
         {items.map(({ href, label, icon: Icon, exact, badge, alert }) => (
           <li key={href}>
-            {href === "/listen" ? (
-              <a href={href} className="flex items-center gap-4 rounded-md px-3 py-2.5 font-semibold text-muted transition-colors hover:text-fg">
-                <Icon className="size-5" aria-hidden /><span className="flex-1">{label}</span>
-              </a>
-            ) : <Link
+            <Link
               href={href}
               aria-current={isActive(href, exact) ? "page" : undefined}
               className={clsx(
@@ -55,7 +78,7 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
               {badge != null && (
                 <span className={clsx("rounded-full px-2 py-0.5 text-xs tabular", alert ? "bg-mint text-mint-ink" : "bg-hover text-muted")}>{badge}</span>
               )}
-            </Link>}
+            </Link>
           </li>
         ))}
       </ul>
