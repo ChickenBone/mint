@@ -61,3 +61,14 @@ test("Cloudflare Tunnel can use HTTP internally while public URLs remain HTTPS",
   }
   assert.ok(services.caddy.command[0].includes("CADDY_SCHEME"));
 });
+
+test("ACME retries can bypass an unreachable staging endpoint without host networking", () => {
+  const directory = "https://acme-v02.api.letsencrypt.org/directory";
+  const { services } = resolve(
+    source.replace('&acme-retry ""', `&acme-retry "${directory}"`),
+  );
+  assert.equal(services.caddy.environment.ACME_RETRY_DIRECTORY, directory);
+  assert.equal(services.caddy.network_mode, undefined);
+  assert.ok(Object.hasOwn(services.caddy.networks, "edge"));
+  assert.ok(services.caddy.command[0].includes("test_dir"));
+});

@@ -7,6 +7,9 @@ x-settings:
   # https: Caddy obtains certificates. http: Cloudflare Tunnel handles public HTTPS.
   # Keep MINT_DOMAIN as the public hostname, not the NAS IP, in either mode.
   CADDY_SCHEME: &caddy-scheme "https"
+  # Leave blank normally. If staging alone is unreachable, use the production
+  # URL below instead. Production retries count toward Let's Encrypt rate limits.
+  ACME_RETRY_DIRECTORY: &acme-retry ""
   ADMIN_EMAIL: &admin-email "admin@mint.local"
   # From https://plex.tv/claim just before deploying; expires in 4 minutes.
   PLEX_CLAIM: &plex-claim ""
@@ -55,6 +58,7 @@ services:
     environment:
       MINT_DOMAIN: *domain
       CADDY_SCHEME: *caddy-scheme
+      ACME_RETRY_DIRECTORY: *acme-retry
     ports:
       - "80:80"
       - "443:443"
@@ -62,9 +66,15 @@ services:
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        cat > /etc/caddy/Caddyfile <<'CADDY'
-        {
-          admin off
+        printf '{\n  admin off\n' > /etc/caddy/Caddyfile
+        if [ -n "$$ACME_RETRY_DIRECTORY" ]; then
+          case "$$ACME_RETRY_DIRECTORY" in
+            https://acme-v02.api.letsencrypt.org/directory|https://acme-staging-v02.api.letsencrypt.org/directory) ;;
+            *) echo "ACME_RETRY_DIRECTORY must be a Let's Encrypt directory URL" >&2; exit 1 ;;
+          esac
+          printf '  cert_issuer acme {\n    dir https://acme-v02.api.letsencrypt.org/directory\n    test_dir %s\n  }\n' "$$ACME_RETRY_DIRECTORY" >> /etc/caddy/Caddyfile
+        fi
+        cat >> /etc/caddy/Caddyfile <<'CADDY'
         }
         {$$CADDY_SCHEME}://{$$MINT_DOMAIN} {
           encode zstd gzip
