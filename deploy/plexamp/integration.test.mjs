@@ -21,6 +21,10 @@ function fixture() {
     52626: (_m, e) => { e.useCombinedHubs = () => [{ type: "station" }, { type: "track", items: [], hubIdentifier: "music.recent.plays" }, { type: "album", items: [] }]; },
     2121() {}, 53593() {}, 72003: (_m, e) => { e.default = () => null; },
     87279: (_m, e) => { e.default = { MINI_PLAYER_HEIGHT: 60 }; },
+    88680: (_m, e) => { e.default = {
+      navigate: (...args) => actions.push(["native-navigate", ...args]),
+      push: (...args) => actions.push(["native-push", ...args]),
+    }; },
   };
   const require = (id) => ({ default: id === 60626 ? class { constructor(data) { Object.assign(this, data); } }
     : { currentRoute: () => ({ name: "Home" }), navigate: (...args) => actions.push(["navigate", ...args]) } });
@@ -144,4 +148,20 @@ test("the last native state update is delivered even when playback pauses during
   shell.update();
   flush();
   assert.equal(messages.at(-1).state.playing, false);
+});
+
+test("native and compatibility now-playing entry points open Mint without changing playback", async () => {
+  const { load, messages, actions, send } = fixture();
+  const navigation = load(88680);
+  navigation.navigate("Player", { source: "mint" });
+  navigation.push("Player");
+  await send({ action: "navigate", view: "now-playing" });
+  assert.equal(messages.filter((message) => message.type === "now-playing").length, 3);
+  assert.deepEqual(actions, []);
+  navigation.navigate("Browser", { key: "album-1" });
+  navigation.push("Browser", { key: "artist-1" });
+  assert.deepEqual(actions, [
+    ["native-navigate", "Browser", { key: "album-1" }],
+    ["native-push", "Browser", { key: "artist-1" }],
+  ]);
 });

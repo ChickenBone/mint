@@ -36,6 +36,18 @@ export async function getRecentlyReady(limit = 18): Promise<TrackView[]> {
   return rows.map(toTrackView);
 }
 
+/** Distinct real covers from the whole landed library, not just its newest songs. */
+export async function getLibraryArtwork(): Promise<Array<Pick<TrackView, "artworkUrl">>> {
+  const artwork = sql<string>`coalesce(nullif(${t.artworkUrl}, ''), case
+    when nullif(${t.youtubeVideoId}, '') is not null
+    then 'https://i.ytimg.com/vi/' || ${t.youtubeVideoId} || '/mqdefault.jpg' end)`;
+  return db().select({ artworkUrl: artwork }).from(t)
+    .where(and(inArray(t.stage, [...LIBRARY_STAGES]), sql`${artwork} is not null`))
+    .groupBy(artwork)
+    .orderBy(desc(sql`max(coalesce(${t.readyAt}, ${t.updatedAt}))`), asc(artwork))
+    .limit(42);
+}
+
 export interface LibraryPage {
   tracks: TrackView[];
   nextCursor: string | null;

@@ -4,7 +4,7 @@ import { ArtWall } from "@/components/art-wall";
 import { FreshShelf } from "@/components/fresh-shelf";
 import { LiveStats } from "@/components/live-stats";
 import { PipelineBoard } from "@/components/pipeline-board";
-import { getActiveTracks, getRecentlyReady, getStats } from "@/lib/data";
+import { getActiveTracks, getLibraryArtwork, getRecentlyReady, getStats } from "@/lib/data";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,7 @@ const steps: Array<[string, string]> = [
 ];
 
 export default async function Home() {
-  const [stats, active, fresh, wall] = await Promise.all([getStats(), getActiveTracks(120), getRecentlyReady(12), getRecentlyReady(42)]);
+  const [stats, active, fresh, wall] = await Promise.all([getStats(), getActiveTracks(120), getRecentlyReady(12), getLibraryArtwork()]);
   return (
     <>
       <section className="relative isolate overflow-hidden">

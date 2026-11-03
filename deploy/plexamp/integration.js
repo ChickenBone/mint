@@ -1,4 +1,4 @@
-/* Integration seams are pinned to Plexamp 4.13.2; Mint owns chrome, not the music UI. */
+/* Integration seams are pinned to Plexamp 4.13.2; Mint owns playback views and controls. */
 (() => {
   const channel = "mint-player-v2";
   const origin = location.origin;
@@ -28,7 +28,7 @@
   };
   function navigate(view) {
     const native = adapter.require(88680).default;
-    if (view === "now-playing") return native.navigate("Player");
+    if (view === "now-playing") return send({ type: "now-playing" });
     if (native.currentRoute()?.name === "Player") native.pop();
     tabNavigation.navigate(view === "home" ? "Discover" : view === "library" ? "Library" : "Search");
   }
@@ -158,10 +158,21 @@
     },
     error(message) { send({ type: "error", message }); },
     install(require, factories, api) {
-      for (const id of [43662, 5713, 76167, 75415, 67981, 52626, 2121, 53593, 72003, 87279]) {
+      for (const id of [43662, 5713, 76167, 75415, 67981, 52626, 2121, 53593, 72003, 87279, 88680]) {
         if (typeof factories[id] !== "function") throw new Error("Plexamp integration changed. This version needs an adapter update.");
       }
       adapter = { ...api, require };
+      const navigation = factories[88680];
+      factories[88680] = (module, exports, req) => {
+        navigation(module, exports, req);
+        for (const method of ["navigate", "push"]) {
+          const original = exports.default[method];
+          exports.default[method] = function (name, ...args) {
+            if (name === "Player") return send({ type: "now-playing" });
+            return original.call(this, name, ...args);
+          };
+        }
+      };
       const palette = factories[67981];
       factories[67981] = (module, exports, req) => {
         palette(module, exports, req);

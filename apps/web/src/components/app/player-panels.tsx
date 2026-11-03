@@ -5,6 +5,7 @@ import { Pause, Play, Repeat, Shuffle, X } from "lucide-react";
 import { defaultDsp, type DspSettings, type PlayerCommand, type PlayerState } from "@/lib/player-protocol";
 import { lyricsSchema, parseLrc, type Lyrics } from "@/lib/lyrics";
 import { InstallApp } from "../install-app";
+import { Artwork } from "../artwork";
 
 export function PlayerPanel({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -14,7 +15,7 @@ export function PlayerPanel({ title, close, children }: { title: string; close: 
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
   }, [close]);
-  return <aside aria-label={title} className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface sm:w-[26rem]">
+  return <aside aria-label={title} className="player-panel absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface sm:w-[26rem]">
     <div className="flex items-center justify-between border-b border-line px-5 py-3"><h2 className="text-xl font-bold">{title}</h2>
       <button ref={ref} aria-label={`Close ${title.toLowerCase()}`} onClick={close} className="rounded-full p-2.5 hover:bg-hover"><X className="size-5" /></button></div>
     <div className="min-h-0 flex-1 overflow-y-auto p-5 scrollbar-thin">{children}</div>
@@ -28,24 +29,36 @@ const presets: Record<string, number[]> = {
   "Low listening": [4, 3, 1, 0, -1, 0, 1, 2, 3, 3],
 };
 const labels = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
-export function AudioPanel({ state, command }: { state: PlayerState; command: (command: PlayerCommand) => void }) {
+export function AudioPanel({ state, command, showPlayback = true }: { state: PlayerState; command: (command: PlayerCommand) => Promise<boolean>; showPlayback?: boolean }) {
   const settings = state.dsp ?? defaultDsp;
   const [draft, setDraft] = useState<DspSettings>(settings);
   const [dirty, setDirty] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [feedback, setFeedback] = useState("");
   const current = dirty ? draft : settings;
-  const update = (patch: Partial<DspSettings>) => { setDraft({ ...current, ...patch }); setDirty(true); };
+  const update = (patch: Partial<DspSettings>) => { setDraft({ ...current, ...patch }); setDirty(true); setFeedback(""); };
+  const apply = async (next: DspSettings) => {
+    setApplying(true); setFeedback("");
+    const ok = await command({ action: "dsp", settings: next });
+    setApplying(false);
+    if (ok) { setDirty(false); setFeedback("Sound settings applied."); }
+    else setFeedback("Sound settings were not applied. Your changes are still here; try again.");
+  };
   const control = "min-h-11 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
   return <div className="space-y-7">
-    <div>
+    {showPlayback && <div>
       <h3 className="font-semibold">Playback</h3>
       <div className="mt-3 flex flex-wrap gap-2">
         <button className={control} disabled={!state.track} aria-pressed={state.shuffle} onClick={() => command({ action: "shuffle" })}><Shuffle className="mr-2 inline size-4" />Shuffle {state.shuffle ? "on" : "off"}</button>
         <button className={control} disabled={!state.track} aria-pressed={state.repeat > 0} onClick={() => command({ action: "repeat" })}><Repeat className="mr-2 inline size-4" />Repeat {["off", "one", "all"][state.repeat]}</button>
         <button className={control} disabled={!state.track} onClick={() => command({ action: "toggle" })}>{state.playing ? <Pause className="mr-2 inline size-4" /> : <Play className="mr-2 inline size-4" />}{state.playing ? "Pause" : "Play"}</button>
       </div>
-    </div>
-    {!state.dspAvailable && <p role="status" className="text-sm text-warn">Web Audio is unavailable. Use current Chrome for processing and smooth transitions.</p>}
-    <fieldset disabled={!state.dspAvailable} className="space-y-5 disabled:opacity-50">
+    </div>}
+    <label className="block text-sm">Volume <span className="float-right text-muted tabular">{state.volume}%</span>
+      <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="mt-2 h-8 w-full accent-mint" />
+    </label>
+    {!state.dspAvailable && <p role="status" className="text-sm text-muted">Sound processing is not supported by this browser. Standard playback is still available.</p>}
+    {state.dspAvailable && <fieldset disabled={applying} className="space-y-5 disabled:opacity-50">
       <legend className="mb-3 text-lg font-bold">Your sound</legend>
       <label className="flex min-h-11 items-center gap-3 text-sm font-semibold"><input type="checkbox" checked={current.enabled} onChange={(event) => update({ enabled: event.target.checked })} className="size-5 accent-mint" />10-band equalizer</label>
       <label className="flex flex-col gap-2 text-sm">Preset
@@ -68,14 +81,45 @@ export function AudioPanel({ state, command }: { state: PlayerState; command: (c
       <label className="block text-sm">Smooth transitions <span className="float-right text-muted tabular">{current.crossfade ? `${current.crossfade}s` : "Off"}</span>
         <input aria-label="Crossfade seconds" type="range" min="0" max="12" step="1" value={current.crossfade} onChange={(event) => update({ crossfade: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
       </label>
-      <p className="text-xs leading-relaxed text-muted">Real browser EQ, compression and overlapping equal-power crossfades. EQ boosts reserve headroom; enabling transitions reserves another 3.1 dB. Transitions are off by default for continuous albums; this is not Plexamp&apos;s proprietary Sweet Fades. Repeat-one does not crossfade.</p>
+      <p className="text-xs leading-relaxed text-muted">Shape your sound on this device. Crossfades blend the end of one song into the next; leave them off for continuous albums. Boosted EQ reserves headroom to reduce clipping. Repeat-one does not crossfade.</p>
       <div className="flex flex-wrap gap-2">
         <button disabled={!dirty} className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"
-          onClick={() => { command({ action: "dsp", settings: current }); setDirty(false); }}>Apply sound</button>
-        <button className={control} onClick={() => { command({ action: "dsp", settings: defaultDsp }); setDirty(false); }}>Reset / bypass</button>
+          onClick={() => void apply(current)}>{applying ? "Applying…" : "Apply sound"}</button>
+        <button className={control} onClick={() => void apply(defaultDsp)}>Reset / bypass</button>
       </div>
-    </fieldset>
+      <p role="status" className="text-sm text-muted">{feedback || (dirty ? "Unsaved sound changes" : "Settings are saved on this device.")}</p>
+    </fieldset>}
     <div><h3 className="mb-3 font-semibold">Listen on your phone</h3><InstallApp /><p className="mt-3 text-xs leading-relaxed text-muted">Audio settings stay on this device for your account. Installation needs HTTPS. Music still needs a server connection.</p></div>
+  </div>;
+}
+
+export function QueueContents({ state, command }: { state: PlayerState; command: (command: PlayerCommand) => void }) {
+  const current = state.queue.findIndex((track) => track.queueId === state.track?.queueId);
+  const upcoming = current >= 0 ? state.queue.slice(current + 1) : state.queue;
+  const remaining = current >= 0 ? Math.max(0, state.queueTotal - state.queueOffset - current - 1) : state.queueTotal;
+  return <div>
+    {state.track && <div className="mb-6">
+      <h3 className="mb-3 text-sm font-semibold text-muted">Now playing</h3>
+      <div className="flex items-center gap-3">
+        <Artwork track={{ artworkUrl: state.track.thumb ?? "" }} className="size-12" />
+        <div className="min-w-0"><p className="truncate font-semibold text-mint">{state.track.title}</p><p className="truncate text-sm text-muted">{state.track.artist}</p></div>
+      </div>
+    </div>}
+    <div className="mb-3 flex items-center justify-between gap-3">
+      <h3 className="text-sm font-semibold">Up next <span className="ml-1 text-muted tabular">· {remaining}</span></h3>
+      {remaining > 0 && <button onClick={() => command({ action: "clear" })} className="min-h-11 rounded-full px-3 text-xs text-muted hover:bg-hover hover:text-fg">Clear upcoming</button>}
+    </div>
+    {remaining > upcoming.length && <p className="mb-3 text-xs text-muted">Showing the next {upcoming.length} of {remaining} songs.</p>}
+    <ol className="space-y-1">
+      {upcoming.map((track) => <li key={track.queueId} className="group flex items-center gap-1 rounded-md hover:bg-hover">
+        <button onClick={() => command({ action: "skip", queueId: track.queueId! })} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left" aria-label={`Play ${track.title}`}>
+          <Artwork track={{ artworkUrl: track.thumb ?? "" }} className="size-10" />
+          <span className="min-w-0"><span className="block truncate text-sm font-semibold">{track.title}</span><span className="block truncate text-xs text-muted">{track.artist}</span></span>
+        </button>
+        <button aria-label={`Remove ${track.title} from queue`} onClick={() => command({ action: "remove", queueId: track.queueId! })} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg"><X className="size-4" /></button>
+      </li>)}
+    </ol>
+    {!upcoming.length && <p className="py-6 text-sm leading-relaxed text-muted">{state.track ? "You're all caught up. Add songs from the library to keep listening." : "Play a song or album to start your queue."}</p>}
   </div>;
 }
 

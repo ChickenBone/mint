@@ -4,11 +4,12 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward, SlidersHorizontal, Volume2, X } from "lucide-react";
+import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { formatDuration } from "@/lib/format";
 import { PLAYER_CHANNEL, playerItemSchema, playerStateSchema, type MusicView, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
-import { AudioPanel, LyricsPanel, PlayerPanel } from "./player-panels";
+import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
+import { PlaybackControls, SeekControl, Transport } from "./player-controls";
+import { NowPlaying } from "./now-playing";
 import { CollectionActions } from "./collection-actions";
 import { InstallApp } from "../install-app";
 
@@ -17,18 +18,18 @@ interface PlayerContext {
   ready: boolean;
   busy: boolean;
   state: PlayerState;
-  command: (command: PlayerCommand) => void;
+  command: (command: PlayerCommand) => Promise<boolean>;
   menu: (item: PlayerItem, point: { x: number; y: number }, returnTo?: HTMLElement | null) => void;
 }
 const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
-  registerFrame: (element: HTMLIFrameElement | null) => void; generation: number; music: boolean; ready: boolean; failed: boolean;
+  registerFrame: (element: HTMLIFrameElement | null) => void; generation: number; music: boolean; nowPlaying: boolean; ready: boolean; failed: boolean;
   panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void; reload: () => void;
+  returnTo: string; rememberReturn: () => void;
 }
 const ShellContext = createContext<ShellContext | null>(null);
 export const usePlayer = () => useContext(Context);
 const empty: PlayerState = { playing: false, time: 0, duration: 0, volume: 100, shuffle: false, repeat: 0, track: null, queue: [], queueTotal: 0, queueOffset: 0 };
-const timestamp = (ms: number) => ms >= 1000 ? formatDuration(Math.floor(ms / 1000)) : "0:00";
 
 export function MusicNavigation() {
   const path = usePathname(), params = useSearchParams();
@@ -46,7 +47,7 @@ export function MusicNavigation() {
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const registerFrame = useCallback((element: HTMLIFrameElement | null) => { frame.current = element; }, []);
-  const pending = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const pending = useRef(new Map<string, { timer: ReturnType<typeof setTimeout>; resolve: (ok: boolean) => void }>());
   const selectionRequest = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
@@ -55,26 +56,36 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<PlayerState>(empty);
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Menu | null>(null);
-  const [panel, setPanel] = useState<ShellContext["panel"]>(null);
+  const [returnTo, setReturnTo] = useState("/app/music?view=library");
+  const [panelSelection, setPanelSelection] = useState<{ surface: string; value: ShellContext["panel"] } | null>(null);
   const pathname = usePathname();
   const params = useSearchParams();
+  const surface = `${pathname}?${params.toString()}`;
+  const panel = panelSelection?.surface === surface ? panelSelection.value : null;
+  const setPanel = useCallback((value: ShellContext["panel"]) => setPanelSelection({ surface, value }), [surface]);
   const router = useRouter();
   const music = pathname === "/app/music";
   const rawView = params.get("view");
   const view: MusicView = rawView === "search" || rawView === "library" || rawView === "now-playing" ? rawView : "home";
+  const nowPlaying = music && view === "now-playing";
+  const rememberReturn = useCallback(() => setReturnTo(`${location.pathname}${location.search}`), []);
 
-  const command = useCallback((command: PlayerCommand) => {
-    if (!ready || !frame.current?.contentWindow) { setError("The music engine is still starting. Try again in a moment."); return; }
+  const command = useCallback((command: PlayerCommand): Promise<boolean> => {
+    if (!ready || !frame.current?.contentWindow) { setError("The music engine is still starting. Try again in a moment."); return Promise.resolve(false); }
     const id = crypto.randomUUID();
     if (["play", "collection", "sonic"].includes(command.action)) { selectionRequest.current = id; setBusy(true); }
-    const timer = setTimeout(() => {
-      pending.current.delete(id);
-      if (selectionRequest.current === id) { selectionRequest.current = null; setBusy(false); }
-      setError("The music engine did not respond. Reload the player and try again.");
-      setFailed(true);
-    }, command.action === "collection" || command.action === "sonic" ? 60_000 : 20_000);
-    pending.current.set(id, timer);
-    frame.current.contentWindow.postMessage({ channel: PLAYER_CHANNEL, type: "command", id, command }, location.origin);
+    const target = frame.current.contentWindow;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        pending.current.delete(id);
+        resolve(false);
+        if (selectionRequest.current === id) { selectionRequest.current = null; setBusy(false); }
+        setError("The music engine did not respond. Reload the player and try again.");
+        setFailed(true);
+      }, command.action === "collection" || command.action === "sonic" ? 60_000 : 20_000);
+      pending.current.set(id, { timer, resolve });
+      target.postMessage({ channel: PLAYER_CHANNEL, type: "command", id, command }, location.origin);
+    });
   }, [ready]);
 
   useEffect(() => {
@@ -89,24 +100,29 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       }
       if (data.type === "error" && typeof data.message === "string") setError(data.message.slice(0, 500));
       if (data.type === "dismiss-menu") setSelection(null);
+      if (data.type === "now-playing" && new URLSearchParams(location.search).get("view") !== "now-playing") {
+        rememberReturn(); router.push("/app/music?view=now-playing");
+      }
       if (data.type === "result" && typeof data.id === "string" && pending.current.has(data.id)) {
-        clearTimeout(pending.current.get(data.id));
+        const request = pending.current.get(data.id)!;
+        clearTimeout(request.timer);
+        request.resolve(data.ok === true);
         pending.current.delete(data.id);
         if (selectionRequest.current === data.id) { selectionRequest.current = null; setBusy(false); }
-        if (!data.ok) setError(typeof data.message === "string" ? data.message.slice(0, 500) : "This playback action failed. Try again.");
+        if (data.ok !== true) setError(typeof data.message === "string" ? data.message.slice(0, 500) : "This playback action failed. Try again.");
       }
       if (data.type === "menu") {
         const item = playerItemSchema.safeParse(data.item);
         const rect = frame.current?.getBoundingClientRect();
         if (item.success && rect && Number.isFinite(data.point?.x) && Number.isFinite(data.point?.y)) {
-          setSelection({ item: item.data, x: rect.x + data.point.x, y: rect.y + data.point.y, path: location.pathname, returnTo: frame.current });
+          setSelection({ item: item.data, x: rect.x + data.point.x, y: rect.y + data.point.y, path: `${location.pathname}?${new URLSearchParams(location.search).toString()}`, returnTo: frame.current });
         }
       }
     }
     window.addEventListener("message", receive);
     const timers = pending.current;
-    return () => { window.removeEventListener("message", receive); timers.forEach(clearTimeout); timers.clear(); };
-  }, []);
+    return () => { window.removeEventListener("message", receive); timers.forEach(({ timer, resolve }) => { clearTimeout(timer); resolve(false); }); timers.clear(); };
+  }, [router, rememberReturn]);
 
   useEffect(() => {
     if (ready) return;
@@ -115,12 +131,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [ready, generation]);
   useEffect(() => {
     if (!ready || !music) return;
-    const timer = setTimeout(() => command({ action: "navigate", view }), 0);
+    const timer = setTimeout(() => { if (!nowPlaying) void command({ action: "navigate", view }); }, 0);
     return () => clearTimeout(timer);
-  }, [ready, music, view, command]);
+  }, [ready, music, nowPlaying, view, command]);
+  useEffect(() => {
+    if (!nowPlaying) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !event.defaultPrevented && !selection) router.push(returnTo);
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, [nowPlaying, router, returnTo, selection]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.target !== document.body || !state.track) return;
+      if (event.code !== "Space" || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || !state.track) return;
+      if (event.target instanceof HTMLElement && event.target.closest("input,textarea,select,button,a,[role=tab],[role=menuitem],[role=button],[contenteditable=true]")) return;
       event.preventDefault();
       command({ action: "toggle" });
     };
@@ -129,16 +154,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [command, state.track]);
 
   const closeMenu = useCallback(() => { selection?.returnTo?.focus(); setSelection(null); }, [selection]);
-  const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: pathname, returnTo: returnTo ?? null });
+  const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
   const browse = (item: PlayerItem) => { router.push("/app/music?view=library"); command({ action: "browse", item }); };
   const reload = () => {
-    pending.current.forEach(clearTimeout); pending.current.clear();
+    pending.current.forEach(({ timer, resolve }) => { clearTimeout(timer); resolve(false); }); pending.current.clear();
     setReady(false); setBusy(false); selectionRequest.current = null; setFailed(false); setError(null); setState(empty); setGeneration((n) => n + 1);
   };
 
   return (
     <Context.Provider value={{ ready, busy, state, command, menu: showMenu }}>
-      <ShellContext.Provider value={{ registerFrame, generation, music, ready, failed, panel, setPanel, reload }}>
+      <ShellContext.Provider value={{ registerFrame, generation, music, nowPlaying, ready, failed, panel, setPanel, reload, returnTo, rememberReturn }}>
         {children}
       </ShellContext.Provider>
       {(error || selection) && createPortalSafe(
@@ -148,7 +173,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
             {failed && <button onClick={reload} className="shrink-0 rounded-full bg-mint px-3 py-2 font-semibold text-mint-ink">Reload player</button>}
             <button aria-label="Dismiss message" onClick={() => setError(null)} className="rounded-full p-2 hover:bg-hover"><X className="size-4" /></button>
           </div>}
-          {selection && selection.path === pathname && <TrackMenu selection={selection} close={closeMenu} command={command} browse={browse} />}
+          {selection && selection.path === surface && <TrackMenu selection={selection} close={closeMenu} command={command} browse={browse} />}
         </div>,
       )}
       <div className="hidden" data-player-mounted={ready ? "ready" : "loading"} />
@@ -160,7 +185,7 @@ function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 export function MusicStage({ children }: { children: React.ReactNode }) {
-  const { registerFrame, generation, music, ready, failed, panel, setPanel, reload } = useContext(ShellContext)!;
+  const { registerFrame, generation, music, nowPlaying, ready, failed, panel, setPanel, reload, returnTo } = useContext(ShellContext)!;
   const player = usePlayer()!;
   const closeQueue = useCallback(() => {
     setPanel(null);
@@ -168,61 +193,46 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
     <main className="h-full overflow-y-auto px-4 pb-12 pt-5 scrollbar-thin sm:px-6" hidden={music}>{children}</main>
-    <div className={`absolute inset-0 flex flex-col ${music ? "" : "invisible pointer-events-none"}`} aria-hidden={!music} inert={!music}>
+    <div className={`absolute inset-0 flex flex-col ${music && !nowPlaying ? "" : "invisible pointer-events-none"}`} aria-hidden={!music || nowPlaying} inert={!music || nowPlaying}>
       <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3 sm:px-6"><CollectionActions collection={{ kind: "library" }} />
-        <span className="hidden text-xs text-muted md:block">Your library. Powered by Plexamp.</span></div>
+        <span className="hidden text-xs text-muted md:block">Made for your music.</span></div>
       <iframe key={generation} ref={registerFrame} src="/listen/engine" title="Music library, powered by Plexamp"
         allow="autoplay" className="min-h-0 w-full flex-1 border-0" />
       {!ready && <div className="absolute inset-0 grid place-items-center bg-surface p-8 text-center">
         <div><p className="text-xl font-semibold">{failed ? "Music needs a moment" : "Opening your music…"}</p>
-          <p className="mt-2 text-muted">Plexamp stays connected while you move around Mint.</p>
+          <p className="mt-2 text-muted">Your player stays connected while you move around Mint.</p>
           {failed && <button onClick={reload} className="mt-5 rounded-full bg-mint px-5 py-3 font-semibold text-mint-ink">Reload player</button>}
         </div>
       </div>}
     </div>
-    {panel === "queue" && <QueuePanel state={player.state} command={player.command} close={closeQueue} />}
-    {panel === "audio" && <PlayerPanel title="Audio settings" close={closeQueue}><AudioPanel state={player.state} command={player.command} /></PlayerPanel>}
-    {panel === "lyrics" && <PlayerPanel title="Lyrics" close={closeQueue}><LyricsPanel state={player.state} command={player.command} /></PlayerPanel>}
+    {nowPlaying && <NowPlaying state={player.state} ready={ready} command={player.command} panel={panel} setPanel={setPanel} returnTo={returnTo} onMore={(track, button) => {
+      const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
+    }} />}
+    {!nowPlaying && panel === "queue" && <PlayerPanel title="Queue" close={closeQueue}><QueueContents state={player.state} command={player.command} /></PlayerPanel>}
+    {!nowPlaying && panel === "audio" && <PlayerPanel title="Audio settings" close={closeQueue}><AudioPanel state={player.state} command={player.command} /></PlayerPanel>}
+    {!nowPlaying && panel === "lyrics" && <PlayerPanel title="Lyrics" close={closeQueue}><LyricsPanel state={player.state} command={player.command} /></PlayerPanel>}
   </div>;
 }
 
 export function PlayerBar() {
   const { state, ready, command } = usePlayer()!;
-  const { panel, setPanel } = useContext(ShellContext)!;
+  const { panel, setPanel, nowPlaying, rememberReturn } = useContext(ShellContext)!;
   const track = state.track;
+  if (nowPlaying) return null;
   return <section aria-label="Music player" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg bg-surface px-3 py-2 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-5 lg:py-3">
     <div className="flex min-w-0 items-center gap-3">
-      <Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-12 shrink-0 rounded" />
+      <Link href="/app/music?view=now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-12 rounded" /></Link>
       <div className="min-w-0">
-        <Link href="/app/music?view=now-playing" className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
+        <Link href="/app/music?view=now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
         <p className="truncate text-xs text-muted">{track?.artist ?? (ready ? "Choose a song to start listening" : "Connecting to your library…")}</p>
       </div>
     </div>
     <div className="flex items-center justify-center gap-2 lg:flex-col lg:gap-1">
-      <div className="flex items-center justify-center gap-1">
-        <Transport label="Shuffle" active={state.shuffle} disabled={!ready || !track} onClick={() => command({ action: "shuffle" })} className="hidden sm:inline-flex"><Shuffle /></Transport>
-        <Transport label="Previous track" disabled={!ready || !track} onClick={() => command({ action: "previous" })} className="hidden sm:inline-flex"><SkipBack /></Transport>
-        <button aria-label={state.playing ? "Pause" : "Play"} disabled={!ready || !track} onClick={() => command({ action: "toggle" })}
-          className="grid size-10 shrink-0 place-items-center rounded-full bg-mint text-mint-ink transition hover:bg-mint-strong disabled:cursor-not-allowed disabled:opacity-40">
-          {state.playing ? <Pause className="size-5" fill="currentColor" /> : <Play className="size-5" fill="currentColor" />}
-        </button>
-        <Transport label="Next track" disabled={!ready || !track} onClick={() => command({ action: "next" })}><SkipForward /></Transport>
-        <Transport label={state.repeat === 1 ? "Repeat one" : "Repeat"} active={state.repeat > 0} disabled={!ready || !track} onClick={() => command({ action: "repeat" })} className="hidden sm:inline-flex">{state.repeat === 1 ? <Repeat1 /> : <Repeat />}</Transport>
-      </div>
-      <label className="hidden w-full items-center gap-2 text-[11px] text-muted tabular lg:flex">
-        <span className="w-9 text-right">{timestamp(state.time)}</span><span className="sr-only">Seek</span>
-        <input aria-label="Seek" type="range" min="0" max={state.duration || 1} step="1000" value={Math.min(state.time, state.duration)}
-          disabled={!ready || !track} onChange={(event) => command({ action: "seek", value: Number(event.target.value) })} className="h-4 min-w-0 flex-1 cursor-pointer accent-mint" />
-        <span className="w-9">{timestamp(state.duration)}</span>
-      </label>
+      <PlaybackControls state={state} ready={ready} command={command} />
+      <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
     </div>
     <div className="col-span-2 flex min-w-0 items-center gap-2 lg:col-span-1 lg:justify-end">
-      <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px] text-muted tabular lg:hidden">
-        <span>{timestamp(state.time)}</span><span className="sr-only">Seek</span>
-        <input aria-label="Seek" type="range" min="0" max={state.duration || 1} step="1000" value={Math.min(state.time, state.duration)}
-          disabled={!ready || !track} onChange={(event) => command({ action: "seek", value: Number(event.target.value) })} className="h-4 min-w-0 flex-1 accent-mint" />
-        <span>{timestamp(state.duration)}</span>
-      </label>
+      <div className="min-w-0 flex-1 lg:hidden"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Audio settings" active={panel === "audio"} disabled={!ready} onClick={() => setPanel(panel === "audio" ? null : "audio")}><SlidersHorizontal /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
@@ -233,13 +243,6 @@ export function PlayerBar() {
       </label>
     </div>
   </section>;
-}
-
-function Transport({ children, label, active, disabled, onClick, className = "" }: {
-  children: React.ReactNode; label: string; active?: boolean; disabled?: boolean; onClick: () => void; className?: string;
-}) {
-  return <button aria-label={label} aria-pressed={active} disabled={disabled} onClick={onClick}
-    className={`size-10 shrink-0 items-center justify-center rounded-full transition hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-4 ${active ? "text-mint" : "text-muted hover:text-fg"} ${className || "inline-flex"}`}>{children}</button>;
 }
 
 function TrackMenu({ selection, close, command, browse }: {
@@ -275,7 +278,8 @@ function TrackMenu({ selection, close, command, browse }: {
     <p className="truncate border-b border-line px-3 py-3 text-xs font-semibold text-muted">{item.title}</p>
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", item })}>Play {item.type === "track" ? "now" : item.type}</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", item, shuffle: true })}>Shuffle {item.type}</button>}
-    {item.type === "track" && /^[0-9a-f-]{36}$/.test(item.ratingKey) && <button role="menuitem" className={menuClass} onClick={() => act({ action: "sonic", trackId: item.ratingKey })}>Start sonic radio</button>}
+    {item.type === "track" && item.grandparentKey && <button role="menuitem" className={menuClass} onClick={() => act({ action: "play", shuffle: true,
+      item: { key: item.grandparentKey!, ratingKey: item.grandparentKey!.split("/").pop()!, type: "artist", title: item.artist ?? "Artist" } })}>Shuffle this artist</button>}
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "next-in-queue", item })}>Play next</button>
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "add-to-queue", item })}>Add to queue</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => { close(); browse(item); }}>Open {item.type}</button>}
@@ -287,33 +291,6 @@ function TrackMenu({ selection, close, command, browse }: {
     }}>Go to artist</button>}
     {item.queueId && <button role="menuitem" className={menuClass} onClick={() => act({ action: "remove", queueId: item.queueId! })}>Remove from queue</button>}
   </div>;
-}
-
-function QueuePanel({ state, command, close }: { state: PlayerState; command: PlayerContext["command"]; close: () => void }) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    closeRef.current?.focus();
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
-    window.addEventListener("keydown", escape);
-    return () => window.removeEventListener("keydown", escape);
-  }, [close]);
-  return <aside aria-label="Play queue" className="absolute inset-y-0 right-0 z-30 flex w-full flex-col border-l border-line bg-surface p-4 sm:w-80">
-    <div className="flex items-center justify-between"><h2 className="text-xl font-bold">Queue</h2><button ref={closeRef} aria-label="Close queue" onClick={close} className="rounded-full p-2 hover:bg-hover"><X className="size-5" /></button></div>
-    <div className="my-4 flex items-center justify-between text-xs text-muted"><span>{state.queueTotal} {state.queueTotal === 1 ? "track" : "tracks"}</span>
-      {state.queueTotal > 1 && <button onClick={() => command({ action: "clear" })} className="rounded-full px-3 py-2 hover:bg-hover hover:text-fg">Clear upcoming</button>}
-    </div>
-    {state.queueTotal > state.queue.length && <p className="mb-3 text-xs text-muted">Showing tracks {state.queueOffset + 1}–{state.queueOffset + state.queue.length} around your current song.</p>}
-    <ol className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-      {state.queue.map((track) => <li key={track.queueId} className={`group flex items-center gap-2 rounded-md p-2 hover:bg-hover ${track.queueId === state.track?.queueId ? "text-mint" : "text-fg"}`}>
-        <button onClick={() => command({ action: "skip", queueId: track.queueId! })} className="flex min-w-0 flex-1 items-center gap-3 text-left" aria-label={`Play ${track.title}`} aria-current={track.queueId === state.track?.queueId ? "true" : undefined}>
-          <Artwork track={{ artworkUrl: track.thumb ?? "" }} className="size-10 shrink-0 rounded" />
-          <span className="min-w-0"><span className="block truncate text-sm font-semibold">{track.title}</span><span className="block truncate text-xs text-muted">{track.artist}</span></span>
-        </button>
-        <button aria-label={`Remove ${track.title} from queue`} onClick={() => command({ action: "remove", queueId: track.queueId! })} className="rounded-full p-2 text-muted hover:bg-elevated hover:text-fg"><X className="size-4" /></button>
-      </li>)}
-    </ol>
-    {!state.queue.length && <p className="py-8 text-sm text-muted">Play a song or album to start your queue.</p>}
-  </aside>;
 }
 
 export function TrackMenuButton({ item }: { item: PlayerItem }) {

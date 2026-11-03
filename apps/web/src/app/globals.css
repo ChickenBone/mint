@@ -108,7 +108,46 @@
   animation-delay: var(--rise-delay, 0ms);
 }
 
+/* Opening a sleeve reveals the listening workspace without moving the audio engine. */
+@keyframes player-reveal {
+  from { clip-path: inset(8% 0 0); opacity: 0.6; transform: translateY(12px); }
+  to { clip-path: inset(0); opacity: 1; transform: none; }
+}
+.now-playing {
+  animation: player-reveal 260ms var(--ease-out-expo);
+}
+.now-playing-grid {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hover) transparent;
+}
+.player-panel {
+  animation: player-reveal 200ms var(--ease-out-expo);
+}
+@media (min-width: 1280px) {
+  .now-playing {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .now-playing-grid {
+    align-content: normal;
+    overflow: hidden;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    margin-top: 1rem;
+  }
+  .now-playing-grid > section:first-child {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .stage-flash, .drift, .land, .rise { animation: none; }
+  .stage-flash, .drift, .land, .rise, .now-playing, .player-panel { animation: none; }
   * { transition-duration: 0.01ms !important; }
 }

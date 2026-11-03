@@ -31,12 +31,12 @@ Mint is a single live pipeline from "liked" to "on my own server," and every ste
 - Cover art is a remote URL (Cover Art Archive or YouTube thumbnail). It is also embedded in the file for Plex.
 - Existing Plex music can be indexed with a read-only original-folder mount and no Plex API writes. Likes reuse confidently matched originals; lossy originals may get a separately stored lossless-format upgrade, while originals remain untouched. Codec checks cannot establish spectral provenance.
 - The NAS compose stack includes its own acquisition/finalization worker. Volunteer machines are optional and their counts do not describe the local worker.
-- V2.6 adds full collection play/shuffle, member-local browser EQ/compression and real crossfades, synced/plain lyrics from keyless LRCLIB, and read-only Plex sonic recommendations restricted to playable indexed tracks. Proprietary Sweet Fades/native DSP is not reproduced; Plex sonic analysis/entitlements remain required.
+- V2.6 adds full collection play/shuffle, member-local browser EQ/compression and real crossfades, synced/plain lyrics from keyless LRCLIB, and a Mint-owned now-playing view with integrated queue, lyrics and sound tools. These independently implemented listening features need no Plex Pass. Unsupported processing controls and unconditional sonic recommendations are hidden. The private read-only sonic endpoint still requires actual Plex analysis/entitlements; proprietary Sweet Fades/native DSP is not reproduced.
 - Android Chrome can install Mint as a standalone HTTPS PWA. Private pages, lyrics and audio are never service-worker cached; offline listening and guaranteed native-style background execution are not offered.
 
 ## Brand Commitments
 - Name: **Mint**.
-- The member app must feel like Spotify: a sidebar library, playable track tables, artwork-led music views and a persistent Mint player bar. Playback continues across member pages without rebuilding Plexamp's music interface.
+- The member app must feel like Spotify: a sidebar library, playable track tables, artwork-led music views and persistent playback. Mint owns the now-playing experience and hides unsupported features; the embedded browsing engine stays mounted while member pages and listening views change.
 
 ## Evidence on Hand
 - There are no users, testimonials, or metrics yet. All stats on the front page must come from the live database and must never be invented.
