@@ -5,7 +5,7 @@ import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { clientIp, userAgent } from "./request";
+import { clientIp, publicUrl, userAgent } from "./request";
 
 export type SessionUser = Pick<typeof schema.users.$inferSelect, "id" | "email" | "name" | "role" | "status">;
 
@@ -17,7 +17,8 @@ export async function createSession(userId: string) {
     .values({ id: sha256(token), userId, expiresAt, ip: await clientIp(), userAgent: (await userAgent())?.slice(0, 300) });
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    // Plain-HTTP LAN installs (no domain yet) still need a working login.
+    secure: publicUrl().startsWith("https://"),
     sameSite: "lax",
     path: "/",
     expires: expiresAt,

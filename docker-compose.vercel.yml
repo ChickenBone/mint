@@ -1,0 +1,55 @@
+# Website on Vercel, everything else on this machine. Postgres and Redis move to Neon and Upstash
+# because Vercel has to reach them. Put this in .env so every docker compose command picks it up:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.vercel.yml
+#
+# Caddy then serves only ws.$MINT_DOMAIN (realtime) and hub.$MINT_DOMAIN (volunteer uploads).
+
+services:
+  web:
+    profiles: [off]
+  postgres:
+    profiles: [off]
+  redis:
+    profiles: [off]
+  caddy:
+    configs: !override
+      - source: caddyfile_vercel
+        target: /etc/caddy/Caddyfile
+
+configs:
+  caddyfile_vercel:
+    content: |
+      {
+      	admin off
+      }
+      ws.${MINT_DOMAIN:?set MINT_DOMAIN in .env} {
+      	@ws path /ws*
+      	handle @ws {
+      		reverse_proxy realtime:3001 {
+      			header_up X-Forwarded-For {remote_host}
+      		}
+      	}
+      	handle {
+      		respond 404
+      	}
+      }
+
+      hub.${MINT_DOMAIN} {
+      	@ingest path /ingest/*
+      	handle @ingest {
+      		request_body {
+      			max_size 250MB
+      		}
+      		reverse_proxy hub:8090 {
+      			header_up X-Forwarded-For {remote_host}
+      			transport http {
+      				read_timeout 1h
+      				write_timeout 1h
+      			}
+      		}
+      	}
+      	handle {
+      		respond 404
+      	}
+      }

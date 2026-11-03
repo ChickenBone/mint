@@ -7,7 +7,7 @@ import { useLiveStats } from "./realtime";
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 function N({ children }: { children: React.ReactNode }) {
-  return <span className="text-fg tabular">{children}</span>;
+  return <span className="whitespace-nowrap text-fg tabular">{children}</span>;
 }
 
 /** The library described in one live sentence, with the two ratios that matter underneath. */

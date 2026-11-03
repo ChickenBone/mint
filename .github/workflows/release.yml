@@ -64,7 +64,7 @@ jobs:
         with:
           sparse-checkout: |
             docker-compose.yml
-            deploy
+            docker-compose.vercel.yml
           sparse-checkout-cone-mode: false
       - name: Install SSH key
         run: |
@@ -78,5 +78,5 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           DIR: ${{ vars.DEPLOY_PATH || '/srv/mint' }}
         run: |
-          scp -r docker-compose.yml deploy "$USER@$HOST:$DIR/"
+          scp docker-compose.yml docker-compose.vercel.yml "$USER@$HOST:$DIR/"
           ssh "$USER@$HOST" "cd '$DIR' && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"

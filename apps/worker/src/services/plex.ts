@@ -116,3 +116,24 @@ export async function ping() {
     return false;
   }
 }
+
+interface PlexSection {
+  key: string;
+  type: string;
+  title: string;
+  Location?: Array<{ path: string }>;
+}
+
+export async function listSections(): Promise<PlexSection[]> {
+  const res = await plex<{ MediaContainer: { Directory?: PlexSection[] } }>("/library/sections", { timeoutMs: 5000, retries: 0 });
+  return res.MediaContainer.Directory ?? [];
+}
+
+/** Creates a Music library at `location` using the modern Plex Music agent (needed for sonic analysis). */
+export async function createMusicSection(location: string) {
+  await http(`${base()}/library/sections`, {
+    method: "POST",
+    headers: { "x-plex-token": requireEnv("PLEX_TOKEN") },
+    query: { name: "Music", type: "artist", agent: "tv.plex.agents.music", scanner: "Plex Music", language: "en-US", location },
+  });
+}

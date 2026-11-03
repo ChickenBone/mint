@@ -4,6 +4,7 @@ import { getRedis } from "@mint/core/redis";
 import type { Job } from "bullmq";
 import { and, asc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { config } from "../config";
+import { wireIntegrations } from "../integrations";
 import { log } from "../log";
 import { queues } from "../queues";
 import * as cobalt from "../services/cobalt";
@@ -26,6 +27,7 @@ async function publishStats() {
 }
 
 async function health() {
+  const notes = await wireIntegrations();
   const [lid, cob, plx] = await Promise.all([
     lidarr.lidarrEnabled() ? lidarr.ping() : Promise.resolve(null),
     process.env.COBALT_URL ? cobalt.ping() : Promise.resolve(null),
@@ -35,6 +37,7 @@ async function health() {
   const report = {
     services: { lidarr: lid, cobalt: cob, plex: plx, torbox: torboxEnabled() ? true : null },
     queues: Object.fromEntries(counts),
+    notes,
     checkedAt: new Date().toISOString(),
   };
   await getRedis().set("mint:health", JSON.stringify(report), "EX", 300);

@@ -28,7 +28,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           isAdmin={user.role === "admin"}
           pendingRequests={pending}
           activeJobs={summary.active}
-          playlists={playlists.map((p) => ({ id: p.id, title: p.title, syncEnabled: p.syncEnabled, itemCount: p.itemCount }))}
+          playlists={playlists.map((p) => ({ id: p.id, title: p.title, syncEnabled: p.syncEnabled, itemCount: p.itemCount, artworkUrl: p.artworkUrl }))}
         />
       </aside>
 

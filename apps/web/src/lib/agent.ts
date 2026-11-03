@@ -13,7 +13,8 @@ export const MAX_WORKERS_PER_USER = 5;
 export const MAX_WORKER_CONCURRENCY = 4;
 
 export function hubUrl() {
-  const url = process.env.HUB_URL;
+  // Self-hosted: Caddy routes /ingest on the main domain to the hub.
+  const url = process.env.HUB_URL || process.env.PUBLIC_URL;
   if (!url) throw new Error("HUB_URL is not set");
   return url.replace(/\/$/, "");
 }

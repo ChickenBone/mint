@@ -196,6 +196,8 @@ export async function getFailedTracks(limit = 100): Promise<TrackView[]> {
 export interface Health {
   services: Record<"lidarr" | "cobalt" | "plex" | "torbox", boolean | null>;
   queues: Record<string, { active: number; waiting: number; delayed: number; failed: number }>;
+  /** Setup steps the worker couldn't finish on its own. */
+  notes?: string[];
   checkedAt: string;
 }
 

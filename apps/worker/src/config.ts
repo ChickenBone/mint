@@ -15,7 +15,10 @@ export const config = {
     finalize: numberEnv("FINALIZE_CONCURRENCY", 2),
     torbox: numberEnv("TORBOX_CONCURRENCY", 2),
   },
-  plexEnabled: Boolean(process.env.PLEX_URL && process.env.PLEX_TOKEN && process.env.PLEX_MUSIC_SECTION_ID),
+  /** A getter: the token and section can be discovered after startup (see integrations.ts). */
+  get plexEnabled() {
+    return Boolean(process.env.PLEX_URL && process.env.PLEX_TOKEN && process.env.PLEX_MUSIC_SECTION_ID);
+  },
   /** auto: hand YouTube rips to volunteer workers when any are online (or when no local Cobalt). */
   remoteMode: optionalEnv("REMOTE_DOWNLOADS", "auto") as "auto" | "always" | "never",
   /** Take a job back from the remote pool and rip it locally after this long without a taker. */

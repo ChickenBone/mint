@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import { Artwork } from "@/components/artwork";
 import { Activity, Heart, Home, Library, ListMusic, Server, Settings, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -11,7 +12,7 @@ interface Props {
   isAdmin: boolean;
   pendingRequests: number;
   activeJobs: number;
-  playlists: Array<{ id: string; title: string; syncEnabled: boolean; itemCount: number }>;
+  playlists: Array<{ id: string; title: string; syncEnabled: boolean; itemCount: number; artworkUrl: string | null }>;
 }
 
 export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: Props) {
@@ -83,9 +84,13 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
                   aria-current={path === href ? "page" : undefined}
                   className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover", path === href && "bg-hover")}
                 >
-                  <span className="grid size-12 place-items-center rounded bg-elevated text-faint">
-                    <ListMusic className="size-5" aria-hidden />
-                  </span>
+                  {p.artworkUrl ? (
+                    <Artwork track={{ artworkUrl: p.artworkUrl }} className="size-12 rounded" />
+                  ) : (
+                    <span className="grid size-12 shrink-0 place-items-center rounded bg-elevated text-faint">
+                      <ListMusic className="size-5" aria-hidden />
+                    </span>
+                  )}
                   <span className="min-w-0">
                     <span className={clsx("block truncate font-medium", !p.syncEnabled && "text-muted")}>{p.title}</span>
                     <span className="block truncate text-sm text-muted">

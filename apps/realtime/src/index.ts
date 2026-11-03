@@ -12,6 +12,14 @@ const PORT = Number(process.env.PORT ?? 3001);
 const allowedOrigins = new Set(
   (process.env.ALLOWED_ORIGINS ?? process.env.PUBLIC_URL ?? "http://localhost:3000").split(",").map((o) => o.trim()),
 );
+/** Same-origin through the reverse proxy (self-hosted on a LAN address or a domain not listed in ALLOWED_ORIGINS). */
+function sameHost(origin: string, host: string | undefined) {
+  try {
+    return Boolean(host) && new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
 const MAX_CONNECTIONS_PER_IP = Number(process.env.WS_MAX_PER_IP ?? 20);
 
 interface Client {
@@ -69,7 +77,7 @@ server.on("upgrade", async (req, socket, head) => {
   const url = new URL(req.url ?? "/", "http://x");
   const origin = req.headers.origin;
   const ip = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "?";
-  if (url.pathname !== "/ws" || (origin && !allowedOrigins.has(origin))) {
+  if (url.pathname !== "/ws" || (origin && !allowedOrigins.has(origin) && !sameHost(origin, req.headers.host))) {
     socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
     return socket.destroy();
   }

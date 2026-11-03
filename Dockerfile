@@ -38,10 +38,13 @@ WORKDIR /app
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
 COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public
+COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/mint-entrypoint
+RUN mkdir -p /secrets && chown node:node /secrets
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["mint-entrypoint"]
 CMD ["node", "apps/web/server.js"]
 
 # ---- worker: pipeline, needs ffmpeg. The same image runs the hub: CMD ["node", "dist/hub.js"] ----
@@ -54,12 +57,14 @@ WORKDIR /app
 COPY --from=worker-deps /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/worker/dist ./dist
 COPY --from=build /repo/packages/core/migrations ./migrations
-RUN mkdir -p /data/staging /music /blackhole && chown -R node:node /data /music /blackhole
+COPY deploy/docker/init.mjs ./init.mjs
+COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/mint-entrypoint
+RUN mkdir -p /data/staging /music /blackhole /secrets && chown -R node:node /data /music /blackhole /secrets
 USER node
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-ENTRYPOINT ["tini", "--"]
+ENTRYPOINT ["tini", "--", "mint-entrypoint"]
 CMD ["node", "--enable-source-maps", "dist/index.js"]
 
 # ---- realtime: WebSocket gateway ----
@@ -68,10 +73,13 @@ ENV NODE_ENV=production PORT=3001
 WORKDIR /app
 COPY --from=realtime-deps /repo/node_modules ./node_modules
 COPY --from=build /repo/apps/realtime/dist ./dist
+COPY --chmod=755 deploy/docker/entrypoint.sh /usr/local/bin/mint-entrypoint
+RUN mkdir -p /secrets && chown node:node /secrets
 USER node
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3001/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+ENTRYPOINT ["mint-entrypoint"]
 CMD ["node", "--enable-source-maps", "dist/index.js"]
 
 # ---- agent: volunteer download worker (no runtime dependencies) ----

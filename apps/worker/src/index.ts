@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { QUEUE } from "@mint/core";
@@ -9,6 +10,7 @@ import { Worker, type Processor } from "bullmq";
 import { sql } from "drizzle-orm";
 import { config } from "./config";
 import { ensureDir } from "./files";
+import { wireIntegrations } from "./integrations";
 import { processAcquire, onAcquireFailed } from "./jobs/acquire";
 import { processFinalize } from "./jobs/finalize";
 import { processMaintenance } from "./jobs/maintenance";
@@ -20,9 +22,11 @@ import { connection, queues } from "./queues";
 import { updateTrack } from "./track-state";
 
 async function seedAdmin() {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
-  if (!email || !password) return;
+  const email = process.env.ADMIN_EMAIL || "admin@mint.local";
+  const password =
+    process.env.ADMIN_PASSWORD ||
+    (await readFile(path.join(process.env.MINT_SECRETS_DIR ?? "/secrets", "admin_password"), "utf8").then((s) => s.trim(), () => ""));
+  if (!password) return;
   const db = getDb();
   const existing = await db.query.users.findFirst({ where: sql`lower(${schema.users.email}) = ${email.toLowerCase()}` });
   if (existing) return;
@@ -41,6 +45,7 @@ async function main() {
   await runMigrations(process.env.MIGRATIONS_DIR ?? path.resolve(process.cwd(), "migrations"));
   await seedAdmin();
   await ensureDir(config.stagingDir);
+  for (const note of await wireIntegrations()) log.warn(note);
 
   const acquireWorker = new Worker(QUEUE.acquire, processAcquire as Processor, { connection, concurrency: config.concurrency.acquire });
   const finalizeWorker = new Worker(QUEUE.finalize, processFinalize, { connection, concurrency: config.concurrency.finalize });

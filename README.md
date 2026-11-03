@@ -6,56 +6,96 @@ Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs eac
 - **Member dashboard.** A Spotify‑style app with liked songs, playlists, the library, per‑track job progress, sync settings, and an admin area for approving people.
 - **Pipeline.** Lidarr and TorBox are tried first; a self‑hosted Cobalt rip is the fallback. Files are tagged and moved into the shared library, Plex scans them, sonic analysis runs, and per‑user Plex playlists are created.
 
-## Quick deploy (prod)
+<p align="center">
+  <img src="docs/screenshots/landing.png" alt="Mint landing page: a wall of album covers behind the headline “Every song you like, on a shelf we own.”" width="100%">
+</p>
 
-The short version. Each step links to the detailed section below if something needs explaining.
+| | |
+| --- | --- |
+| ![Live library stats and the newest arrivals](docs/screenshots/landing-stats.png) | ![Member home: songs on the way with live progress](docs/screenshots/home.png) |
+| **Public stats.** Library size, sources, sonic coverage and the newest arrivals, updated live. | **Member home.** What's still on its way, with live per‑track progress. |
+| ![Liked songs synced from YouTube Music](docs/screenshots/liked.png) | ![Jobs: every song in the pipeline with its stage](docs/screenshots/jobs.png) |
+| **Liked songs.** Synced from YouTube Music, mirrored into a Plex playlist. | **Jobs.** Every song in flight: matching, downloading, importing, Plex scan, sonic analysis. |
+| ![Admin: access requests, setup notes and service health](docs/screenshots/admin.png) | ![Workers: register a volunteer machine](docs/screenshots/workers.png) |
+| **Admin.** Approve requests, see what still needs setting up, and watch every service and queue. | **Workers.** Lend a machine to the pipeline with one token. |
 
-1. **Make the data stores.** Create a [Neon](https://neon.tech) Postgres database and an [Upstash](https://upstash.com) Redis database (fixed‑price plan). Keep the Neon *direct* URL, the Neon *pooled* URL and the Upstash `rediss://` URL. → [details](#1-data-neon--upstash)
-2. **Point DNS at your home server.** Create A records for `ws.mint.chickenbone.dev` and `hub.mint.chickenbone.dev`, DNS only (no Cloudflare proxy). Open ports 80, 443 and 32400.
-3. **Start the home server.**
+<p align="center">
+  <img src="docs/screenshots/mobile-landing.png" alt="Landing page on a phone" width="260">
+  &nbsp;
+  <img src="docs/screenshots/mobile-home.png" alt="Member home on a phone" width="260">
+  &nbsp;
+  <img src="docs/screenshots/browse.png" alt="Public library browser" width="420">
+</p>
+
+## Deploy in 5 minutes
+
+All you need is a Linux machine with Docker (Compose 2.24 or newer). One compose file runs everything: the site, the database, Plex, Lidarr, Cobalt and the pipeline. Passwords and keys are generated on first boot.
+
+```bash
+mkdir mint && cd mint
+curl -fsSLO https://raw.githubusercontent.com/ChickenBone/mint/main/docker-compose.yml
+PLEX_CLAIM=claim-xxxxxxxx MINT_DOMAIN=mint.example.com docker compose up -d
+docker compose logs init        # prints the site URL and the admin login
+```
+
+1. **Get a Plex claim token** at https://plex.tv/claim right before `up`. It expires after 4 minutes and is only needed the first time.
+2. **`MINT_DOMAIN`** is the domain pointing at this machine, with ports 80 and 443 open. Caddy gets the HTTPS certificate on its own. Leave it out to try Mint over plain http on your LAN (`http://<machine-ip>`).
+3. **Sign in** with the login from `docker compose logs init` (lost it? `docker compose run --rm init`).
+4. **Open Admin.** A *To finish setup* box lists whatever is still missing, in plain words. Usually that's:
+   - **Google sign‑in** so members can link YouTube Music → [Google](#google-youtube-music-linking)
+   - **TorBox + a Lidarr indexer** for full releases. Optional: without them, Mint rips YouTube audio with Cobalt → [Lidarr + TorBox](#lidarr--torbox)
+
+   Put the values in a `.env` next to `docker-compose.yml` (all keys are listed in [`.env.example`](.env.example)), then run `docker compose up -d` again.
+5. **Share the Plex library** with each member you approve. Their likes show up in Plexamp.
+
+The worker wires the rest itself on every start: it reads Plex's token once Plex is claimed, creates the Music library at `/music`, reads Lidarr's API key, and adds Lidarr's root folder and TorBox download client.
+
+**Updating:** `docker compose pull && docker compose up -d`. To make that automatic, see [CI/CD](#cicd).
+
+> The repository is private, so `curl` needs a token. Either run `gh api repos/ChickenBone/mint/contents/docker-compose.yml -H "Accept: application/vnd.github.raw" > docker-compose.yml`, or copy the file across. The GHCR images must be public, or the host needs `docker login ghcr.io` (see [CI/CD](#cicd)).
+
+### Optional: the website on Vercel
+
+You don't need this; the compose stack serves the site itself. Use it if you'd rather have Vercel's edge serve the public pages. Vercel can't reach your Postgres and Redis, so they move to managed services, and the home server keeps everything else.
+
+1. Create a [Neon](https://neon.tech) Postgres database and an [Upstash](https://upstash.com) Redis database on a fixed‑price plan, because BullMQ polls constantly.
+2. On the server, add to `.env` (use `;` instead of `:` in `COMPOSE_FILE` on Windows):
 
    ```bash
-   mkdir -p /srv/mint/deploy && cd /srv/mint
-   curl -O https://raw.githubusercontent.com/ChickenBone/mint/main/docker-compose.yml
-   curl -o deploy/Caddyfile https://raw.githubusercontent.com/ChickenBone/mint/main/deploy/Caddyfile
-   curl -o .env https://raw.githubusercontent.com/ChickenBone/mint/main/.env.example
-   mkdir -p music blackhole/torrents blackhole/downloads && sudo chown -R 1000:1000 music blackhole
-   nano .env          # fill in the URLs from step 1, the keys (openssl rand -base64 32 / 48), PLEX_CLAIM, ADMIN_EMAIL
-   docker compose pull && docker compose up -d
+   COMPOSE_FILE=docker-compose.yml:docker-compose.vercel.yml
+   MINT_DOMAIN=mint.example.com
+   DATABASE_URL=postgres://...neon.tech/mint?sslmode=require    # Neon direct URL
+   REDIS_URL=rediss://...upstash.io:6379
    ```
 
-   → [details](#2-home-server)
-4. **Deploy the website on Vercel.** Import `ChickenBone/mint`, set Root Directory to `apps/web`, paste the variables from [`apps/web/.env.vercel.example`](apps/web/.env.vercel.example), and add the domain `mint.chickenbone.dev`. → [details](#3-vercel)
-5. **Wire up the services once.** Set up the Google OAuth client, add the Lidarr blackhole client, create the Plex Music library at `/music`, then put the API keys into `.env` and run `docker compose up -d` again. → [Google](#google-youtube-music-linking) · [Lidarr](#lidarr--torbox) · [Plex](#plex)
-6. **Sign in** at https://mint.chickenbone.dev with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, approve requests under **Admin**, and share the Plex library with each member.
-
-To update later, push to `main`: CI builds the images, and Vercel redeploys the site. On the server, run `docker compose pull && docker compose up -d`, or turn on [auto‑deploy](#cicd).
+   Download [`docker-compose.vercel.yml`](docker-compose.vercel.yml) next to the main file and run `docker compose up -d`. Caddy now answers only `ws.mint.example.com` (live updates) and `hub.mint.example.com` (volunteer uploads). Point both at this machine with DNS only; Cloudflare's proxy caps uploads at 100 MB.
+3. Import the repository into Vercel. Set **Root Directory** to `apps/web` and leave "Include files outside the root directory" on. Add the variables from [`apps/web/.env.vercel.example`](apps/web/.env.vercel.example), using Neon's *pooled* URL. Print the shared secrets with `docker compose run --rm init vercel`. `NEXT_PUBLIC_*` values are baked in at build time, so redeploy after changing them.
+4. Add `mint.example.com` as a domain in Vercel.
 
 ## Architecture
 
-Three places run code:
+Everything runs from one compose file on your server. Volunteer workers are optional extra machines.
 
-- **Vercel** hosts the website and the agent API.
-- **Your home server** holds the music: Plex, Lidarr, Cobalt, the pipeline, the WebSocket gateway, and the upload hub.
+- **Your server** runs the website, the WebSocket gateway, the upload hub, Postgres, Redis, and the media side: Plex, Lidarr, Cobalt and the pipeline.
 - **Volunteer workers** are anyone's machine running one Docker image. They rip YouTube audio with their own Cobalt and upload the file to your hub.
+- **Vercel (optional)** can host the website instead. Postgres and Redis then move to Neon and Upstash, and Caddy serves only `ws.` and `hub.` subdomains.
 
 ```mermaid
 flowchart LR
-  subgraph vercel[Vercel]
-    web[web · Next.js<br/>site + /api/agent/v1]
-  end
-  subgraph cloud[Managed data]
-    pg[(Neon Postgres)]
-    redis[(Upstash Redis<br/>BullMQ + pub/sub)]
-  end
-  subgraph home[Home server]
-    caddy[Caddy :443]
-    caddy -- ws.mint --> rt[realtime]
-    caddy -- hub.mint --> hub[hub<br/>volunteer uploads in]
-    worker[worker · pipeline]
+  subgraph home[Your server · docker compose]
+    caddy[Caddy :443<br/>MINT_DOMAIN]
+    caddy -- pages --> web[web · Next.js<br/>site + /api/agent/v1]
+    caddy -- ws --> rt[realtime]
+    caddy -- ingest --> hub[hub<br/>volunteer uploads in]
+    subgraph data[data network]
+      pg[(Postgres)]
+      redis[(Redis<br/>BullMQ + pub/sub)]
+    end
+    web & rt & hub --> pg & redis
+    worker[worker · pipeline] --> pg & redis
     subgraph media[media network · the barrier]
       lidarr[Lidarr] --- cobalt[Cobalt]
-      plex[Plex]
+      plex[Plex :32400]
     end
     worker --> lidarr & cobalt & plex
     hub -- staging volume --> worker
@@ -63,11 +103,10 @@ flowchart LR
   subgraph vol[Volunteer worker]
     agent[mint-agent] --- vc[own Cobalt]
   end
-  web --> pg & redis
-  rt & hub & worker --> pg & redis
-  agent -- claim / progress<br/>bearer token --> web
+  agent -- claim / progress<br/>bearer token --> caddy
   agent -- PUT audio<br/>signed upload token --> caddy
   worker -. HTTPS .-> torbox[(TorBox)]
+  plexamp([Plexamp]) --> plex
 ```
 
 | Package | Role |
@@ -94,14 +133,14 @@ flowchart LR
 
 Cover art comes from the Cover Art Archive when the song matched a MusicBrainz release, and from the YouTube thumbnail otherwise. It's embedded in the file and saved as `cover.jpg` for Plex. The website shows the same remote image, so the home server never serves media to the public.
 
-**The barrier.** Only the `worker` joins the `media` network, where Lidarr, Cobalt and Plex live. Cobalt and Plex's API have no route from the internet except Plex's own port, and Lidarr is bound to `127.0.0.1:8686`. Vercel never talks to the home server directly: it reads and writes the database and sends work through Redis queues. The hub has no Plex, Lidarr or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
+**The barrier.** Only the `worker` joins the `media` network, where Lidarr, Cobalt and Plex live. Cobalt and Plex's API have no route from the internet except Plex's own port, and Lidarr is bound to `127.0.0.1:8686`. The website never talks to the media side directly: it reads and writes the database and sends work through Redis queues, the same way whether it runs in compose or on Vercel. The hub has no Plex, Lidarr or TorBox credentials. It accepts a file only for a track whose lease the uploading worker currently holds, then checks it with ffprobe before the worker touches it.
 
 **How a volunteer job flows.**
 
 ```mermaid
 sequenceDiagram
   participant W as worker (home)
-  participant V as web (Vercel)
+  participant V as web
   participant A as mint-agent (volunteer)
   participant H as hub (home)
   W->>W: Lidarr/TorBox fails or times out
@@ -119,76 +158,62 @@ sequenceDiagram
 1. Lidarr/TorBox fails or times out.
 2. If a volunteer worker is online (`REMOTE_DOWNLOADS=auto`), the track goes into the remote pool. Otherwise the home server rips it with its own Cobalt.
 3. An agent claims the track. Claims use `FOR UPDATE SKIP LOCKED` and give a five‑minute lease that progress reports extend.
-4. The agent rips the audio and uploads it to `hub.mint…/ingest/:id`.
+4. The agent rips the audio and uploads it to `/ingest/:id` on the hub.
 5. The hub verifies the upload, releases the lease and queues `finalize`. The rest is the normal pipeline.
 6. Expired leases go back to the pool. A track nobody takes within `REMOTE_WAIT_MINUTES` is ripped locally.
 
 **Privacy.** Public events show which tracks are moving through the pipeline, never who liked them. Workers only receive a YouTube video ID, title and artist. Google refresh tokens are encrypted at rest with AES‑256‑GCM (`ENCRYPTION_KEY`). Worker tokens are stored as SHA‑256 hashes.
 
-## Deploy
+## Setup details
 
-### 1. Data: Neon + Upstash
+### What runs where
 
-- **Neon.** Create a project and a `mint` database. Keep both connection strings: the **direct** one for the home server and the **pooled** one (`-pooler` host) for Vercel.
-- **Upstash.** Create a Redis database in the same region and copy the `rediss://` endpoint. BullMQ polls Redis constantly, so pay‑per‑request plans add up quickly. Use a **fixed‑price** plan, or run Redis yourself with `--profile local-db` and expose it over TLS.
+| Service | Reachable from | Notes |
+| --- | --- | --- |
+| `caddy` | internet, :80/:443 | HTTPS for `MINT_DOMAIN`. `/ws` → realtime, `/ingest` → hub, everything else → web |
+| `web`, `realtime`, `hub` | Caddy only | `edge` + `data` networks |
+| `worker` | nothing | Pipeline. The only service on both `data` and `media` |
+| `postgres`, `redis` | `data` network | No published ports |
+| `lidarr` | `127.0.0.1:8686` | Reach it from another machine with `ssh -L 8686:127.0.0.1:8686 host` |
+| `cobalt` | `media` network | Never exposed |
+| `plex` | :32400 | For Plexamp. Turn on Remote Access in Plex |
+| `init` | — | Runs once per `up`: generates secrets in the `secrets` volume and fixes folder ownership |
 
-### 2. Home server
-
-Requirements: Linux with Docker Compose v2, ports 80, 443 and 32400 open, and DNS records `ws.mint.chickenbone.dev` and `hub.mint.chickenbone.dev` → this host. Don't put the hub behind the Cloudflare proxy (orange cloud), because it caps request bodies at 100 MB.
-
-```bash
-mkdir -p /srv/mint/deploy && cd /srv/mint
-curl -O https://raw.githubusercontent.com/ChickenBone/mint/main/docker-compose.yml
-curl -o deploy/Caddyfile https://raw.githubusercontent.com/ChickenBone/mint/main/deploy/Caddyfile
-curl -o .env https://raw.githubusercontent.com/ChickenBone/mint/main/.env.example
-openssl rand -base64 32          # → ENCRYPTION_KEY
-openssl rand -base64 48          # → MINT_SIGNING_SECRET
-mkdir -p music blackhole/torrents blackhole/downloads && sudo chown -R 1000:1000 music blackhole
-$EDITOR .env                     # Neon direct URL, Upstash URL, keys
-docker compose pull && docker compose up -d
-```
-
-The worker runs migrations on start, and seeds the first admin from `ADMIN_EMAIL`/`ADMIN_PASSWORD` if no admin exists yet. Containers run as uid 1000, so keep `PUID`/`PGID` at 1000 or chown the folders to match.
-
-**Self‑hosting the website instead of using Vercel.** Point `mint.chickenbone.dev` at the host, set `CADDYFILE=./deploy/Caddyfile.selfhost` and `NEXT_PUBLIC_WS_URL=wss://mint.chickenbone.dev/ws`, and add `--profile selfhost-web`. Add `--profile local-db` (with `POSTGRES_PASSWORD`, `DATABASE_URL=postgres://mint:…@postgres:5432/mint`, `REDIS_URL=redis://redis:6379`) to run Postgres and Redis locally too.
-
-### 3. Vercel
-
-1. Import `ChickenBone/mint` into Vercel.
-2. Set **Root Directory** to `apps/web` and leave "Include files outside the root directory" on, because the app imports `packages/core`. Framework: Next.js, with the default build commands.
-3. Add the variables from [`apps/web/.env.vercel.example`](apps/web/.env.vercel.example). `ENCRYPTION_KEY`, `MINT_SIGNING_SECRET` and the Google client must match the home server. `NEXT_PUBLIC_*` values are baked in at build time, so redeploy after changing them.
-4. Add the domain `mint.chickenbone.dev` in Vercel and create the CNAME it asks for.
+Music lands in `./data/music` (`MUSIC_PATH`) and is owned by `PUID:PGID` (1000 by default). Secrets live in the `secrets` volume. Set any of them in `.env` and that value wins; a generated value is never overwritten.
 
 ### Google (YouTube Music linking)
 
 1. In Google Cloud, create a project and enable **YouTube Data API v3**.
 2. Set up the OAuth consent screen with the scope `https://www.googleapis.com/auth/youtube.readonly`. While the app is in *Testing*, add each member's Google account as a test user (maximum 100). Otherwise, submit the app for verification.
-3. Create a **Web application** OAuth client with the redirect URI `https://mint.chickenbone.dev/api/oauth/google/callback`.
-4. Put the client ID and secret into `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+3. Create a **Web application** OAuth client with the redirect URI `https://<MINT_DOMAIN>/api/oauth/google/callback`. Google allows plain http only for `localhost`, so linking needs HTTPS or a browser on the server itself.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `.env`.
 
-Liked songs come from the YouTube "Liked videos" playlist, filtered to music. Member playlists can be toggled on or off individually.
+Liked songs come from the YouTube "Liked videos" playlist, filtered to music. Members turn individual playlists on or off.
 
 ### Lidarr + TorBox
 
-1. Open Lidarr through an SSH tunnel: `ssh -L 8686:127.0.0.1:8686 host`, then browse to http://localhost:8686.
-2. Add the root folder `/music`.
-3. Under **Download clients**, add **Torrent Blackhole** with torrent folder `/blackhole/torrents` and watch folder `/blackhole/downloads`. Tick "Save magnet files".
-4. Add indexers, directly or through Prowlarr.
-5. Copy the API key into `LIDARR_API_KEY` and set `TORBOX_API_KEY`.
+Set `TORBOX_API_KEY` in `.env`. On its next start, the worker turns Lidarr on (`LIDARR_ENABLED=auto`), adds the `/music` root folder and a **Torrent Blackhole** download client. The one manual step is **indexers**: open Lidarr (`http://localhost:8686` on the server, or through the SSH tunnel above) → Settings → Indexers, and add them directly or through Prowlarr.
 
-The worker sends each blackhole torrent or magnet to TorBox, polls it, and downloads the finished files into the watch folder for Lidarr to import. If nothing is grabbed within `LIDARR_GRAB_TIMEOUT_MINUTES`, the track falls back to Cobalt. Set `LIDARR_ENABLED=false` to use Cobalt only.
+The worker sends each blackhole torrent or magnet to TorBox, polls it, and downloads the finished files into the watch folder for Lidarr to import. If nothing is grabbed within `LIDARR_GRAB_TIMEOUT_MINUTES`, the track falls back to Cobalt. `LIDARR_ENABLED=false` means Cobalt only. `true` keeps Lidarr on without TorBox, if you've given it your own download client.
 
 ### Cobalt
 
-Cobalt runs internally only. If YouTube starts answering "sign in to confirm you're not a bot", export YouTube cookies into `deploy/cobalt-cookies.json` (see the [cobalt docs](https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md)). Then uncomment the cookie volume and `COOKIE_PATH` in `docker-compose.yml`. `COBALT_API_KEY` is only needed if you turn on Cobalt's API‑key auth.
+Cobalt runs internally only. If YouTube starts answering "sign in to confirm you're not a bot", export YouTube cookies to `cobalt-cookies.json` (see the [cobalt docs](https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md)). Then uncomment the cookie volume and `COOKIE_PATH` under `cobalt` in `docker-compose.yml`. `COBALT_API_KEY` is only needed if you turn on Cobalt's API‑key auth.
 
 ### Plex
 
-1. Get a claim token from https://plex.tv/claim and set `PLEX_CLAIM` before the first `up`. The token expires in 4 minutes.
-2. Create a **Music** library pointing at `/music`, and turn on sonic analysis under Settings → Library.
-3. Set `PLEX_TOKEN` (see [finding your token](https://support.plex.tv/articles/204059436)) and `PLEX_MUSIC_SECTION_ID` (the `?source=` number in the library URL).
-4. Turn on Remote Access on port 32400.
-5. **Share the library with each approved member** from Plex settings. This step is manual. Their liked songs then appear in Plexamp as the playlist `Mint · Name · Liked`.
+- **Claiming.** `PLEX_CLAIM` signs the server into your Plex account on its first start. If you missed the 4‑minute window, open `http://<server>:32400/web` from the same network and claim it there.
+- **Library.** The worker reads the token from Plex's `Preferences.xml` and creates a **Music** library at `/music`. To use your own token or library, set `PLEX_TOKEN` and `PLEX_MUSIC_SECTION_ID` instead.
+- **Sonic analysis** needs Plex Pass. Turn it on under Settings → Library.
+- **Remote Access** on port 32400 lets members use Plexamp away from home.
+- **Sharing.** Share the library with each approved member from Plex settings; this is manual. Their liked songs then appear in Plexamp as the playlist `Mint · Name · Liked`.
+
+### Troubleshooting
+
+- `docker compose ps` should show every service `running` (healthy) and `init` exited with code 0.
+- `docker compose logs worker` prints the same setup notes as the Admin page.
+- **Port 80 or 443 already in use:** set `HTTP_PORT`/`HTTPS_PORT` in `.env`. HTTPS certificates need the real 80/443, so put another proxy in front, or free the ports.
+- **Worker setup or Google links point at `localhost`:** without `MINT_DOMAIN`, Mint assumes `PUBLIC_URL=http://localhost`. Set `PUBLIC_URL=http://<machine-ip>` in `.env` if you browse from another device.
 
 ## Volunteer workers
 
@@ -242,3 +267,4 @@ Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 - **No audio on the website.** The public site shows titles, artists and cover art, and links out to YouTube Music. Audio only leaves the server through Plex, to the members you share the library with. Plex sonic analysis drives the "Sonic analysis" lane on the board, and Plexamp's Sonic Radio and Sweet Fades.
 - **Upgrading from a version with previews.** Migration `0002_drop_previews` moves any track stuck in the old `previewing` stage to `scanning` and drops the preview columns. The `previews` Docker volume is no longer used; remove it with `docker volume rm mint_previews`.
 - **Unverified integrations.** Some assumptions about external APIs are untested against live instances: Lidarr's `?mbId=` and `?foreignAlbumId=` lookups, and Plex's `musicAnalysisVersion` as the "sonic done" marker. Check the worker logs on first run.
+- **Upgrading from the split Vercel setup.** `deploy/Caddyfile` and the `CADDYFILE`, `selfhost-web` and `local-db` options are gone; Caddy's config now lives inside the compose files. To keep the site on Vercel, add `COMPOSE_FILE=docker-compose.yml:docker-compose.vercel.yml` and `MINT_DOMAIN=mint.chickenbone.dev` to your existing `.env`, then run `docker compose up -d`. Your existing `ENCRYPTION_KEY`, `MINT_SIGNING_SECRET`, `DATABASE_URL` and `REDIS_URL` keep winning over generated values.

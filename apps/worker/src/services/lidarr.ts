@@ -1,11 +1,17 @@
 import { numberEnv, optionalEnv, requireEnv } from "@mint/core/env";
 import { httpJson, type RequestOpts } from "../http";
 
+/**
+ * LIDARR_ENABLED: "auto" (default) uses Lidarr only when TorBox is set, because TorBox is what
+ * fulfils its blackhole downloads. "true" forces it on for setups with their own download client.
+ */
 export function lidarrEnabled() {
-  return Boolean(process.env.LIDARR_URL && process.env.LIDARR_API_KEY) && process.env.LIDARR_ENABLED !== "false";
+  const mode = process.env.LIDARR_ENABLED ?? "auto";
+  if (mode === "false" || !process.env.LIDARR_URL || !process.env.LIDARR_API_KEY) return false;
+  return mode === "true" || Boolean(process.env.TORBOX_API_KEY);
 }
 
-function api<T>(path: string, opts: RequestOpts = {}) {
+export function api<T>(path: string, opts: RequestOpts = {}) {
   return httpJson<T>(`${requireEnv("LIDARR_URL").replace(/\/$/, "")}/api/v1${path}`, {
     ...opts,
     headers: { "x-api-key": requireEnv("LIDARR_API_KEY"), ...opts.headers },

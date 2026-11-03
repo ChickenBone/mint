@@ -51,6 +51,16 @@ export default async function Admin() {
       <section className="mb-12">
         <h2 className="mb-1 text-xl font-bold">Services</h2>
         <p className="mb-4 text-sm text-muted">{health ? `Checked ${timeAgo(health.checkedAt)} by the worker.` : "The worker hasn't reported yet. Is it running?"}</p>
+        {health?.notes && health.notes.length > 0 && (
+          <ul className="mb-6 flex max-w-3xl flex-col gap-2">
+            {health.notes.map((n) => (
+              <li key={n} className="rounded-lg bg-elevated px-4 py-3 text-sm">
+                <span className="font-semibold text-warn">To finish setup: </span>
+                {n}
+              </li>
+            ))}
+          </ul>
+        )}
         {health && (
           <div className="grid gap-8 md:grid-cols-[16rem_1fr]">
             <ul className="flex flex-col gap-2">
