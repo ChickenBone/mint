@@ -31,20 +31,22 @@ Mint lives at **mint.chickenbone.dev**. It's a private music shelf: it syncs eac
 
 **UGREEN NAS OS, Portainer, or another Docker project editor:** open [`docker-compose.nas.yml`](docker-compose.nas.yml), copy the **entire file**, and paste it into a new Compose project named `mint`. No terminal, `.env`, Git checkout, build, or extra config files.
 
-1. **Edit the settings at the top.** Set `MINT_DOMAIN` to your own hostname, such as `mint.example.com`. Get a fresh `PLEX_CLAIM` from https://plex.tv/claim immediately before deploying; it expires in four minutes. If image downloads take too long, get another token and recreate Plex from the NAS UI. Leave Google and TorBox keys blank until you need them.
-2. **Deploy the project.** Point that hostname's DNS at your public IP and forward TCP ports 80 and 443 to the NAS. Caddy obtains an HTTPS certificate automatically. Keep DNS proxying off if your provider limits upload sizes.
-3. **Open the `init` container's logs** in the NAS Docker UI. They show the generated admin login. Keep these logs private. `init` finishing successfully is normal, not a failed container.
-4. **Open `https://<your-hostname>` and sign in.** Admin lists any remaining setup steps. Add Google credentials to the same settings block and redeploy to enable YouTube Music linking.
+1. **Create a remotely managed Cloudflare Tunnel** in Cloudflare's dashboard under Networking → Tunnels (or Zero Trust → Networks → Connectors). Choose Cloudflared and name it `mint`. Copy the connector token from the install command: the `eyJ...` value after `--token`, not a Cloudflare API token. Keep it private.
+2. **Add a published application/public hostname route** on that tunnel. Hostname: your Mint domain. Service type: **HTTP**. Service URL: **`caddy:80`**. Under additional settings, set **HTTP Host Header** to the Mint domain. If an A/CNAME already exists for Mint, remove only that conflicting record first; let Cloudflare create the tunnel DNS record. Do not remove the NAS's own DNS record. A DNS-only CNAME pointing at your WAN IP is not a tunnel.
+3. **Edit the settings at the top and deploy.** Set `MINT_DOMAIN` to that hostname and `TUNNEL_TOKEN` to the connector token. On first installation only, get a fresh `PLEX_CLAIM` from https://plex.tv/claim immediately before deploying; it expires in four minutes. Leave Google/TorBox keys blank until needed. If image downloads take too long, get another claim token and recreate Plex from the NAS UI.
+4. **Open the `init` container's logs** in the NAS Docker UI for the generated admin login. Keep these logs private. `init` finishing successfully is normal. Open `https://<your-hostname>` and sign in; Admin lists remaining setup steps.
 
-**Already using Cloudflare Tunnel (`cloudflared`)?** Set `CADDY_SCHEME` to `"http"` in the settings block. Caddy then serves HTTP only on the origin and does not request certificates; Cloudflare provides public HTTPS. Configure the tunnel's public hostname to match `MINT_DOMAIN`, with service `http://<NAS-LAN-IP>:80` and HTTP Host Header set to that same public hostname. If `cloudflared` is in a container, `localhost` refers to that container, not the NAS. Do not forward router ports 80/443 for tunnel mode. Continue to browse the public **HTTPS** URL; never set `MINT_DOMAIN` to a local IP or downgrade login cookies. Cloudflare upload-size limits still apply to volunteer uploads.
+**No public ports or certificate setup for Mint.** The bundled `cloudflared` connector makes outbound connections over TCP 7844 using HTTP/2, which avoids dependence on outbound UDP. Cloudflare handles public HTTPS; Caddy only serves HTTP inside the Docker network. No router port forwarding, WAN loopback, host networking, or Let's Encrypt is involved. Never set `MINT_DOMAIN` to a NAS IP or downgrade login cookies. Plex Remote Access is separate and may still need its own forwarding.
 
-**Redeploying an existing project:** replace its compose text with the current NAS template, restore your settings at the top (including Google/TorBox keys), then use the NAS UI to stop and recreate the project's containers. Keep the same project name and all volumes; do not use a delete-data/reset option. No new Plex claim is needed for an already claimed Plex server. Pulling images alone does not update an existing project's compose configuration.
+**Redeploying an existing project:** replace its entire compose text with the current NAS template, restore your settings (including Google/TorBox keys), add the tunnel token, then use the NAS UI to pull images and recreate the project's containers. Keep the same project name and every volume; do not use a delete-data/reset option. No new Plex claim is needed for an already claimed Plex server. The old `CADDY_SCHEME` and `ACME_RETRY_DIRECTORY` settings are no longer used in the NAS template. An existing DNS updater must not overwrite Mint's new tunnel record.
 
-**Certificate retries fail against Let's Encrypt staging:** Caddy uses staging during challenge retries to avoid production rate limits. If staging alone is unreachable but the production endpoint works, set `ACME_RETRY_DIRECTORY` in the NAS settings to `"https://acme-v02.api.letsencrypt.org/directory"` and recreate Caddy once. This bypasses staging, not certificate validation: public TCP 80/443 must still reach Caddy. Avoid repeated restarts or deleting certificate storage; production retries consume rate limits. Clear the override when connectivity recovers. Host networking is not required for ACME and removes access to Compose service-name DNS used by the proxy.
+**Existing cloudflared installation:** this template includes a separate Mint connector. Configure its route as `http://caddy:80`, not `localhost` or the NAS IP. Do not reuse a tunnel token across other connectors unless all of them can reach the same configured service; Cloudflare may send requests to any connected replica.
 
 Passwords, keys, database, music and Plex configuration persist in Docker-managed volumes. Do not delete the project's volumes when updating. Use the NAS UI to pull newer images and recreate the project. Keep using the same project name.
 
-**Public HTTPS is required for production login.** If NAS services already occupy 80/443, move them or configure your existing HTTPS reverse proxy; changing port numbers alone does not make certificate issuance work in direct HTTPS mode. In tunnel mode, you can change Caddy's host port (for example `"8080:80"`) and point the tunnel at that port. For a LAN-only installation, keep `CADDY_SCHEME: "https"` and use a hostname ending in `.local` with local DNS pointing at the NAS; Caddy uses a local certificate authority, whose root certificate in `caddy_data` must be trusted on your devices.
+**Troubleshooting:** `cloudflared` logs should show registered tunnel connections and the dashboard should show the connector healthy. Authentication errors usually mean a missing/incorrect tunnel token. A Cloudflare 502 usually means a wrong origin or Host Header: use `http://caddy:80` and the exact Mint domain. If connections time out, allow outbound TCP 7844 from Docker. Mint's Caddy has no host ports, so it does not conflict with NAS management on 80/443.
+
+**Limits:** Cloudflare's upload-size limits still apply to volunteer audio uploads; the app's 200 MB limit does not override the provider's limit. WebSockets pass through the tunnel. Do not route Plex streaming through this Mint tunnel. For direct hosting or LAN-only HTTPS without Cloudflare, use the command-line compose stack below instead.
 
 The NAS file uses standard Compose service definitions, YAML anchors and named volumes, without optional env-file syntax, inline `configs`, or override tags. It requires a Compose implementation that supports health checks and `service_completed_successfully`. Its configuration is validated, but it has not been run on a physical UGREEN NAS.
 
@@ -97,7 +99,7 @@ You don't need this; the compose stack serves the site itself. Use it if you'd r
 
 ## Architecture
 
-Everything runs from one compose file on your server. Volunteer workers are optional extra machines.
+Everything runs from one compose file on your server. Volunteer workers are optional extra machines. The NAS template adds `cloudflared → Caddy` as the public entry path, with no published Caddy ports. The diagram below shows the direct-hosting command-line stack; both use the same application and media boundaries.
 
 - **Your server** runs the website, the WebSocket gateway, the upload hub, Postgres, Redis, and the media side: Plex, Lidarr, Cobalt and the pipeline.
 - **Volunteer workers** are anyone's machine running one Docker image. They rip YouTube audio with their own Cobalt and upload the file to your hub.
@@ -201,6 +203,8 @@ sequenceDiagram
 | `cobalt` | `media` network | Never exposed |
 | `plex` | :32400 | For Plexamp. Turn on Remote Access in Plex |
 | `init` | — | Runs once per `up`: generates secrets in the `secrets` volume and fixes folder ownership |
+
+The table's public Caddy ports apply to `docker-compose.yml`. In the NAS template, Caddy is reachable only by the bundled tunnel connector on `edge`; the connector publishes no ports and has no data/media network membership or integration credentials.
 
 In the NAS file, music lives in the Docker `music` volume. In the command-line file it lands in `./data/music` (`MUSIC_PATH`). Files are owned by UID:GID 1000 by default. Secrets live in the `secrets` volume. Existing generated secrets are preserved across restarts; editing an encryption key or database password is not a rotation procedure. Do not delete the secrets volume independently of the database.
 

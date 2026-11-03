@@ -16,7 +16,7 @@ const resolve = (yaml) =>
 
 test("NAS template is self-contained and only uses Docker-managed storage", () => {
   const config = resolve(source);
-  assert.equal(Object.keys(config.services).length, 11);
+  assert.equal(Object.keys(config.services).length, 12);
   assert.equal(config.configs, undefined);
   for (const service of Object.values(config.services)) {
     assert.equal(service.env_file, undefined);
@@ -42,7 +42,7 @@ test("one hostname edit reaches every public URL without exposing media keys to 
 
 test("data and media remain behind the public gateway", () => {
   const { services } = resolve(source);
-  for (const name of ["web", "realtime", "hub", "worker", "postgres", "redis", "cobalt"]) {
+  for (const name of ["cloudflared", "caddy", "web", "realtime", "hub", "worker", "postgres", "redis", "cobalt"]) {
     assert.equal(services[name].ports, undefined);
   }
   assert.equal(services.lidarr.ports[0].host_ip, "127.0.0.1");
@@ -52,23 +52,25 @@ test("data and media remain behind the public gateway", () => {
   assert.equal(services.postgres.depends_on.init.condition, "service_completed_successfully");
 });
 
-test("Cloudflare Tunnel can use HTTP internally while public URLs remain HTTPS", () => {
-  const { services } = resolve(source.replace('&caddy-scheme "https"', '&caddy-scheme "http"'));
-  assert.equal(services.caddy.environment.CADDY_SCHEME, "http");
+test("Cloudflare Tunnel uses HTTP internally while public URLs remain HTTPS", () => {
+  const { services } = resolve(source);
   for (const name of ["web", "realtime", "hub", "worker"]) {
     assert.equal(services[name].environment.CADDY_SCHEME, undefined);
     assert.equal(services[name].environment.MINT_DOMAIN, "mint.example.com");
   }
-  assert.ok(services.caddy.command[0].includes("CADDY_SCHEME"));
+  assert.ok(services.caddy.command[0].includes("http://{$$MINT_DOMAIN}"));
+  assert.ok(!services.caddy.command[0].includes("cert_issuer"));
 });
 
-test("ACME retries can bypass an unreachable staging endpoint without host networking", () => {
-  const directory = "https://acme-v02.api.letsencrypt.org/directory";
-  const { services } = resolve(
-    source.replace('&acme-retry ""', `&acme-retry "${directory}"`),
-  );
-  assert.equal(services.caddy.environment.ACME_RETRY_DIRECTORY, directory);
-  assert.equal(services.caddy.network_mode, undefined);
-  assert.ok(Object.hasOwn(services.caddy.networks, "edge"));
-  assert.ok(services.caddy.command[0].includes("test_dir"));
+test("only the tunnel connector receives its token and cannot reach data or media", () => {
+  const { services } = resolve(source.replace('&tunnel-token ""', '&tunnel-token "demo-not-a-real-token"'));
+  assert.equal(services.cloudflared.environment.TUNNEL_TOKEN, "demo-not-a-real-token");
+  for (const [name, service] of Object.entries(services)) {
+    if (name !== "cloudflared") assert.equal(service.environment?.TUNNEL_TOKEN, undefined);
+  }
+  assert.deepEqual(Object.keys(services.cloudflared.networks), ["edge"]);
+  assert.equal(services.cloudflared.network_mode, undefined);
+  assert.deepEqual(services.cloudflared.command, ["tunnel", "--no-autoupdate", "--protocol", "http2", "run"]);
+  assert.equal(services.cloudflared.read_only, true);
+  assert.equal(services.cloudflared.depends_on.caddy.condition, "service_started");
 });

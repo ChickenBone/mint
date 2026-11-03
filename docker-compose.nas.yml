@@ -1,15 +1,13 @@
 # Paste this whole file into your NAS Docker / Compose project editor.
 # Edit ONLY this settings block, then deploy. No .env, shell, build or extra files.
-# Direct HTTPS needs ports 80/443 forwarded. With Cloudflare Tunnel, set CADDY_SCHEME to http.
+# Cloudflare Tunnel provides public HTTPS. No router forwarding or public Caddy ports.
 # Do not publish your filled-in copy: it contains your personal integration keys.
 x-settings:
   MINT_DOMAIN: &domain "mint.example.com"
-  # https: Caddy obtains certificates. http: Cloudflare Tunnel handles public HTTPS.
-  # Keep MINT_DOMAIN as the public hostname, not the NAS IP, in either mode.
-  CADDY_SCHEME: &caddy-scheme "https"
-  # Leave blank normally. If staging alone is unreachable, use the production
-  # URL below instead. Production retries count toward Let's Encrypt rate limits.
-  ACME_RETRY_DIRECTORY: &acme-retry ""
+  # Required: connector token from a remotely managed Cloudflare Tunnel.
+  # Route MINT_DOMAIN to http://caddy:80 in the Cloudflare dashboard.
+  # This is a tunnel token (eyJ...), NOT a Cloudflare API token.
+  TUNNEL_TOKEN: &tunnel-token ""
   ADMIN_EMAIL: &admin-email "admin@mint.local"
   # From https://plex.tv/claim just before deploying; expires in 4 minutes.
   PLEX_CLAIM: &plex-claim ""
@@ -36,6 +34,20 @@ x-data: &needs-data
     condition: service_healthy
 
 services:
+  cloudflared:
+    <<: *app
+    image: cloudflare/cloudflared:latest
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run"]
+    environment:
+      TUNNEL_TOKEN: *tunnel-token
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [edge]
+    depends_on:
+      caddy:
+        condition: service_started
+
   init:
     <<: *app
     image: ghcr.io/chickenbone/mint-worker:latest
@@ -57,26 +69,14 @@ services:
     image: caddy:2
     environment:
       MINT_DOMAIN: *domain
-      CADDY_SCHEME: *caddy-scheme
-      ACME_RETRY_DIRECTORY: *acme-retry
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
     entrypoint: ["/bin/sh", "-ec"]
     command:
       - |
-        printf '{\n  admin off\n' > /etc/caddy/Caddyfile
-        if [ -n "$$ACME_RETRY_DIRECTORY" ]; then
-          case "$$ACME_RETRY_DIRECTORY" in
-            https://acme-v02.api.letsencrypt.org/directory|https://acme-staging-v02.api.letsencrypt.org/directory) ;;
-            *) echo "ACME_RETRY_DIRECTORY must be a Let's Encrypt directory URL" >&2; exit 1 ;;
-          esac
-          printf '  cert_issuer acme {\n    dir https://acme-v02.api.letsencrypt.org/directory\n    test_dir %s\n  }\n' "$$ACME_RETRY_DIRECTORY" >> /etc/caddy/Caddyfile
-        fi
-        cat >> /etc/caddy/Caddyfile <<'CADDY'
+        cat > /etc/caddy/Caddyfile <<'CADDY'
+        {
+          admin off
         }
-        {$$CADDY_SCHEME}://{$$MINT_DOMAIN} {
+        http://{$$MINT_DOMAIN} {
           encode zstd gzip
           handle /ws* {
             reverse_proxy realtime:3001 {
