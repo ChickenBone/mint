@@ -211,4 +211,58 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
     assert.deepEqual(await readFile(original), bytes);
     assert.ok((await readFile(candidate)).length, "Lidarr-owned source is retained too");
   }
+
+  // Backfill UI artwork without reading Plex covers, replacing saved covers, or touching media.
+  const { backfillArtwork } = await import("./artwork");
+  const savedCover = "https://archive.org/download/fixture/existing.jpg";
+  await db.update(schema.tracks).set({ artworkUrl: savedCover });
+  const originalBytes = await readFile(path.join(root, "fixture.audio"));
+  const artRows = await db.insert(schema.tracks).values(Array.from({ length: 12 }, (_, album) =>
+    Array.from({ length: 2 }, (_, song) => ({
+      title: `Artwork track ${song}`, artist: "Artwork Fixture",
+      album: `Album ${String(album).padStart(2, "0")}`,
+      mbReleaseGroupId: "8e8a594f-2175-38c7-a871-abb68ec363e7",
+      filePath: "/existing-music/fixture.audio", stage: "ready" as const,
+      artworkUrl: song === 0 && album === 0 ? savedCover : null,
+    })),
+  ).flat()).returning();
+  let lookups = 0;
+  let unavailable = false;
+  let absent = false;
+  globalThis.fetch = async (input) => {
+    assert.equal(new URL(String(input)).hostname, "coverartarchive.org", "artwork must not access Plex, media hosts or paid APIs");
+    lookups++;
+    if (unavailable) return Response.json({}, { status: 503 });
+    if (absent) return Response.json({}, { status: 404 });
+    return Response.json({ images: [{ front: true, approved: true, thumbnails: { "500": "https://archive.org/download/fixture/front-500.jpg" } }] });
+  };
+  await Promise.all([backfillArtwork(), backfillArtwork()]);
+  assert.equal(lookups, 10, "one bounded lookup per album, not per song; concurrent jobs must not duplicate work");
+  await backfillArtwork();
+  assert.equal(lookups, 12, "keyset cursor must advance past the first batch");
+  const enriched = await db.select().from(schema.tracks).where(eq(schema.tracks.artist, "Artwork Fixture"));
+  assert.equal(enriched.filter((track) => track.artworkUrl?.endsWith("front-500.jpg")).length, 23);
+  assert.equal(enriched.find((track) => track.id === artRows[0]!.id)!.artworkUrl, savedCover);
+  assert.equal(enriched[0]!.stage, "ready");
+  await backfillArtwork();
+  await db.update(schema.tracks).set({ artworkUrl: null }).where(eq(schema.tracks.id, artRows[1]!.id));
+  await backfillArtwork();
+  assert.equal(lookups, 12, "cached cover must be reused for later tracks on an already matched album");
+  await backfillArtwork();
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Transient" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  unavailable = true;
+  await backfillArtwork();
+  await backfillArtwork();
+  unavailable = false;
+  await backfillArtwork();
+  assert.equal(lookups, 14, "transient API failure must be retried, not cached as no cover");
+  assert.equal((await db.select().from(schema.tracks).where(eq(schema.tracks.id, artRows[1]!.id)))[0]!.artworkUrl?.endsWith("front-500.jpg"), true);
+  await backfillArtwork();
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Missing" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  absent = true;
+  await backfillArtwork();
+  await backfillArtwork();
+  await backfillArtwork();
+  assert.equal(lookups, 15, "missing cover responses must have a negative cache to avoid hammering the free API");
+  assert.deepEqual(await readFile(path.join(root, "fixture.audio")), originalBytes);
 });

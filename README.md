@@ -277,6 +277,12 @@ Set `AUTO_CONFIGURE_INDEXERS=false` to leave all indexer setup to you. `PROWLARR
 
 Cobalt runs internally only. If YouTube starts answering "sign in to confirm you're not a bot", export YouTube cookies to `cobalt-cookies.json` (see the [cobalt docs](https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md)). Then uncomment the cookie volume and `COOKIE_PATH` under `cobalt` in `docker-compose.yml`. `COBALT_API_KEY` is only needed if you turn on Cobalt's API‑key auth.
 
+### Album artwork
+
+Missing covers, including already indexed Plex-library tracks, are filled automatically from **MusicBrainz + Cover Art Archive**. No account or API key is required; images load directly from the public archive, never through Plex or a NAS artwork endpoint. Matching requires the album title and artist to agree, rather than assigning the first search result. Unmatched albums keep the existing placeholder.
+
+The worker starts a bounded backfill on boot and every 30 seconds, processing up to ten albums per pass. All tracks with matching artist/album share the result, and open pages receive artwork through the existing WebSocket updates. Large libraries fill progressively, respecting MusicBrainz's one-request-per-second limit. Results are cached for 30 days; absent covers for one day. Upstream failures are logged and retried on later passes, not cached as missing covers. Saved artwork is preserved, and original audio files/tags remain untouched. Tracks without album metadata cannot be matched this way.
+
 ### Plex
 
 - **Claiming.** `PLEX_CLAIM` signs the bundled server into your Plex account on first start; it expires in four minutes, including time spent pulling images. Bundled NAS Plex is at `http://<server>:32401/web` (command-line stack: 32400). If it stays unclaimed, preserve its config folder and recreate only Plex with a fresh claim. A missing token in `Preferences.xml` may mean an expired claim or a wrong config mount; permission errors are reported separately. Existing read-only Plex needs its explicit token and section ID, not a new claim.

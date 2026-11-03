@@ -78,6 +78,8 @@ async function main() {
 
   const m = queues.maintenance;
   await m.add("health", { kind: "health" });
+  await m.add("artwork", { kind: "artwork" });
+  await m.upsertJobScheduler("artwork", { every: 30_000 }, { name: "artwork", data: { kind: "artwork" } });
   await m.upsertJobScheduler("stats", { every: 5_000 }, { name: "stats", data: { kind: "stats" } });
   await m.upsertJobScheduler("leases", { every: 30_000 }, { name: "leases", data: { kind: "leases" } });
   await m.upsertJobScheduler("health", { every: 30_000 }, { name: "health", data: { kind: "health" } });

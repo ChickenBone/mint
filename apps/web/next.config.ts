@@ -10,7 +10,7 @@ const csp = [
   "script-src 'self' 'unsafe-inline'" + (dev ? " 'unsafe-eval'" : ""),
   "style-src 'self' 'unsafe-inline'",
   // Cover art is always remote: Cover Art Archive (redirects to archive.org) or YouTube thumbnails.
-  "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://*.archive.org",
+  "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://archive.org https://*.archive.org",
   "media-src 'none'",
   "font-src 'self'",
   `connect-src 'self' ${extraConnect}`.trim(),

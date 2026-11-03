@@ -93,3 +93,26 @@ export async function matchRecording(q: {
 export function coverArtUrl(releaseGroupId: string) {
   return `https://coverartarchive.org/release-group/${releaseGroupId}/front-500`;
 }
+
+/** Match both artist and album; never use the first fuzzy search hit as a cover. */
+export async function albumReleaseGroups(artist: string, album: string): Promise<string[]> {
+  const data = await throttled(() =>
+    httpJson<{ "release-groups": Array<{
+      id: string;
+      title: string;
+      score: number;
+      "artist-credit"?: Array<{ name: string; artist?: { name: string } }>;
+    }> }>(`${API}/release-group`, {
+      headers: { "user-agent": UA },
+      query: { query: `releasegroup:"${esc(album)}" AND artist:"${esc(artist)}"`, fmt: "json", limit: 10 },
+      timeoutMs: 15_000,
+      retries: 0,
+    }),
+  );
+  return (data["release-groups"] ?? [])
+    .filter((group) => group.score >= 90 && norm(group.title) === norm(album) &&
+      group["artist-credit"]?.some((credit) => norm(credit.artist?.name ?? credit.name) === norm(artist)))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3)
+    .map((group) => group.id);
+}
