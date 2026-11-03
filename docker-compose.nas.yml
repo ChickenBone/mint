@@ -9,13 +9,35 @@ x-settings:
   # This is a tunnel token (eyJ...), NOT a Cloudflare API token.
   TUNNEL_TOKEN: &tunnel-token ""
   ADMIN_EMAIL: &admin-email "admin@mint.local"
-  # From https://plex.tv/claim just before deploying; expires in 4 minutes.
+  # Pull images FIRST, then get a fresh https://plex.tv/claim token and recreate Plex.
+  # Claims expire in 4 minutes; leave blank when using an existing Plex server.
   PLEX_CLAIM: &plex-claim ""
   # Optional until you want to link YouTube Music; see README -> Google.
   GOOGLE_CLIENT_ID: &google-id ""
   GOOGLE_CLIENT_SECRET: &google-secret ""
   # Optional: without TorBox, Mint uses Cobalt for every download.
   TORBOX_API_KEY: &torbox-key ""
+  # Mint-owned folders: relative to the UGOS Compose Project storage path.
+  SECRETS_FOLDER: &secrets-folder "./data/secrets"
+  MUSIC_FOLDER: &music-folder "./data/music"
+  BLACKHOLE_FOLDER: &blackhole-folder "./data/blackhole"
+  STAGING_FOLDER: &staging-folder "./data/staging"
+  POSTGRES_FOLDER: &postgres-folder "./data/postgres"
+  REDIS_FOLDER: &redis-folder "./data/redis"
+  CADDY_DATA_FOLDER: &caddy-data-folder "./data/caddy"
+  CADDY_CONFIG_FOLDER: &caddy-config-folder "./data/caddy-config"
+  PLEX_CONFIG_FOLDER: &plex-config-folder "./data/plex"
+  LIDARR_CONFIG_FOLDER: &lidarr-config-folder "./data/lidarr"
+  # Optional existing Plex. Replace URL, token, section ID and folder mapping together.
+  PLEX_URL: &plex-url "http://plex:32400"
+  PLEX_TOKEN: &plex-token ""
+  PLEX_MUSIC_SECTION_ID: &plex-section ""
+  PLEX_READ_ONLY: &plex-read-only "false"
+  INDEX_EXISTING_LIBRARY: &index-existing "false"
+  # NAS absolute path selected in File Manager; never point this at Mint's download folder.
+  EXISTING_MUSIC_FOLDER: &existing-music-folder "./existing-library"
+  # Same existing music directory as the external Plex server sees it.
+  EXISTING_PLEX_MUSIC_DIR: &existing-plex-dir "/music"
 
 x-app: &app
   restart: unless-stopped
@@ -60,9 +82,18 @@ services:
       ADMIN_EMAIL: *admin-email
     network_mode: none
     volumes:
-      - secrets:/secrets
-      - music:/music
-      - blackhole:/blackhole
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+      - type: bind
+        source: *music-folder
+        target: /music
+      - type: bind
+        source: *blackhole-folder
+        target: /blackhole
+      - type: bind
+        source: *staging-folder
+        target: /data/staging
 
   caddy:
     <<: *app
@@ -105,8 +136,12 @@ services:
         CADDY
         exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
     volumes:
-      - caddy_data:/data
-      - caddy_config:/config
+      - type: bind
+        source: *caddy-data-folder
+        target: /data
+      - type: bind
+        source: *caddy-config-folder
+        target: /config
     networks: [edge]
     depends_on:
       web:
@@ -123,7 +158,11 @@ services:
       MINT_DOMAIN: *domain
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
-    volumes: [secrets:/secrets:ro]
+    volumes:
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+        read_only: true
     networks: [edge, data]
     depends_on: *needs-data
 
@@ -132,7 +171,11 @@ services:
     image: ghcr.io/chickenbone/mint-realtime:latest
     environment:
       MINT_DOMAIN: *domain
-    volumes: [secrets:/secrets:ro]
+    volumes:
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+        read_only: true
     networks: [edge, data]
     depends_on: *needs-data
 
@@ -145,8 +188,13 @@ services:
       HUB_PORT: "8090"
       STAGING_DIR: /data/staging
     volumes:
-      - secrets:/secrets:ro
-      - staging:/data/staging
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+        read_only: true
+      - type: bind
+        source: *staging-folder
+        target: /data/staging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
@@ -166,6 +214,7 @@ services:
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
       TORBOX_API_KEY: *torbox-key
+      REMOTE_DOWNLOADS: "never"
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
@@ -173,15 +222,40 @@ services:
       LIDARR_URL: http://lidarr:8686
       LIDARR_CONFIG_DIR: /lidarr-config
       COBALT_URL: http://cobalt:9000
-      PLEX_URL: http://plex:32400
+      PLEX_URL: *plex-url
+      PLEX_TOKEN: *plex-token
+      PLEX_MUSIC_SECTION_ID: *plex-section
+      PLEX_READ_ONLY: *plex-read-only
+      INDEX_EXISTING_LIBRARY: *index-existing
+      EXISTING_MUSIC_DIR: /existing-music
+      EXISTING_PLEX_MUSIC_DIR: *existing-plex-dir
       PLEX_CONFIG_DIR: /plex-config
     volumes:
-      - secrets:/secrets:ro
-      - music:/music
-      - blackhole:/blackhole
-      - staging:/data/staging
-      - plex_config:/plex-config:ro
-      - lidarr_config:/lidarr-config:ro
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+        read_only: true
+      - type: bind
+        source: *music-folder
+        target: /music
+      - type: bind
+        source: *blackhole-folder
+        target: /blackhole
+      - type: bind
+        source: *staging-folder
+        target: /data/staging
+      - type: bind
+        source: *plex-config-folder
+        target: /plex-config
+        read_only: true
+      - type: bind
+        source: *lidarr-config-folder
+        target: /lidarr-config
+        read_only: true
+      - type: bind
+        source: *existing-music-folder
+        target: /existing-music
+        read_only: true
     networks: [data, media]
     depends_on: *needs-data
 
@@ -193,8 +267,13 @@ services:
       POSTGRES_DB: mint
       POSTGRES_PASSWORD_FILE: /secrets/postgres_password
     volumes:
-      - postgres:/var/lib/postgresql/data
-      - secrets:/secrets:ro
+      - type: bind
+        source: *postgres-folder
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: *secrets-folder
+        target: /secrets
+        read_only: true
     networks: [data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U mint -d mint"]
@@ -209,7 +288,10 @@ services:
     <<: *app
     image: redis:7-alpine
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
-    volumes: [redis:/data]
+    volumes:
+      - type: bind
+        source: *redis-folder
+        target: /data
     networks: [data]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -225,9 +307,15 @@ services:
       PGID: "1000"
       TZ: Etc/UTC
     volumes:
-      - lidarr_config:/config
-      - music:/music
-      - blackhole:/blackhole
+      - type: bind
+        source: *lidarr-config-folder
+        target: /config
+      - type: bind
+        source: *music-folder
+        target: /music
+      - type: bind
+        source: *blackhole-folder
+        target: /blackhole
     # Not exposed to the internet. See README for adding indexers from a NAS.
     ports: ["127.0.0.1:8686:8686"]
     networks: [media]
@@ -255,9 +343,15 @@ services:
       VERSION: docker
       PLEX_CLAIM: *plex-claim
     volumes:
-      - plex_config:/config
-      - music:/music:ro
-    ports: ["32400:32400"]
+      - type: bind
+        source: *plex-config-folder
+        target: /config
+      - type: bind
+        source: *music-folder
+        target: /music
+        read_only: true
+    # Avoid colliding with an existing Plex installation on the NAS.
+    ports: ["32401:32400"]
     networks: [media]
     depends_on:
       init:
@@ -267,15 +361,3 @@ networks:
   edge: {}
   data: {}
   media: {}
-
-volumes:
-  secrets: {}
-  music: {}
-  blackhole: {}
-  caddy_data: {}
-  caddy_config: {}
-  postgres: {}
-  redis: {}
-  staging: {}
-  lidarr_config: {}
-  plex_config: {}

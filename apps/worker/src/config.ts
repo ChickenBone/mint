@@ -2,6 +2,10 @@ import { numberEnv, optionalEnv } from "@mint/core/env";
 
 export const config = {
   musicDir: optionalEnv("MUSIC_DIR", "/music"),
+  existingMusicDir: optionalEnv("EXISTING_MUSIC_DIR", "/existing-music"),
+  get plexReadOnly() {
+    return process.env.PLEX_READ_ONLY === "true";
+  },
   stagingDir: optionalEnv("STAGING_DIR", "/data/staging"),
   blackholeTorrents: optionalEnv("BLACKHOLE_TORRENT_DIR", "/blackhole/torrents"),
   blackholeDownloads: optionalEnv("BLACKHOLE_DOWNLOAD_DIR", "/blackhole/downloads"),

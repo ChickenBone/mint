@@ -1,11 +1,25 @@
 import { optionalEnv, requireEnv } from "@mint/core/env";
 import { http, httpJson, type RequestOpts } from "../http";
+import { config } from "../config";
 
 function base() {
   return requireEnv("PLEX_URL").replace(/\/$/, "");
 }
 
+export async function libraryPage(start: number, size = 200) {
+  const res = await plex<{ MediaContainer: { totalSize?: number; Metadata?: PlexTrack[] } }>(
+    `/library/sections/${section()}/all`,
+    { query: { type: 10 }, headers: { "X-Plex-Container-Start": String(start), "X-Plex-Container-Size": String(size) }, timeoutMs: 30_000 },
+  );
+  return { items: res.MediaContainer.Metadata ?? [], total: res.MediaContainer.totalSize };
+}
+
+export async function serverId() {
+  return machineIdentifier();
+}
+
 function plex<T>(path: string, opts: RequestOpts = {}) {
+  if (config.plexReadOnly && opts.method && opts.method !== "GET") throw new Error("Plex is configured read-only");
   return httpJson<T>(`${base()}${path}`, {
     ...opts,
     headers: {
@@ -26,11 +40,16 @@ export function toPlexPath(localPath: string) {
   return localPath.startsWith(from) ? to + localPath.slice(from.length) : localPath;
 }
 
-interface PlexTrack {
+export interface PlexTrack {
   ratingKey: string;
   title: string;
+  grandparentTitle?: string;
+  parentTitle?: string;
+  year?: number;
+  duration?: number;
+  addedAt?: number;
   musicAnalysisVersion?: string;
-  Media?: Array<{ Part?: Array<{ id: number; file: string }> }>;
+  Media?: Array<{ audioCodec?: string; Part?: Array<{ id: number; file: string; size?: number }> }>;
 }
 
 interface Container<T> {
@@ -38,6 +57,7 @@ interface Container<T> {
 }
 
 export async function refreshPath(dir: string) {
+  if (config.plexReadOnly) throw new Error("Plex is configured read-only");
   await plex(`/library/sections/${section()}/refresh`, { query: { path: toPlexPath(dir) } });
 }
 
@@ -63,6 +83,7 @@ export function isSonicallyAnalyzed(t: PlexTrack) {
 
 /** Asks Plex to (re)analyze the item; with Plex Pass + sonic analysis enabled this includes sonic analysis. */
 export async function analyze(ratingKey: string) {
+  if (config.plexReadOnly) throw new Error("Plex is configured read-only");
   await http(`${base()}/library/metadata/${ratingKey}/analyze`, {
     method: "PUT",
     headers: { "x-plex-token": requireEnv("PLEX_TOKEN") },
@@ -81,6 +102,7 @@ function itemsUri(mid: string, keys: string[]) {
 
 /** Creates the playlist if needed and appends any rating keys not already present. Returns the playlist ratingKey. */
 export async function syncPlaylist(title: string, ratingKeys: string[], existingKey?: string | null): Promise<string | null> {
+  if (config.plexReadOnly) throw new Error("Plex is configured read-only");
   if (!ratingKeys.length && !existingKey) return null;
   const mid = await machineIdentifier();
   let key = existingKey ?? null;
@@ -131,6 +153,7 @@ export async function listSections(): Promise<PlexSection[]> {
 
 /** Creates a Music library at `location` using the modern Plex Music agent (needed for sonic analysis). */
 export async function createMusicSection(location: string) {
+  if (config.plexReadOnly) throw new Error("Plex is configured read-only");
   await http(`${base()}/library/sections`, {
     method: "POST",
     headers: { "x-plex-token": requireEnv("PLEX_TOKEN") },

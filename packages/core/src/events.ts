@@ -17,6 +17,7 @@ export interface Stats {
   bytes: number;
   sonicAnalyzed: number;
   bySource: Record<Source, number>;
+  existingTracks?: number;
   byStage: Partial<Record<Stage, number>>;
   readyToday: number;
   failed: number;
@@ -39,7 +40,7 @@ export interface TrackView {
   sonicAnalyzed: boolean;
   /** Remote cover art URL; never served from the home server. */
   artworkUrl: string;
-  youtubeVideoId: string;
+  youtubeVideoId: string | null;
   updatedAt: string;
 }
 

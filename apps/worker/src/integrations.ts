@@ -22,16 +22,30 @@ const PLEX_PREFS = "Library/Application Support/Plex Media Server/Preferences.xm
 let lidarrReady = false;
 
 async function readAttr(file: string, re: RegExp) {
-  const xml = await readFile(file, "utf8").catch(() => null);
+  const xml = await readFile(file, "utf8").catch((err: NodeJS.ErrnoException) => {
+    if (err.code === "ENOENT") return null;
+    throw new Error(`Cannot read service configuration (${err.code ?? "unknown error"}). Check the folder mapping and permissions.`);
+  });
   return xml?.match(re)?.[1] ?? null;
 }
 
 async function wirePlex(notes: string[]) {
   if (!process.env.PLEX_URL) return;
+  if (config.plexReadOnly) {
+    if (!process.env.PLEX_TOKEN || !process.env.PLEX_MUSIC_SECTION_ID) {
+      notes.push("Existing Plex is read-only: set PLEX_TOKEN and PLEX_MUSIC_SECTION_ID. Mint will not claim or change that server.");
+      return;
+    }
+    const sections = await plex.listSections();
+    if (!sections.some((s) => s.key === process.env.PLEX_MUSIC_SECTION_ID && s.type === "artist")) {
+      throw new Error("PLEX_MUSIC_SECTION_ID does not identify a music section on the configured Plex server.");
+    }
+    return;
+  }
   if (!process.env.PLEX_TOKEN) {
     const token = await readAttr(path.join(optionalEnv("PLEX_CONFIG_DIR", "/plex-config"), PLEX_PREFS), /PlexOnlineToken="([^"]+)"/);
     if (!token) {
-      notes.push("Plex isn't claimed yet. Get a code from plex.tv/claim, set PLEX_CLAIM in your compose settings and recreate Plex within 4 minutes. Or open Plex on your local network to claim it.");
+      notes.push("Plex configuration has no account token yet. The claim may have expired or the wrong config folder may be mounted. Set PLEX_TOKEN explicitly, or use a fresh PLEX_CLAIM and recreate Plex. Mint cannot infer the cause from this file.");
       return;
     }
     process.env.PLEX_TOKEN = token;
@@ -135,8 +149,8 @@ export async function wireIntegrations(): Promise<string[]> {
     try {
       await step(notes);
     } catch (err) {
-      log.debug({ err }, `${name} auto-setup not ready yet`);
-      notes.push(`${name} isn't answering yet. It can take a minute on first start.`);
+      log.warn({ err }, `${name} auto-setup failed`);
+      notes.push(`${name} setup failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {

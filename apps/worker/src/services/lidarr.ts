@@ -21,6 +21,18 @@ export function api<T>(path: string, opts: RequestOpts = {}) {
 interface Profile {
   id: number;
   name: string;
+  items?: Array<{ allowed: boolean; quality?: { id: number; name: string }; items?: Profile["items"] }>;
+}
+
+export async function losslessProfile(): Promise<number | null> {
+  const profiles = await api<Profile[]>("/qualityprofile");
+  const leaves = (items: NonNullable<Profile["items"]>): Array<{ allowed: boolean; quality?: { id: number; name: string } }> =>
+    items.flatMap((item) => item.items?.length ? leaves(item.items).map((leaf) => ({ ...leaf, allowed: item.allowed && leaf.allowed })) : [item]);
+  const good = profiles.filter((p) => {
+    const allowed = leaves(p.items ?? []).filter((q) => q.allowed);
+    return allowed.length > 0 && allowed.every((q) => /^(flac|alac|wav|ape|wavpack)(?:[ -]|$)/i.test(q.quality?.name ?? ""));
+  });
+  return good[0]?.id ?? null;
 }
 interface LidarrArtist {
   id: number;
@@ -78,10 +90,13 @@ function getDefaults() {
   return defaults;
 }
 
-export async function ensureArtist(mbArtistId: string): Promise<LidarrArtist> {
+export async function ensureArtist(mbArtistId: string, qualityProfileId?: number): Promise<LidarrArtist> {
   const existing = await api<LidarrArtist[]>("/artist", { query: { mbId: mbArtistId } });
   const hit = existing.find((a) => a.foreignArtistId === mbArtistId);
-  if (hit) return hit;
+  if (hit) {
+    if (qualityProfileId) return api<LidarrArtist>(`/artist/${hit.id}`, { method: "PUT", body: { ...hit, qualityProfileId } });
+    return hit;
+  }
 
   const [lookup] = await api<Array<Record<string, unknown>>>("/artist/lookup", { query: { term: `lidarr:${mbArtistId}` } });
   if (!lookup) throw new Error(`Lidarr could not find artist ${mbArtistId}`);
@@ -91,6 +106,7 @@ export async function ensureArtist(mbArtistId: string): Promise<LidarrArtist> {
     body: {
       ...lookup,
       ...d,
+      ...(qualityProfileId ? { qualityProfileId } : {}),
       monitored: true,
       monitorNewItems: "none",
       addOptions: { monitor: "none", searchForMissingAlbums: false },

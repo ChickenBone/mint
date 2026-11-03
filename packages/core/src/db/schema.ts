@@ -115,7 +115,7 @@ export const tracks = pgTable(
   "tracks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    youtubeVideoId: text("youtube_video_id").notNull(),
+    youtubeVideoId: text("youtube_video_id"),
     title: text("title").notNull(),
     artist: text("artist").notNull(),
     album: text("album"),
@@ -129,6 +129,13 @@ export const tracks = pgTable(
     bytes: bigint("bytes", { mode: "number" }),
     codec: text("codec"),
     plexRatingKey: text("plex_rating_key"),
+    existingLibraryKey: text("existing_library_key"),
+    existingFilePath: text("existing_file_path"),
+    existingCodec: text("existing_codec"),
+    existingDurationSec: integer("existing_duration_sec"),
+    existingSonicAnalyzed: boolean("existing_sonic_analyzed").notNull().default(false),
+    libraryMatchKey: text("library_match_key"),
+    upgradeAttempted: boolean("upgrade_attempted").notNull().default(false),
     sonicAnalyzed: boolean("sonic_analyzed").notNull().default(false),
     /** Remote cover art (Cover Art Archive or YouTube thumbnail); also embedded into the file. */
     artworkUrl: text("artwork_url"),
@@ -150,6 +157,8 @@ export const tracks = pgTable(
   },
   (t) => [
     uniqueIndex("tracks_video_idx").on(t.youtubeVideoId),
+    uniqueIndex("tracks_existing_library_idx").on(t.existingLibraryKey),
+    index("tracks_library_match_idx").on(t.libraryMatchKey),
     index("tracks_remote_idx").on(t.remoteAt).where(sql`${t.remoteAt} is not null`),
     index("tracks_stage_idx").on(t.stage),
     index("tracks_ready_idx").on(t.readyAt),
@@ -170,6 +179,11 @@ export const userTracks = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.trackId] }), index("user_tracks_track_idx").on(t.trackId)],
 );
+
+export const trackVideos = pgTable("track_videos", {
+  videoId: text("video_id").primaryKey(),
+  trackId: uuid("track_id").notNull().references(() => tracks.id, { onDelete: "cascade" }),
+});
 
 export const playlists = pgTable(
   "playlists",

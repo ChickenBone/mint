@@ -11,4 +11,5 @@ dist
 coverage
 .turbo
 data/
+existing-library/
 .impeccable/

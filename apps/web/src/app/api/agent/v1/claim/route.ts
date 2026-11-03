@@ -37,6 +37,8 @@ export async function POST(req: Request) {
     where id = (
       select id from tracks
       where remote_at is not null
+        and youtube_video_id is not null
+        and existing_file_path is null
         and stage not in ('ready', 'failed')
         and (lease_expires_at is null or lease_expires_at < now())
       order by remote_at
@@ -49,7 +51,7 @@ export async function POST(req: Request) {
   if (!id) return noContent();
 
   const track = await db.query.tracks.findFirst({ where: eq(t.id, id) });
-  if (!track) return noContent();
+  if (!track?.youtubeVideoId) return noContent();
   await db.update(schema.workers).set({ lastSeenAt: new Date() }).where(eq(schema.workers.id, worker.id));
   await publish(getRedis(), CHANNEL.public, { type: "track", data: toTrackView(track) }).catch(() => undefined);
 

@@ -1,0 +1,54 @@
+# One-time named-volume -> folder copy. Stop the existing Mint project FIRST.
+# Paste into a temporary UGOS Compose Project. Does NOT remove source volumes.
+# Set this to the final Mint project's real data-folder path from UGOS File Manager.
+x-settings:
+  DESTINATION: &destination "/volume1/docker/mint/data"
+
+services:
+  copy:
+    image: alpine:3
+    restart: "no"
+    network_mode: none
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        for name in secrets music blackhole staging postgres redis caddy caddy-config plex lidarr; do
+          if [ -d "/destination/$$name" ] && [ -n "$$(ls -A "/destination/$$name")" ]; then
+            echo "Refusing to overwrite non-empty destination: $$name" >&2
+            exit 1
+          fi
+        done
+        for name in secrets music blackhole staging postgres redis caddy caddy-config plex lidarr; do
+          mkdir -p "/destination/$$name"
+          cp -a "/source/$$name/." "/destination/$$name/"
+          echo "Copied $$name"
+        done
+        echo "Copy complete. Source volumes are unchanged. Deploy Mint with the same destination project folder."
+    volumes:
+      - type: bind
+        source: *destination
+        target: /destination
+      - secrets:/source/secrets:ro
+      - music:/source/music:ro
+      - blackhole:/source/blackhole:ro
+      - staging:/source/staging:ro
+      - postgres:/source/postgres:ro
+      - redis:/source/redis:ro
+      - caddy_data:/source/caddy:ro
+      - caddy_config:/source/caddy-config:ro
+      - plex_config:/source/plex:ro
+      - lidarr_config:/source/lidarr:ro
+
+# These are the actual old Docker volume names, not new migration-project volumes.
+# If your original project was not named "mint", change each name accordingly.
+volumes:
+  secrets: { external: true, name: mint_secrets }
+  music: { external: true, name: mint_music }
+  blackhole: { external: true, name: mint_blackhole }
+  staging: { external: true, name: mint_staging }
+  postgres: { external: true, name: mint_postgres }
+  redis: { external: true, name: mint_redis }
+  caddy_data: { external: true, name: mint_caddy_data }
+  caddy_config: { external: true, name: mint_caddy_config }
+  plex_config: { external: true, name: mint_plex_config }
+  lidarr_config: { external: true, name: mint_lidarr_config }

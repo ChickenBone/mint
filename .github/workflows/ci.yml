@@ -16,6 +16,23 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: mint_library_test
+          POSTGRES_USER: mint
+          POSTGRES_PASSWORD: fixture-only
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mint -d mint_library_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -26,12 +43,17 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm test
+        env:
+          MINT_LIBRARY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
+          MINT_LIBRARY_TEST_REDIS_URL: redis://localhost:6379/0
+          MINT_AUDIO_TEST: "true"
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=moderate
       - name: Validate deployment files
         run: |
           docker compose config --quiet
           docker compose -f docker-compose.nas.yml config --quiet
+          docker compose -f docker-compose.nas-migrate.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet
           node --test deploy/docker/compose.test.mjs
 

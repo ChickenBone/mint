@@ -49,6 +49,7 @@ export type MaintenanceJob =
   | { kind: "stats" }
   | { kind: "torbox-tick" }
   | { kind: "health" }
+  | { kind: "library-index" }
   | { kind: "leases" }
   | { kind: "plex-playlists"; userId: string };
 

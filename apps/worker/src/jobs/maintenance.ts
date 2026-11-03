@@ -5,6 +5,7 @@ import type { Job } from "bullmq";
 import { and, asc, eq, isNotNull, isNull, lt } from "drizzle-orm";
 import { config } from "../config";
 import { wireIntegrations } from "../integrations";
+import { indexLibrary } from "../library-index";
 import { log } from "../log";
 import { queues } from "../queues";
 import * as cobalt from "../services/cobalt";
@@ -38,13 +39,15 @@ async function health() {
     services: { lidarr: lid, cobalt: cob, plex: plx, torbox: torboxEnabled() ? true : null },
     queues: Object.fromEntries(counts),
     notes,
+    localWorker: { online: true, acquisition: config.concurrency.acquire, finalize: config.concurrency.finalize },
+    libraryIndex: JSON.parse((await getRedis().get("mint:library-index")) ?? "null"),
     checkedAt: new Date().toISOString(),
   };
   await getRedis().set("mint:health", JSON.stringify(report), "EX", 300);
 }
 
 async function plexPlaylists(userId: string) {
-  if (!config.plexEnabled) return;
+  if (!config.plexEnabled || config.plexReadOnly) return;
   const db = getDb();
   const user = await db.query.users.findFirst({ where: eq(schema.users.id, userId) });
   const acct = await db.query.youtubeAccounts.findFirst({ where: eq(schema.youtubeAccounts.userId, userId) });
@@ -105,6 +108,8 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
       return publishStats();
     case "health":
       return health();
+    case "library-index":
+      return indexLibrary();
     case "leases":
       return reapLeases();
     case "torbox-tick":

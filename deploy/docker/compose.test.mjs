@@ -14,7 +14,7 @@ const resolve = (yaml) =>
     }),
   );
 
-test("NAS template is self-contained and only uses Docker-managed storage", () => {
+test("NAS template is self-contained and uses project-relative bind folders", () => {
   const config = resolve(source);
   assert.equal(Object.keys(config.services).length, 12);
   assert.equal(config.configs, undefined);
@@ -22,10 +22,34 @@ test("NAS template is self-contained and only uses Docker-managed storage", () =
     assert.equal(service.env_file, undefined);
     assert.equal(service.build, undefined);
     for (const mount of service.volumes || []) {
-      assert.equal(mount.type, "volume");
-      assert.ok(config.volumes[mount.source]);
+      assert.equal(mount.type, "bind");
+      assert.ok(mount.source);
     }
   }
+});
+
+test("local pipeline is enabled and existing music is mounted read-only", () => {
+  const { services } = resolve(source);
+  assert.equal(services.worker.environment.REMOTE_DOWNLOADS, "never");
+  const original = services.worker.volumes.find((v) => v.target === "/existing-music");
+  assert.equal(original.read_only, true);
+  assert.equal(services.web.volumes.some((v) => v.target === "/existing-music"), false);
+  assert.equal(services.init.volumes.some((v) => v.target === "/existing-music"), false);
+  assert.equal(services.plex.ports[0].published, "32401");
+});
+
+test("migration copies explicit old volumes read-only without network or overwrites", () => {
+  const migration = readFileSync(new URL("../../docker-compose.nas-migrate.yml", import.meta.url), "utf8");
+  const config = resolve(migration);
+  const copy = config.services.copy;
+  assert.equal(copy.network_mode, "none");
+  assert.equal(copy.restart, "no");
+  assert.equal(copy.volumes.filter((mount) => mount.type === "volume" && mount.read_only).length, 10);
+  assert.equal(copy.volumes.filter((mount) => mount.type === "bind").length, 1);
+  for (const volume of Object.values(config.volumes)) assert.equal(volume.external, true);
+  assert.ok(copy.command[0].includes("Refusing to overwrite"));
+  assert.ok(copy.command[0].includes("cp -a"));
+  assert.ok(!copy.command[0].includes("rm "));
 });
 
 test("one hostname edit reaches every public URL without exposing media keys to the hub", () => {

@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { ensureDir } from "./files";
+import { codecQuality } from "./library-policy";
 
 function run(cmd: string, args: string[], timeoutMs = 10 * 60 * 1000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -41,7 +42,9 @@ const CONTAINER: Record<string, { ext: string; embedsArt: boolean }> = {
 };
 
 export function containerFor(codec: string | null) {
-  return CONTAINER[codec ?? ""] ?? { ext: "m4a", embedsArt: true, transcode: true };
+  return CONTAINER[codec ?? ""] ?? (codecQuality(codec) === "lossless"
+    ? { ext: "flac", embedsArt: true, transcodeLossless: true }
+    : { ext: "m4a", embedsArt: true, transcode: true });
 }
 
 export interface TagMeta {
@@ -67,7 +70,7 @@ export async function tagInto(src: string, destNoExt: string, meta: TagMeta, cov
   if (withArt) args.push("-i", coverJpg!);
   args.push("-map", "0:a:0");
   if (withArt) args.push("-map", "1:v:0", "-c:v", "mjpeg", "-disposition:v:0", "attached_pic");
-  args.push("-c:a", "transcode" in c ? "aac" : "copy");
+  args.push("-c:a", "transcode" in c ? "aac" : "transcodeLossless" in c ? "flac" : "copy");
   if ("transcode" in c) args.push("-b:a", "256k");
   const tags: Record<string, string | undefined> = {
     title: meta.title,

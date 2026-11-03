@@ -20,6 +20,7 @@ export async function processSonic(job: Job<SonicJob>, token?: string) {
   const db = getDb();
   const track = await db.query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
   if (!track || track.stage === "ready") return;
+  if (config.plexReadOnly) return markReady(track.id, track.sonicAnalyzed, "Existing Plex is read-only");
   const elapsed = Date.now() - job.data.startedAt;
 
   let key = track.plexRatingKey;

@@ -61,6 +61,14 @@ export default async function Admin() {
             ))}
           </ul>
         )}
+        {health?.libraryIndex && (
+          <p className="mb-6 text-sm text-muted" role="status">
+            Existing library: {health.libraryIndex.state}. {formatCount(health.libraryIndex.indexed)} indexed
+            {health.libraryIndex.total !== undefined ? ` of ${formatCount(health.libraryIndex.total)}` : ""}
+            {health.libraryIndex.skipped > 0 ? `; ${formatCount(health.libraryIndex.skipped)} skipped (check worker logs and folder mappings)` : ""}.
+            {health.libraryIndex.message ? ` ${health.libraryIndex.message}` : ""}
+          </p>
+        )}
         {health && (
           <div className="grid gap-8 md:grid-cols-[16rem_1fr]">
             <ul className="flex flex-col gap-2">
@@ -107,7 +115,7 @@ export default async function Admin() {
         <h2 className="mb-1 text-xl font-bold">
           Workers {pendingWorkers > 0 && <span className="text-warn tabular">({pendingWorkers} to approve)</span>}
         </h2>
-        <p className="mb-4 text-sm text-muted">Volunteer machines that rip YouTube audio and upload it to the hub. Disabling one returns its jobs to the pool.</p>
+        <p className="mb-4 text-sm text-muted">The built-in NAS pipeline runs independently of these optional volunteer machines. Disabling a volunteer returns its jobs to the pool.</p>
         <AdminWorkers initial={workers} actions={{ setStatus: setWorkerStatus, revoke: revokeWorker }} />
       </section>
 

@@ -29,6 +29,13 @@
       "when": 1793692599143,
       "tag": "0003_track_artwork_url",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793729600000,
+      "tag": "0004_existing_library",
+      "breakpoints": true
     }
   ]
 }

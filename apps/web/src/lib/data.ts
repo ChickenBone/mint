@@ -198,6 +198,8 @@ export interface Health {
   queues: Record<string, { active: number; waiting: number; delayed: number; failed: number }>;
   /** Setup steps the worker couldn't finish on its own. */
   notes?: string[];
+  localWorker?: { online: boolean; acquisition: number; finalize: number };
+  libraryIndex?: { state: "disabled" | "indexing" | "ready" | "error"; indexed: number; skipped: number; total?: number; message?: string } | null;
   checkedAt: string;
 }
 
@@ -205,7 +207,12 @@ export async function getHealth(): Promise<Health | null> {
   const raw = await getRedis()
     .get("mint:health")
     .catch(() => null);
-  return raw ? (JSON.parse(raw) as Health) : null;
+  if (!raw) return null;
+  const health = JSON.parse(raw) as Health;
+  if (health.localWorker) {
+    health.localWorker.online = health.localWorker.online && Date.now() - Date.parse(health.checkedAt) < 90_000;
+  }
+  return health;
 }
 
 export async function staleSyncingCount() {

@@ -11,6 +11,9 @@ import { sql } from "drizzle-orm";
 import { config } from "./config";
 import { ensureDir } from "./files";
 import { wireIntegrations } from "./integrations";
+import { libraryIndexEnabled } from "./library-index";
+import { keepExisting } from "./existing-track";
+import { eq } from "drizzle-orm";
 import { processAcquire, onAcquireFailed } from "./jobs/acquire";
 import { processFinalize } from "./jobs/finalize";
 import { processMaintenance } from "./jobs/maintenance";
@@ -59,22 +62,31 @@ async function main() {
     new Worker(QUEUE.maintenance, processMaintenance, { connection, concurrency: 4 }),
   ];
 
-  acquireWorker.on("failed", (job, err) => void onAcquireFailed(job, err));
+  acquireWorker.on("failed", (job, err) => void onAcquireFailed(job, err).catch((error) => log.error({ err: error }, "could not record acquisition failure")));
   for (const w of [finalizeWorker, sonicWorker] as Worker<{ trackId: string }>[]) {
     w.on("failed", (job, err) => {
       if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
-        void updateTrack(job.data.trackId, { stage: "failed", error: err.message.slice(0, 500), detail: `${w.name} failed` }, err.message);
+        void (async () => {
+          const track = await getDb().query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
+          if (track?.existingFilePath) await keepExisting(track, `Upgrade failed: ${err.message.slice(0, 200)}`);
+          else await updateTrack(job.data.trackId, { stage: "failed", error: err.message.slice(0, 500), detail: `${w.name} failed` }, err.message);
+        })().catch((error) => log.error({ err: error }, "could not record final job failure"));
       }
     });
   }
   for (const w of workers) w.on("error", (err) => log.error({ err, queue: w.name }, "worker error"));
 
   const m = queues.maintenance;
+  await m.add("health", { kind: "health" });
   await m.upsertJobScheduler("stats", { every: 5_000 }, { name: "stats", data: { kind: "stats" } });
   await m.upsertJobScheduler("leases", { every: 30_000 }, { name: "leases", data: { kind: "leases" } });
   await m.upsertJobScheduler("health", { every: 30_000 }, { name: "health", data: { kind: "health" } });
   await m.upsertJobScheduler("torbox-tick", { every: 15_000 }, { name: "torbox-tick", data: { kind: "torbox-tick" } });
   await m.upsertJobScheduler("schedule-sync", { every: config.syncIntervalMin * 60_000 }, { name: "schedule-sync", data: { kind: "schedule-sync" } });
+  if (libraryIndexEnabled()) {
+    await m.add("library-index", { kind: "library-index" }, { jobId: `library-index-start-${Date.now()}` });
+    await m.upsertJobScheduler("library-index", { every: 6 * 3_600_000 }, { name: "library-index", data: { kind: "library-index" } });
+  }
 
   const server = http.createServer(async (req, res) => {
     if (req.url !== "/healthz") return res.writeHead(404).end();

@@ -95,28 +95,29 @@ export function TrackList({
 
 /** Album-art card. The cover is the whole point; it links out to the song on YouTube Music. */
 export function TrackCard({ track, feature = false, landing = false }: { track: TrackView; feature?: boolean; landing?: boolean }) {
+  const Element = track.youtubeVideoId ? "a" : "div";
   return (
-    <a
-      href={youtubeMusicUrl(track.youtubeVideoId)}
-      target="_blank"
-      rel="noreferrer"
+    <Element
+      href={track.youtubeVideoId ? youtubeMusicUrl(track.youtubeVideoId) : undefined}
+      target={track.youtubeVideoId ? "_blank" : undefined}
+      rel={track.youtubeVideoId ? "noreferrer" : undefined}
       className={clsx("group relative block rounded-lg outline-offset-4", feature && "col-span-2 row-span-2", landing && "land")}
     >
       <div className="relative overflow-hidden rounded-md shadow-[0_18px_40px_-18px_rgb(0_0_0/0.9)]">
         <Artwork
           track={track}
           eager={feature}
-          className="w-full rounded-none transition duration-700 ease-out-expo group-hover:scale-[1.04] group-focus-visible:scale-[1.04]"
+          className={clsx("w-full rounded-none", track.youtubeVideoId && "transition duration-700 ease-out-expo group-hover:scale-[1.04] group-focus-visible:scale-[1.04]")}
         />
-        <span className="absolute top-2 right-2 grid size-8 translate-y-1 place-items-center rounded-full bg-bg/80 text-fg opacity-0 backdrop-blur-sm transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
+        {track.youtubeVideoId && <span className="absolute top-2 right-2 grid size-8 translate-y-1 place-items-center rounded-full bg-bg/80 text-fg opacity-0 backdrop-blur-sm transition duration-300 ease-out-expo group-hover:translate-y-0 group-hover:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:opacity-100">
           <ArrowUpRight className="size-4" aria-hidden />
-        </span>
+        </span>}
       </div>
       <p className={clsx("mt-3 truncate font-semibold text-fg", feature && "sm:text-xl")}>{track.title}</p>
       <p className={clsx("truncate text-sm text-muted", feature && "sm:text-base")}>
         {track.artist}
-        <span className="sr-only"> (opens YouTube Music)</span>
+        <span className="sr-only">{track.youtubeVideoId ? " (opens YouTube Music)" : " (existing library)"}</span>
       </p>
-    </a>
+    </Element>
   );
 }

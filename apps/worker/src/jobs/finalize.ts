@@ -2,9 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { jobId, type FinalizeJob } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
-import type { Job } from "bullmq";
+import { getRedis } from "@mint/core/redis";
+import { DelayedError, type Job } from "bullmq";
 import { eq } from "drizzle-orm";
 import { config } from "../config";
+import { keepExisting, reusePendingTrack } from "../existing-track";
+import { libraryIndexEnabled } from "../library-index";
+import { isLosslessUpgrade } from "../library-policy";
 import { exists } from "../files";
 import { log } from "../log";
 import { makeArtwork, probe, tagInto } from "../media";
@@ -20,6 +24,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function buildArtwork(track: typeof schema.tracks.$inferSelect): Promise<{ file: string; url: string } | null> {
   const dest = path.join(config.stagingDir, `${track.id}.cover.jpg`);
   const candidates = [
+    track.artworkUrl,
     track.mbReleaseGroupId ? coverArtUrl(track.mbReleaseGroupId) : null,
     `https://i.ytimg.com/vi/${track.youtubeVideoId}/maxresdefault.jpg`,
     `https://i.ytimg.com/vi/${track.youtubeVideoId}/hqdefault.jpg`,
@@ -35,10 +40,35 @@ async function buildArtwork(track: typeof schema.tracks.$inferSelect): Promise<{
   return null;
 }
 
-export async function processFinalize(job: Job<FinalizeJob>) {
+export async function processFinalize(job: Job<FinalizeJob>, token?: string) {
   const db = getDb();
   const track = await db.query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
   if (!track) return { skipped: "deleted" };
+  if (libraryIndexEnabled()) {
+    const status = JSON.parse((await getRedis().get("mint:library-index")) ?? "null");
+    if (status?.state !== "ready") {
+      await stage(track.id, "queued", "Waiting for existing-library index; check Admin for errors");
+      await job.moveToDelayed(Date.now() + 30_000, token);
+      throw new DelayedError();
+    }
+    const reused = await reusePendingTrack(track);
+    if (reused) return { reused };
+  }
+  if (!track.youtubeVideoId) throw new Error("Cannot finalize an indexed original as a download");
+  if (track.existingFilePath) {
+    const [original, candidate] = await Promise.all([probe(track.existingFilePath), probe(job.data.sourcePath)]);
+    if (!isLosslessUpgrade(original.codec, candidate.codec) ||
+      !original.durationSec || !candidate.durationSec || Math.abs(original.durationSec - candidate.durationSec) > 5) {
+      await keepExisting(track, "Candidate was not a lossless-format upgrade");
+      const relative = path.relative(config.stagingDir, job.data.sourcePath);
+      if (!job.data.inLibrary && relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+        await fs.unlink(job.data.sourcePath).catch((err: NodeJS.ErrnoException) => {
+          if (err.code !== "ENOENT") throw err;
+        });
+      }
+      return { skipped: "not a lossless upgrade" };
+    }
+  }
 
   await stage(track.id, "tagging", "Tagging and artwork", 0.1);
   const cover = await buildArtwork(track);
@@ -46,9 +76,11 @@ export async function processFinalize(job: Job<FinalizeJob>) {
   if (cover) await updateTrack(track.id, { artworkUrl: cover.url });
 
   let filePath = job.data.sourcePath;
-  if (!job.data.inLibrary) {
+  if (!job.data.inLibrary || track.existingFilePath) {
     const album = track.album ?? `${track.title} (Single)`;
-    const albumDir = path.join(config.musicDir, safeSegment(track.artist), safeSegment(album));
+    const albumDir = track.existingFilePath
+      ? path.join(config.musicDir, "upgrades", track.id)
+      : path.join(config.musicDir, safeSegment(track.artist), safeSegment(album));
     filePath = await tagInto(
       job.data.sourcePath,
       path.join(albumDir, safeSegment(track.title)),
@@ -67,7 +99,7 @@ export async function processFinalize(job: Job<FinalizeJob>) {
     );
     const folderCover = path.join(albumDir, "cover.jpg");
     if (art && !(await exists(folderCover))) await fs.copyFile(art, folderCover);
-    await fs.unlink(job.data.sourcePath).catch(() => undefined);
+    if (!job.data.inLibrary) await fs.unlink(job.data.sourcePath).catch(() => undefined);
   }
 
   const info = await probe(filePath);
@@ -79,12 +111,18 @@ export async function processFinalize(job: Job<FinalizeJob>) {
     bytes: stat.size,
     codec: info.codec,
     durationSec: info.durationSec ?? track.durationSec,
+    ...(track.existingFilePath ? { sonicAnalyzed: false, plexRatingKey: null } : {}),
     progress: 1,
   });
   if (art) await fs.unlink(art).catch(() => undefined);
 
-  if (!config.plexEnabled) {
-    await updateTrack(track.id, { stage: "ready", detail: null, readyAt: new Date(), progress: 1 }, "Ready (Plex not configured)");
+  if (!config.plexEnabled || config.plexReadOnly) {
+    await updateTrack(track.id, {
+      stage: "ready",
+      detail: config.plexReadOnly ? "Saved separately; existing Plex is read-only" : null,
+      readyAt: new Date(),
+      progress: 1,
+    }, config.plexReadOnly ? "Saved without changing existing Plex" : "Ready (Plex not configured)");
     return { filePath };
   }
 

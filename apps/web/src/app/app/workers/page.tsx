@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PageHeader } from "@/components/app/page-header";
 import { WorkersPanel } from "@/components/app/workers-panel";
 import { requireUser } from "@/lib/auth";
-import { getMyWorkers, getRemotePoolSize, getStats } from "@/lib/data";
+import { getHealth, getMyWorkers, getRemotePoolSize, getStats } from "@/lib/data";
 import { formatCount } from "@/lib/format";
 import { publicUrl } from "@/lib/request";
 
@@ -16,7 +16,8 @@ const FACTS: Array<[string, string]> = [
 
 export default async function Workers() {
   const user = await requireUser();
-  const [workers, pool, stats] = await Promise.all([getMyWorkers(user.id), getRemotePoolSize(), getStats()]);
+  const [workers, pool, stats, health] = await Promise.all([getMyWorkers(user.id), getRemotePoolSize(), getStats(), getHealth()]);
+  const localOnline = Boolean(health?.localWorker?.online);
 
   return (
     <>
@@ -24,11 +25,19 @@ export default async function Workers() {
         title="Workers"
         sub={
           <p className="max-w-2xl">
-            Lend a machine to the pipeline. <span className="text-fg tabular">{formatCount(stats.workersOnline ?? 0)}</span> online right now,{" "}
+            Optional volunteer machines. <span className="text-fg tabular">{formatCount(stats.workersOnline ?? 0)}</span> volunteers online,{" "}
             <span className="text-fg tabular">{formatCount(pool)}</span> {pool === 1 ? "song" : "songs"} waiting for one.
           </p>
         }
       />
+      <section className="mb-8 border-b border-line pb-6">
+        <h2 className="text-xl font-bold">Built-in NAS worker</h2>
+        <p className="mt-2 text-muted">
+          {localOnline
+            ? `Online. Handles ${health!.localWorker!.acquisition} acquisition jobs concurrently, then tags and files downloads. No worker token or volunteer registration needed.`
+            : "No recent heartbeat. Check the worker container logs in your NAS Docker project."}
+        </p>
+      </section>
       <WorkersPanel initial={workers} origin={publicUrl()} />
       <dl className="mt-14 grid max-w-5xl gap-8 border-t border-line pt-8 md:grid-cols-3">
         {FACTS.map(([k, v]) => (

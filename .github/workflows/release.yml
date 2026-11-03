@@ -66,6 +66,7 @@ jobs:
             docker-compose.yml
             docker-compose.vercel.yml
             docker-compose.nas.yml
+            docker-compose.nas-migrate.yml
           sparse-checkout-cone-mode: false
       - name: Install SSH key
         run: |
@@ -79,5 +80,5 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           DIR: ${{ vars.DEPLOY_PATH || '/srv/mint' }}
         run: |
-          scp docker-compose.yml docker-compose.vercel.yml docker-compose.nas.yml "$USER@$HOST:$DIR/"
+          scp docker-compose.yml docker-compose.vercel.yml docker-compose.nas.yml docker-compose.nas-migrate.yml "$USER@$HOST:$DIR/"
           ssh "$USER@$HOST" "cd '$DIR' && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"

@@ -4,6 +4,12 @@ import { getDb, schema } from "@mint/core/db";
 import { DelayedError, type Job } from "bullmq";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { config } from "../config";
+import { keepExisting } from "../existing-track";
+import { reusePendingTrack } from "../existing-track";
+import { libraryIndexEnabled } from "../library-index";
+import { getRedis } from "@mint/core/redis";
+import { codecQuality } from "../library-policy";
+import { probe } from "../media";
 import { downloadToFile } from "../files";
 import { log } from "../log";
 import { queues } from "../queues";
@@ -33,6 +39,12 @@ async function later(job: Job<AcquireJob>, token: string | undefined, data: Acqu
 }
 
 async function toCobalt(job: Job<AcquireJob>, token: string | undefined, reason: string): Promise<never> {
+  const track = await getDb().query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
+  if (track?.existingFilePath) {
+    await keepExisting(track, `${reason}; YouTube cannot provide a verified lossless upgrade`);
+    // Complete the state machine without downloading a lossy fallback.
+    return later(job, token, { ...job.data, step: "match" }, 0);
+  }
   log.info({ trackId: job.data.trackId, reason }, "falling back to Cobalt");
   await stage(job.data.trackId, "downloading", `${reason} → YouTube via Cobalt`);
   return later(job, token, { ...job.data, step: "cobalt" }, 0);
@@ -42,10 +54,28 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
   const db = getDb();
   const track = await db.query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
   if (!track) return { skipped: "deleted" };
-  if (track.stage === "ready" || track.filePath) return { skipped: "already acquired" };
+  if (track.stage === "ready" || (track.filePath && !track.existingFilePath)) return { skipped: "already acquired" };
+  if (libraryIndexEnabled()) {
+    const status = JSON.parse((await getRedis().get("mint:library-index")) ?? "null");
+    if (status?.state !== "ready") {
+      await stage(track.id, "queued", "Waiting for existing-library index; check Admin for errors");
+      return later(job, token, job.data, 30_000);
+    }
+    const reused = await reusePendingTrack(track);
+    if (reused) return { reused };
+  }
+  if (!track.youtubeVideoId) throw new Error("Track has no YouTube acquisition identity");
   const step = job.data.step ?? "match";
 
   if (step === "match") {
+    if (track.existingFilePath) {
+      const original = await probe(track.existingFilePath);
+      if (codecQuality(original.codec) !== "lossy") {
+        await keepExisting({ ...track, existingCodec: original.codec }, "Original is lossless or its quality is unknown");
+        return { skipped: "no verified quality upgrade" };
+      }
+      await updateTrack(track.id, { existingCodec: original.codec });
+    }
     await db.update(schema.tracks).set({ attempts: sql`${schema.tracks.attempts} + 1` }).where(eq(schema.tracks.id, track.id));
     await stage(track.id, "matching", "Looking up MusicBrainz");
     const match = await matchRecording(track).catch((err) => {
@@ -68,7 +98,9 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
 
   if (step === "lidarr-add") {
     await stage(track.id, "searching", `Searching for “${track.album ?? track.title}” via Lidarr`);
-    await lidarr.ensureArtist(track.mbArtistId!);
+    const profile = track.existingFilePath ? await lidarr.losslessProfile() : null;
+    if (track.existingFilePath && !profile) return toCobalt(job, token, "Lidarr needs a lossless-only quality profile");
+    await lidarr.ensureArtist(track.mbArtistId!, profile ?? undefined);
     const album = await lidarr.findAlbum(track.mbReleaseGroupId!);
     if (!album) {
       // A freshly added artist needs a metadata refresh before its albums appear.
@@ -119,6 +151,7 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
   }
 
   // step === "cobalt"
+  if (track.existingFilePath) return toCobalt(job, token, "No lossless source available");
   if (!job.data.local && (await shouldHandOff())) {
     await updateTrack(
       track.id,
@@ -142,6 +175,11 @@ export async function onAcquireFailed(job: Job<AcquireJob> | undefined, err: Err
   if (!job) return;
   const final = job.attemptsMade >= (job.opts.attempts ?? 1);
   if (final) {
+    const track = await getDb().query.tracks.findFirst({ where: eq(schema.tracks.id, job.data.trackId) });
+    if (track?.existingFilePath) {
+      await keepExisting(track, `Upgrade failed: ${err.message.slice(0, 200)}`);
+      return;
+    }
     await updateTrack(job.data.trackId, { stage: "failed", error: err.message.slice(0, 500), detail: "Download failed" }, err.message);
   } else {
     await updateTrack(job.data.trackId, { detail: `Retrying: ${err.message.slice(0, 120)}` });

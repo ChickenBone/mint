@@ -68,7 +68,7 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
   return (
     <div className="grid gap-12">
       <section aria-labelledby="new-worker">
-        <h2 id="new-worker" className="text-xl font-bold">Add a worker</h2>
+        <h2 id="new-worker" className="text-xl font-bold">Add a volunteer</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted">Each machine gets its own token so you can revoke one without touching the others.</p>
         <form action={action} className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
           <Field label="Name" name="name" placeholder="living-room-nas" required maxLength={40} error={state?.error} className="flex-1" autoComplete="off" />
@@ -99,11 +99,11 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
       </section>
 
       <section aria-labelledby="your-workers">
-        <h2 id="your-workers" className="text-xl font-bold">Your workers</h2>
+        <h2 id="your-workers" className="text-xl font-bold">Your volunteer workers</h2>
         {workers.length === 0 ? (
           <div className="mt-4 flex max-w-xl items-center gap-4 rounded-xl bg-elevated p-5 text-muted">
             <Server className="size-8 shrink-0 text-faint" aria-hidden />
-            <p>None yet. Create a token above, run the container, and it shows up here the moment it says hello.</p>
+            <p>No volunteers registered. The built-in NAS worker needs no registration. Add a token only for an optional extra machine.</p>
           </div>
         ) : (
           <ul className="mt-4 divide-y divide-line rounded-xl bg-elevated">
