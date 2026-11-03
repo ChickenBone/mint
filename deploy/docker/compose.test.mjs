@@ -38,6 +38,15 @@ test("local pipeline is enabled and existing music is mounted read-only", () => 
   assert.equal(services.plex.ports[0].published, "32401");
 });
 
+test("Plex claim DNS bypass is configurable without host networking", () => {
+  const { services } = resolve(source);
+  assert.deepEqual(services.plex.dns, ["1.1.1.1", "8.8.8.8"]);
+  assert.equal(services.plex.network_mode, undefined);
+  assert.deepEqual(Object.keys(services.plex.networks), ["media"]);
+  const custom = resolve(source.replace('&plex-dns ["1.1.1.1", "8.8.8.8"]', '&plex-dns ["10.0.0.1"]'));
+  assert.deepEqual(custom.services.plex.dns, ["10.0.0.1"]);
+});
+
 test("migration copies explicit old volumes read-only without network or overwrites", () => {
   const migration = readFileSync(new URL("../../docker-compose.nas-migrate.yml", import.meta.url), "utf8");
   const config = resolve(migration);
