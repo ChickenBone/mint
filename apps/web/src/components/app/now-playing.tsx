@@ -2,15 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2 } from "lucide-react";
+import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, SlidersHorizontal, Volume2 } from "lucide-react";
 import { Artwork } from "../artwork";
 import type { PlayerCommand, PlayerItem, PlayerState } from "@/lib/player-protocol";
 import { AudioPanel, LyricsPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl } from "./player-controls";
+import { getTabTargetIndex } from "@/components/ui/interactive";
 
 type Panel = "queue" | "lyrics" | "audio";
 const tabs = [
-  { id: "queue", label: "Up next", icon: ListMusic },
+  { id: "queue", label: "Queue", icon: ListMusic },
   { id: "lyrics", label: "Lyrics", icon: Mic2 },
   { id: "audio", label: "Sound", icon: SlidersHorizontal },
 ] as const;
@@ -35,15 +36,20 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
   return <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing absolute inset-0 flex flex-col overflow-hidden">
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-lg font-bold focus-visible:outline-none">Now playing</h1>
-      <Link href={returnTo} aria-label="Close now playing" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
-        <ArrowDown className="size-4" />Back
-      </Link>
+      <div className="flex items-center gap-1">
+        <Link href="/app/devices" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
+          <MonitorSpeaker className="size-4" />Devices
+        </Link>
+        <Link href={returnTo} aria-label="Close now playing" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
+          <ArrowDown className="size-4" />Back
+        </Link>
+      </div>
     </header>
     {!track ? <div className="mx-auto max-w-md px-6 py-20 text-center">
       <ListMusic className="mx-auto mb-5 size-10 text-muted" />
       <h2 className="text-2xl font-bold">Make room for a good song.</h2>
       <p className="mt-3 text-sm leading-relaxed text-muted">Choose something from your library. Your queue, lyrics and sound controls will be right here.</p>
-      <Link href="/app/music?view=library" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">Browse music</Link>
+      <Link href="/app/library" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">Browse music</Link>
     </div> : <div className="now-playing-grid">
       <section aria-label="Current song" className="mx-auto flex w-full min-w-0 max-w-lg flex-col px-5 pb-6 pt-5 sm:px-8">
         <Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art mx-auto w-full max-w-[min(34dvh,22rem)] rounded-lg shadow-[0_16px_40px_-16px_#000]" />
@@ -73,8 +79,8 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
         <div role="tablist" aria-label="Listening tools" className="sticky top-0 z-10 flex shrink-0 gap-1 border-b border-line bg-surface px-4 sm:px-6">
           {tabs.map(({ id, label, icon: Icon }, index) => <button key={id} type="button" role="tab" id={`listening-${id}`} aria-selected={selected === id} aria-controls={`listening-panel-${id}`} tabIndex={selected === id ? 0 : -1}
             onClick={() => select(id)} onKeyDown={(event) => {
-              const target = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % tabs.length : event.key === "ArrowLeft" ? (index + tabs.length - 1) % tabs.length : null;
-              if (target === null) return;
+              const target = getTabTargetIndex(tabs.map(() => ({ disabled: false })), index, event.key);
+              if (target === undefined) return;
               const next = tabs[target];
               if (!next) return;
               event.preventDefault(); select(next.id);

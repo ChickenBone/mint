@@ -85,7 +85,7 @@ export function Downloads({ memberId }: { memberId: string }) {
     <div className="my-7 flex flex-wrap items-center gap-3">
       <button disabled={busy} onClick={() => void select()} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-mint px-5 text-sm font-bold text-mint-ink disabled:opacity-40"><Download className="size-4" />Choose {params.get("kind") ?? "liked songs"}</button>
       <a href="/offline.html" className="min-h-11 rounded-full bg-elevated px-5 py-3 text-sm font-semibold hover:bg-hover">Open offline player</a>
-      <Link href="/app/music?view=library" className="min-h-11 px-3 py-3 text-sm text-muted hover:text-fg">Back to music</Link>
+      <Link href="/app/library" className="min-h-11 px-3 py-3 text-sm text-muted hover:text-fg">Back to music</Link>
     </div>
     {selected && <div className="mb-6 border-y border-line py-5">
       <p className="font-semibold">{selected.length.toLocaleString()} {selected.length === 1 ? "song" : "songs"} selected</p>

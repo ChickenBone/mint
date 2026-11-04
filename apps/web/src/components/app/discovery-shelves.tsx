@@ -16,7 +16,7 @@ const colors = [
 ];
 type Collection = { id: string; title: string; cover: string; description: string; href: string; color: number;
   mode?: "for-you" | "recent" | "rediscover" | "radio"; seed?: string; artwork?: string; caption: string };
-const mix = (mode: string, seed?: string) => `/app/discover?${new URLSearchParams({ tab: "mixes", mode, ...(seed ? { seed } : {}) })}`;
+const mix = (mode: string, seed?: string) => `/app/discover/mixes?${new URLSearchParams({ mode, ...(seed ? { seed } : {}) })}`;
 export const DISCOVERY_MIXES: Collection[] = [
   { id: "daily", title: "Daily blend", cover: "Your\ndaily\nblend", description: "Familiar favorites. A few new turns. All from your library.", href: mix("for-you"), mode: "for-you", color: 0, caption: "Daily mix" },
   { id: "fresh", title: "Fresh finds", cover: "Fresh\nfinds", description: "The latest additions to your own little music universe.", href: mix("recent"), mode: "recent", color: 1, caption: "Library picks" },
@@ -27,7 +27,7 @@ function chartCollection(chart: ChartDefinition, index: number): Collection {
   return { id: chart.id, title: chart.title,
     cover: country ? `Top 50\n${country}` : chart.genre ? chart.genre.replace("Hip-Hop/Rap", "Hip-hop\nrotation").replace("Electronic", "Electro\npulse") : chart.provider === "listenbrainz" ? "World\nof listens\n50" : "Indie\nrotation",
     description: chart.genre ? `${chart.genre}, finding its moment on Audius.` : chart.description,
-    href: `/app/discover?chart=${chart.id}`, color: index % colors.length,
+    href: `/app/discover/charts/${encodeURIComponent(chart.id)}`, color: index % colors.length,
     caption: chart.providerName };
 }
 export function PlaylistCover({ collection }: { collection: Collection }) {
@@ -77,7 +77,10 @@ export function DiscoveryShelves({ seeds }: { seeds: TrackView[] }) {
   return <div className="discovery-shelves">
     <header className="mb-8 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3">
       <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Discover</h1>
-      <Link href="/app/discover?tab=mixes" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">Build a mix<ArrowUpRight className="size-4" /></Link>
+      <nav aria-label="Discover views" className="flex items-center gap-3">
+        <Link href="/app/discover/mixes" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">Your mixes<ArrowUpRight className="size-4" /></Link>
+        <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">All charts</Link>
+      </nav>
       <p className="col-span-2 text-sm text-muted">Something familiar. Something you didn’t know you needed.</p>
     </header>
     {error && <p role="alert" className="mb-5 text-sm text-danger">{error}</p>}

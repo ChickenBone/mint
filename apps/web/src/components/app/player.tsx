@@ -4,8 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, Search, SlidersHorizontal, Volume2, X } from "lucide-react";
+import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
+import { GlobalSearch } from "./global-search";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
 import { analysisSchema } from "@mint/core/analysis";
 import { authorizeOffline, clearOffline, listOffline, offlineAudio, offlineSettings } from "@/lib/offline";
@@ -17,7 +18,6 @@ import { collectionParams, itemCollection } from "@/lib/browser-catalog";
 import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
-import { MusicBrowser } from "./music-browser";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
 interface PlayerContext {
@@ -29,7 +29,7 @@ interface PlayerContext {
 }
 const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
-  music: boolean; nowPlaying: boolean; ready: boolean;
+  nowPlaying: boolean; ready: boolean;
   panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void;
   returnTo: string; rememberReturn: () => void;
 }
@@ -38,11 +38,7 @@ export const usePlayer = () => useContext(Context);
 const empty: PlayerState = { playing: false, time: 0, duration: 0, volume: 100, shuffle: false, repeat: 0, track: null, queue: [], queueTotal: 0, queueOffset: 0 };
 
 export function MusicNavigation() {
-  return <nav aria-label="Library search" className="flex min-w-0 flex-1 justify-end lg:justify-start">
-    <Link href="/app/music?view=search" className="flex min-h-11 items-center gap-3 rounded-full px-3 text-sm text-muted hover:bg-elevated hover:text-fg sm:w-full sm:max-w-sm sm:bg-elevated sm:px-5">
-      <Search className="size-4 shrink-0" /><span className="hidden sm:inline">Search your music</span><span className="sr-only sm:hidden">Search library</span>
-    </Link>
-  </nav>;
+  return <nav aria-label="Search" className="flex min-w-0 flex-1 justify-end lg:justify-start"><GlobalSearch /></nav>;
 }
 
 export function PlayerProvider({ children, memberId }: { children: React.ReactNode; memberId: string }) {
@@ -54,7 +50,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const ready = state.dsp !== undefined;
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Menu | null>(null);
-  const [returnTo, setReturnTo] = useState("/app/music?view=library");
+  const [returnTo, setReturnTo] = useState("/app/library");
   const [panelSelection, setPanelSelection] = useState<{ surface: string; value: ShellContext["panel"] } | null>(null);
   const pathname = usePathname();
   const params = useSearchParams();
@@ -62,8 +58,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const panel = panelSelection?.surface === surface ? panelSelection.value : null;
   const setPanel = useCallback((value: ShellContext["panel"]) => setPanelSelection({ surface, value }), [surface]);
   const router = useRouter();
-  const music = pathname === "/app/music";
-  const nowPlaying = music && params.get("view") === "now-playing";
+  const nowPlaying = pathname === "/app/now-playing";
   const rememberReturn = useCallback(() => setReturnTo(`${location.pathname}${location.search}`), []);
 
   const command = useCallback((command: PlayerCommand): Promise<boolean> => {
@@ -225,17 +220,21 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     return () => window.removeEventListener("keydown", keyboard);
   }, [command, state.track]);
 
-  const closeMenu = useCallback(() => { selection?.returnTo?.focus(); setSelection(null); }, [selection]);
+  const closeMenu = useCallback(() => {
+    const returnTo = selection?.returnTo;
+    setSelection(null);
+    requestAnimationFrame(() => returnTo?.focus());
+  }, [selection]);
   const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
   const browse = (item: PlayerItem) => {
-    const query = collectionParams(itemCollection(item));
-    query.set("view", "library"); query.set("type", item.type === "artist" ? "album" : "track");
-    router.push(`/app/music?${query}`);
+    const query = new URLSearchParams({ type: item.type === "artist" ? "album" : "track" });
+    const route = item.type === "artist" ? "artists" : "albums";
+    router.push(`/app/library/${route}/${encodeURIComponent(item.id)}?${query}`);
   };
 
   return (
     <Context.Provider value={{ ready, busy, state, command, menu: showMenu }}>
-      <ShellContext.Provider value={{ music, nowPlaying, ready, panel, setPanel, returnTo, rememberReturn }}>
+      <ShellContext.Provider value={{ nowPlaying, ready, panel, setPanel, returnTo, rememberReturn }}>
         {children}
       </ShellContext.Provider>
       {(error || selection) && createPortalSafe(
@@ -258,15 +257,14 @@ function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 export function MusicStage({ children }: { children: React.ReactNode }) {
-  const { music, nowPlaying, ready, panel, setPanel, returnTo } = useContext(ShellContext)!;
+  const { nowPlaying, ready, panel, setPanel, returnTo } = useContext(ShellContext)!;
   const player = usePlayer()!;
   const closeQueue = useCallback(() => {
     setPanel(null);
     document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : panel === "lyrics" ? "Lyrics" : "Audio settings"}"]`)?.focus();
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
-    <main id={music ? undefined : "listening-content"} tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin" hidden={music}>{children}</main>
-    {music && !nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin"><MusicBrowser /></main>}
+    {!nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin">{children}</main>}
     {nowPlaying && <NowPlaying state={player.state} ready={ready} command={player.command} panel={panel} setPanel={setPanel} returnTo={returnTo} onMore={(track, button) => {
       const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
     }} />}
@@ -281,19 +279,19 @@ export function PlayerBar() {
   const { panel, setPanel, nowPlaying, rememberReturn } = useContext(ShellContext)!;
   const track = state.track;
   if (nowPlaying) return null;
-  return <section aria-label="Music player" className="player-dock grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-line bg-bg px-4 py-3 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-4">
+  return <section aria-label="Music player" className="player-dock grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-bg px-3 py-2 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-4">
     <div className="flex min-w-0 items-center gap-3">
-      <Link href="/app/music?view=now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-12 rounded" /></Link>
+      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
-        <Link href="/app/music?view=now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
+        <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
         <p className="truncate text-xs text-muted">{track?.artist ?? (ready ? "Choose a song to start listening" : "Connecting to your library…")}</p>
       </div>
     </div>
-    <div className="flex items-center justify-center gap-2 lg:flex-col lg:gap-1">
+    <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-1 lg:flex-col lg:gap-1">
       <PlaybackControls state={state} ready={ready} command={command} />
       <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
     </div>
-    <div className="col-span-2 flex min-w-0 items-center gap-2 lg:col-span-1 lg:justify-end">
+    <div className="hidden min-w-0 items-center gap-2 lg:flex lg:col-start-3 lg:row-start-1 lg:justify-end">
       <div className="min-w-0 flex-1 lg:hidden"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Audio settings" active={panel === "audio"} disabled={!ready} onClick={() => setPanel(panel === "audio" ? null : "audio")}><SlidersHorizontal /></Transport>
@@ -317,7 +315,13 @@ function TrackMenu({ selection, close, command, browse }: {
   useEffect(() => {
     const menu = ref.current;
     if (!menu) return;
-    setPosition({ left: Math.max(8, Math.min(selection.x, innerWidth - menu.offsetWidth - 8)), top: Math.max(8, Math.min(selection.y, innerHeight - menu.offsetHeight - 8)) });
+    const place = () => setPosition({
+      left: Math.max(8, Math.min(selection.x, innerWidth - menu.offsetWidth - 8)),
+      top: Math.max(8, Math.min(selection.y, innerHeight - menu.offsetHeight - 8)),
+    });
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(menu);
     menu.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
     const dismiss = (event: PointerEvent) => { if (!menu.contains(event.target as Node)) close(); };
     const key = (event: KeyboardEvent) => {
@@ -332,7 +336,7 @@ function TrackMenu({ selection, close, command, browse }: {
     document.addEventListener("pointerdown", dismiss);
     document.addEventListener("keydown", key);
     window.addEventListener("resize", close);
-    return () => { document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", key); window.removeEventListener("resize", close); };
+    return () => { observer.disconnect(); document.removeEventListener("pointerdown", dismiss); document.removeEventListener("keydown", key); window.removeEventListener("resize", close); };
   }, [selection, close]);
   const act = (action: PlayerCommand) => { close(); command(action); };
   const menuClass = "w-full rounded px-3 py-2.5 text-left text-sm text-fg hover:bg-hover focus:bg-hover";

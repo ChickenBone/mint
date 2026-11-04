@@ -10,11 +10,11 @@ export function MintMark({ className = "size-7" }: { className?: string }) {
   );
 }
 
-export function Logo() {
+export function Logo({ iconOnly = false }: { iconOnly?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2 text-lg font-bold tracking-tight">
       <MintMark />
-      Mint
+      <span className={iconOnly ? "hidden lg:inline" : undefined}>Mint</span>
     </Link>
   );
 }

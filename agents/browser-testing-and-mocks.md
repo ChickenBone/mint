@@ -42,7 +42,7 @@ In a second terminal with the **same exported settings**, run:
 npm exec -w @mint/web -- tsx tests/fixtures/redesign-preview.mjs
 ```
 
-This requires Playwright, its Chromium binary and `sharp` in the tooling environment. If Playwright is installed outside the project, `PLAYWRIGHT_MODULE` accepts its resolvable module location; do not commit a personal absolute path. Inspect the installed toolchain and report missing prerequisites instead of assuming they exist or adding unrelated runtime dependencies.
+This requires Playwright, its Chromium binary and `sharp` in the tooling environment. If Playwright is installed outside the project, `PLAYWRIGHT_MODULE` accepts its resolvable module location and `PLAYWRIGHT_EXECUTABLE_PATH` can select an already-installed compatible Chromium binary; do not commit a personal absolute path. Inspect the installed toolchain and report missing prerequisites instead of assuming they exist or adding unrelated runtime dependencies.
 
 The fixture is a one-shot seed/test/capture tool: it closes its gateway/connections on normal completion, and refuses an already populated track database. Reruns need a new disposable database or the fixture's narrowly guarded reset, never a production truncate. It writes tracked screenshots, so review their diff.
 

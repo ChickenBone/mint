@@ -53,11 +53,15 @@ function catalogWhere(collection: PlayerCollection, userId: string, q?: string) 
   return and(...conditions);
 }
 
-function catalogOrder(collection: PlayerCollection, q?: string) {
+function catalogOrder(collection: PlayerCollection, q?: string, sort: "title" | "artist" | "album" | "newest" = "artist") {
   const rank = catalogSearch(q ?? (collection.kind === "library" ? collection.query : undefined)).rank;
   return collection.kind === "playlist"
     ? [asc(sql`(select position from ${schema.playlistTracks} where ${schema.playlistTracks.playlistId} = ${collection.id} and ${schema.playlistTracks.trackId} = ${t.id})`), asc(t.id)]
-    : [...(rank ? [desc(rank)] : []), asc(t.artist), asc(t.album), asc(t.title), asc(t.id)];
+    : rank ? [desc(rank), asc(t.artist), asc(t.album), asc(t.title), asc(t.id)]
+    : sort === "title" ? [asc(t.title), asc(t.artist), asc(t.album), asc(t.id)]
+    : sort === "album" ? [asc(t.album), asc(t.artist), asc(t.title), asc(t.id)]
+    : sort === "newest" ? [desc(t.readyAt), asc(t.artist), asc(t.title), asc(t.id)]
+    : [asc(t.artist), asc(t.album), asc(t.title), asc(t.id)];
 }
 
 export async function queueTrackSource(collection: PlayerCollection, userId: string): Promise<SQL> {
@@ -84,7 +88,7 @@ export async function queueTrackSource(collection: PlayerCollection, userId: str
 
 export async function catalogItems(opts: {
   type?: "track" | "album" | "artist" | "playlist"; collection?: PlayerCollection; q?: string;
-  start?: number; size?: number; userId: string;
+  start?: number; size?: number; sort?: "title" | "artist" | "album" | "newest"; userId: string;
 }): Promise<CatalogPage> {
   const db = getDb();
   const parsed = collectionSchema.safeParse(opts.collection ?? { kind: "library" });
@@ -139,8 +143,13 @@ export async function catalogItems(opts: {
     const group = opts.type === "album" ? [t.artist, album] : [t.artist];
     const selection = db.select({ artist: t.artist, album: opts.type === "album" ? album : sql<string>`''`,
       thumb: albumArtwork }).from(t).where(where).groupBy(...group);
+    const groupedOrder = opts.sort === "newest"
+      ? [desc(sql`max(${t.readyAt})`), asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])]
+      : opts.type === "album" && (opts.sort === "title" || opts.sort === "album")
+        ? [asc(album), asc(t.artist)]
+        : [asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])];
     const [rows, count] = await Promise.all([
-      selection.orderBy(asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])).limit(size).offset(start),
+      selection.orderBy(...groupedOrder).limit(size).offset(start),
       db.select({ n: opts.type === "album" ? sql<number>`count(distinct (${t.artist}, coalesce(${t.album}, '')))::int`
         : sql<number>`count(distinct ${t.artist})::int` }).from(t).where(where),
     ]);
@@ -150,7 +159,7 @@ export async function catalogItems(opts: {
       artist: r.artist, artistId: artistPlayerId(r.artist), thumb: r.thumb ?? undefined,
     })), total: count[0]?.n ?? 0, start, title };
   }
-  const order = catalogOrder(collection, q);
+  const order = catalogOrder(collection, q, opts.sort);
   const [rows, count] = await Promise.all([
     db.select().from(t).where(where).orderBy(...order, asc(t.id)).limit(size).offset(start),
     db.select({ n: sql<number>`count(*)::int` }).from(t).where(where),

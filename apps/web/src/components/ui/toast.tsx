@@ -5,8 +5,9 @@ import * as React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 
 type ToastTone = "neutral" | "success" | "error";
-type ToastRecord = { id: number; message: string; tone: ToastTone };
-type ToastContextValue = { showToast: (message: string, tone?: ToastTone) => void };
+type ToastAction = { label: string; onAction: () => void | Promise<void> };
+type ToastRecord = { id: number; message: string; tone: ToastTone; action?: ToastAction };
+type ToastContextValue = { showToast: (message: string, tone?: ToastTone, action?: ToastAction) => void };
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
@@ -22,11 +23,22 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts((current) => current.filter((toast) => toast.id !== id));
   }, []);
 
-  const showToast = useCallback((message: string, tone: ToastTone = "neutral") => {
+  const showToast = useCallback((message: string, tone: ToastTone = "neutral", action?: ToastAction) => {
     const id = ++nextId.current;
-    setToasts((current) => [...current, { id, message, tone }].slice(-5));
+    setToasts((current) => [...current, { id, message, tone, action }].slice(-5));
     timers.current.set(id, setTimeout(() => dismiss(id), 5000));
   }, [dismiss]);
+
+  const runAction = async (toast: ToastRecord) => {
+    if (!toast.action) return;
+    try {
+      await toast.action.onAction();
+      dismiss(toast.id);
+    } catch (error) {
+      console.error("Notification action failed", error);
+      showToast(error instanceof Error ? error.message : "That action could not be completed. Try again.", "error");
+    }
+  };
 
   useEffect(() => () => {
     for (const timer of timers.current.values()) clearTimeout(timer);
@@ -48,7 +60,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             )}
           >
             <span>{toast.message}</span>
-            <button type="button" aria-label="Dismiss notification" onClick={() => dismiss(toast.id)} className="grid size-11 shrink-0 place-items-center rounded-control text-muted hover:bg-hover hover:text-fg">×</button>
+            <div className="flex shrink-0 items-center gap-1">
+              {toast.action && <button type="button" onClick={() => void runAction(toast)} className="min-h-11 rounded-control px-3 font-semibold text-action hover:bg-hover">{toast.action.label}</button>}
+              <button type="button" aria-label="Dismiss notification" onClick={() => dismiss(toast.id)} className="grid size-11 place-items-center rounded-control text-muted hover:bg-hover hover:text-fg">×</button>
+            </div>
           </div>
         ))}
       </div>

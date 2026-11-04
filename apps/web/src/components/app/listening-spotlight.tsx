@@ -5,7 +5,7 @@ import { ArrowUpRight, Play } from "lucide-react";
 import type { TrackView } from "@mint/core/events";
 import { Artwork } from "@/components/artwork";
 import { trackPlayerItem } from "@/lib/player-protocol";
-import { usePlayer } from "./player";
+import { TrackMenuButton, usePlayer } from "./player";
 
 export function ListeningSpotlight({ track, reason }: { track: TrackView | null; reason?: string }) {
   const player = usePlayer();
@@ -14,9 +14,9 @@ export function ListeningSpotlight({ track, reason }: { track: TrackView | null;
       <h2 className="max-w-xl text-[clamp(2.5rem,4.7vw,4.75rem)] font-bold leading-[1.05] tracking-[-0.035em]">Stay for<br />another song.</h2>
       <p className="mt-5 max-w-md text-base leading-relaxed text-muted">{track ? <>{track.title} by {track.artist}. {reason ?? "A familiar favorite, or the start of something new."}</> : "Your own collection. A fresh perspective. Find the music you want to come back to."}</p>
       <div className="mt-7 flex flex-wrap items-center gap-3">
-        {track ? <button disabled={!player?.ready || player.busy} onClick={() => player?.command({ action: "play", item: trackPlayerItem(track) })}
-          className="inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"><Play className="size-4" fill="currentColor" />Listen now</button>
-          : <Link href="/app/music?view=library&type=album" className="inline-flex min-h-12 items-center rounded-full bg-mint px-6 text-sm font-bold text-mint-ink">Open your library</Link>}
+        {track ? <><button disabled={!player?.ready || player.busy} onClick={() => player?.command({ action: "play", item: trackPlayerItem(track) })}
+          className="inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"><Play className="size-4" fill="currentColor" />Listen now</button><TrackMenuButton item={trackPlayerItem(track)} /></>
+          : <Link href="/app/library" className="inline-flex min-h-12 items-center rounded-full bg-mint px-6 text-sm font-bold text-mint-ink">Open your library</Link>}
         <Link href="/app/discover" className="inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-muted hover:text-fg">Find something new<ArrowUpRight className="size-4" /></Link>
       </div>
     </div>

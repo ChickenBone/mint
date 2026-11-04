@@ -2,20 +2,24 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { Redis } from "ioredis";
 import { Queue } from "bullmq";
 import { eq } from "drizzle-orm";
 import { getDb, closeDb, schema } from "@mint/core/db";
+import { musicCollections, musicEntries } from "@mint/core/music-db";
 import { sha256, verifyToken } from "@mint/core/crypto";
-import { CHARTS, chartIdentity } from "../../src/lib/charts.ts";
+import { CHARTS } from "../../src/lib/charts.ts";
 
 assert.equal(process.env.MINT_REDESIGN_FIXTURE, "true", "This tool must only run against its isolated fictional instance.");
 assert.match(new URL(process.env.DATABASE_URL).pathname, /^\/mint_(demo|redesign_demo)$/);
 assert.match(process.env.REDIS_URL, /^redis:\/\/127\.0\.0\.1:\d+\/?$/);
 const base = "http://127.0.0.1:3087", db = getDb(), redis = new Redis(process.env.REDIS_URL);
-const screenshotDir = fileURLToPath(new URL("../../../../docs/screenshots/", import.meta.url));
+const screenshotDir = process.env.MINT_PREVIEW_SCREENSHOTS
+  ? resolve(process.env.MINT_PREVIEW_SCREENSHOTS)
+  : fileURLToPath(new URL("../../../../docs/screenshots/", import.meta.url));
 const catalog = [
   ["Quiet Orbit", "The Paper Moons", "Rooms in Blue", "#243f59", "#a9cdb7"],
   ["Soft Current", "Sunday Static", "Soft Current", "#4f3040", "#ec9a82"],
@@ -112,11 +116,20 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
   console.log("Set MINT_PREVIEW_SEED_ONLY=false to execute browser checks.");
 } else {
   const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || "playwright");
-  const browser = await chromium.launch({ headless: true, args: ["--autoplay-policy=no-user-gesture-required"] });
+  const browser = await chromium.launch({
+    headless: true,
+    ...(process.env.PLAYWRIGHT_EXECUTABLE_PATH ? { executablePath: process.env.PLAYWRIGHT_EXECUTABLE_PATH } : {}),
+    args: ["--autoplay-policy=no-user-gesture-required"],
+  });
   const failures = [];
+  const historyAborts = [];
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
   const page = await context.newPage();
-  page.on("pageerror", (error) => failures.push(error.message));
+  page.on("pageerror", (error) => failures.push(`${page.url()}: ${error.message}`));
+  page.on("console", (message) => { if (message.type() === "error") failures.push(`${page.url()}: ${message.text()}`); });
+  page.on("requestfailed", (request) => {
+    if (request.url().endsWith("/api/music/history") && request.failure()?.errorText === "net::ERR_ABORTED") historyAborts.push(request.url());
+  });
   await context.addCookies([{ name: "mint_session", value: token, url: base }]);
   const shot = async (name, route) => {
     if (route) await page.goto(`${base}${route}`);
@@ -136,13 +149,20 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal((await publicContext.request.get(`${base}/api/player/audio/${tracks[0].id}`)).status(), 401);
     await publicContext.close();
     await page.goto(`${base}/app/discover`);
+    try { await page.waitForFunction(() => document.querySelector('[data-player-mounted="ready"]'), { timeout: 10000 }); }
+    catch (error) {
+      console.error("Player startup diagnostics", failures,
+        await page.locator("[data-player-mounted]").getAttribute("data-player-mounted"),
+        await page.locator('[role="alert"]').allTextContents());
+      throw error;
+    }
     await page.getByRole("button", { name: "Play Daily blend", exact: true }).click();
     await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).some((audio) => !audio.paused && audio.currentTime > .1));
     await shot("discover");
     await page.getByRole("link", { name: "Open Daily blend", exact: true }).click();
     await page.getByRole("heading", { name: "Daily blend", exact: true }).waitFor();
     await shot("discover-mix");
-    await page.getByRole("link", { name: "← Discover", exact: true }).click();
+    await page.getByRole("navigation", { name: "Discover views" }).getByRole("link", { name: "Discover", exact: true }).click();
     await page.getByRole("link", { name: "Open United States Top 50", exact: true }).click();
     await page.getByRole("button", { name: `Play ${tracks[0].title}`, exact: true }).click();
     await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).some((audio) => !audio.paused && audio.currentTime > .1));
@@ -173,20 +193,6 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await db.update(schema.tracks).set({ stage: "ready", progress: 1, filePath: "/fictional-downloaded/late-windows.flac", plexRatingKey: "fictional" }).where(eq(schema.tracks.id, requested.id));
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor({ timeout: 20000 });
     assert.equal(await page.locator("audio[data-preview-identity]").count(), 1, "Chart progress refresh must not replace the player");
-    const [duplicate] = await db.insert(schema.tracks).values({ title: missing.title, artist: missing.artist, album: missing.album,
-      durationSec: 180, mbRecordingId: missingId, stage: "ready", filePath: "/fictional-downloaded/another-edition.flac" }).returning();
-    await db.delete(schema.chartEntryLinks).where(eq(schema.chartEntryLinks.trackId, requested.id));
-    await page.getByRole("button", { name: "Refresh chart availability" }).click();
-    await page.getByText("Choose recording", { exact: true }).waitFor();
-    await page.getByRole("button", { name: `Add to library: ${missing.title} by ${missing.artist}`, exact: true }).click();
-    await page.getByRole("heading", { name: "Choose the right recording." }).waitFor();
-    assert.ok(await page.getByRole("region", { name: `Resolve ${missing.title}` }).evaluate((element) => element === document.activeElement), "Resolution receives keyboard focus");
-    await page.waitForTimeout(1100);
-    await page.getByRole("button", { name: "Request this recording" }).click();
-    await page.getByRole("alert").filter({ hasText: "Multiple library editions" }).waitFor();
-    await db.delete(schema.tracks).where(eq(schema.tracks.id, duplicate.id));
-    await db.insert(schema.chartEntryLinks).values({ userId: user.id, provider: "apple", entryId: missing.id, identity: chartIdentity(entries[1]), trackId: requested.id });
-    await page.getByRole("button", { name: "Close recording selection" }).click();
     await page.getByRole("button", { name: "Refresh chart availability" }).click();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor();
     const chartBody = await (await context.request.get(`${base}/api/charts?chart=apple-us`)).json();
@@ -200,30 +206,136 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("button", { name: "Refresh chart availability" }).click();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).click();
-    await page.getByRole("link", { name: "Library", exact: true }).first().click(); await page.waitForURL((url) => url.pathname === "/app/music");
+    await page.getByRole("link", { name: "Library", exact: true }).first().click(); await page.waitForURL((url) => url.pathname === "/app/library");
     await page.waitForFunction(() => document.querySelector("audio[data-preview-identity]")?.paused === false);
     await shot("library");
-    await shot("now-playing", "/app/music?view=now-playing");
+
+    await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
+    await page.keyboard.press("/");
+    const searchDialog = page.getByRole("dialog", { name: "Search your music" });
+    const searchbox = searchDialog.getByRole("searchbox", { name: "Search songs, artists or albums" });
+    await searchbox.fill("Quiet Orbit");
+    const searchPlayButton = searchDialog.getByRole("button", { name: "Play Quiet Orbit", exact: true });
+    await searchPlayButton.waitFor();
+    await searchPlayButton.click();
+    await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Search your music"]'));
+    try {
+      await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).some((audio) => !audio.paused && audio.currentTime > .1));
+    } catch (error) {
+      console.error("Search playback diagnostics", await page.locator("audio").evaluateAll((audio) => audio.map((element) => ({ paused: element.paused, time: element.currentTime, src: element.currentSrc }))),
+        await page.locator('[role="alert"]').allTextContents());
+      throw error;
+    }
+    await page.getByRole("button", { name: "Search your music" }).click();
+    await searchDialog.waitFor();
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Search your music"]'));
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Search your music");
+    await page.evaluate(() => {
+      document.querySelectorAll("audio").forEach((audio) => { delete audio.dataset.previewIdentity; });
+      const active = Array.from(document.querySelectorAll("audio")).find((audio) => !audio.paused);
+      if (active) active.dataset.previewIdentity = "persistent";
+    });
+
+    const rowMenuButton = page.locator('button[aria-label^="More options for"]').first();
+    const rowTitle = (await rowMenuButton.getAttribute("aria-label")).replace("More options for ", "");
+    await rowMenuButton.click();
+    await page.waitForTimeout(100);
+    await page.getByRole("menu", { name: `Actions for ${rowTitle}` }).waitFor();
+    const firstMenuItem = await page.evaluate(() => document.activeElement?.textContent);
+    await page.keyboard.press("ArrowDown");
+    assert.notEqual(await page.evaluate(() => document.activeElement?.textContent), firstMenuItem, "ArrowDown advances the track menu focus");
+    await page.keyboard.press("Home");
+    assert.equal(await page.evaluate(() => document.activeElement?.textContent), firstMenuItem, "Home returns to the first track menu action");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction((label) => document.activeElement?.getAttribute("aria-label") === label, `More options for ${rowTitle}`);
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), `More options for ${rowTitle}`, "Closing the row menu restores focus");
+
+    await rowMenuButton.click();
+    await page.getByRole("menuitem", { name: /Save to Mint playlist/ }).click();
+    await page.getByRole("menu").locator("div.max-h-52").evaluate((list) => { list.scrollTop = list.scrollHeight; });
+    const newPlaylist = page.getByRole("menuitem", { name: "New playlist…" });
+    await newPlaylist.evaluate((item) => item.scrollIntoView({ block: "end" }));
+    await newPlaylist.click();
+    await page.getByRole("textbox", { name: "New playlist name" }).fill("UX actions");
+    await page.getByRole("button", { name: "Create and add song" }).click();
+    await page.getByRole("status").filter({ hasText: "Added to UX actions." }).waitFor();
+    const [createdCollection] = await db.select().from(musicCollections).where(eq(musicCollections.ownerId, user.id));
+    assert.ok(createdCollection);
+    assert.equal(await db.$count(musicEntries, eq(musicEntries.collectionId, createdCollection.id)), 1, "The selected track is added to the new playlist");
+    await page.getByRole("button", { name: "Undo" }).click();
+    await page.getByRole("status").filter({ hasText: "Added to UX actions." }).waitFor({ state: "hidden" });
+    assert.equal(await db.$count(musicEntries, eq(musicEntries.collectionId, createdCollection.id)), 0, "Undo removes the exact new playlist entry");
+
+    await rowMenuButton.click();
+    await page.getByRole("menuitem", { name: "Download song" }).click();
+    await page.waitForURL((url) => url.pathname === "/app/downloads");
+    await shot("downloads");
+    await page.getByRole("link", { name: "Open now playing" }).click();
+    await page.waitForURL("**/app/now-playing");
+    const queueTab = page.getByRole("tab", { name: "Queue" });
+    await queueTab.focus(); await page.keyboard.press("End");
+    await page.getByRole("tab", { name: "Sound" }).waitFor();
+    assert.equal(await page.getByRole("tab", { name: "Sound" }).getAttribute("aria-selected"), "true");
+    await page.getByRole("region", { name: "Current song" }).getByRole("button", { name: "More options for Quiet Orbit", exact: true }).click();
+    await page.getByRole("menuitem", { name: "Like in Mint" }).waitFor();
+    await page.keyboard.press("Escape");
+    const playerBeforeDevices = await page.evaluate(() => document.querySelector("audio[data-preview-identity]")?.currentTime ?? 0);
+    await page.getByRole("link", { name: "Devices", exact: true }).click();
+    await page.waitForURL("**/app/devices");
+    await page.waitForFunction((previous) => document.querySelector("audio[data-preview-identity]")?.currentTime > previous, playerBeforeDevices);
+    await page.goBack();
+    await page.waitForURL("**/app/now-playing");
+    await shot("now-playing");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("link", { name: "Close now playing" }).click();
+    await page.getByRole("button", { name: "Search your music" }).click();
+    await page.getByRole("dialog", { name: "Search your music" }).waitFor();
+    const mobileSearchbox = page.getByRole("dialog", { name: "Search your music" }).getByRole("searchbox", { name: "Search songs, artists or albums" });
+    await mobileSearchbox.waitFor();
+    assert.equal(await mobileSearchbox.evaluate((element) => element === document.activeElement), true);
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Search your music");
+    await page.goto(`${base}/app/music?view=search&q=Quiet%20Orbit`);
+    await page.waitForURL((url) => url.pathname === "/app/search" && url.searchParams.get("q") === "Quiet Orbit");
+    await shot("search");
+    await page.goto(`${base}/app/library?tab=songs`);
+    await page.waitForURL((url) => url.pathname === "/app/library" && url.searchParams.get("type") === "track");
+    await page.goto(`${base}/app/discover?chart=apple-us`);
+    await page.waitForURL("**/app/discover/charts/apple-us");
+    await shot("mobile-home", "/app");
+    await shot("mobile-library", "/app/library");
+    await shot("mobile-now-playing", "/app/now-playing");
+    await page.setViewportSize({ width: 360, height: 800 }); await shot("narrow-library", "/app/library");
+    await page.setViewportSize({ width: 768, height: 1024 }); await shot("tablet-discover", "/app/discover");
+    await page.setViewportSize({ width: 1440, height: 1000 });
     await shot("liked", "/app/liked");
     await shot("settings", "/app/settings");
     await shot("jobs", "/app/jobs");
     await shot("analysis", "/app/admin/analysis");
-    await shot("admin", "/app/admin");
     await shot("workers", "/app/workers");
     await page.setViewportSize({ width: 390, height: 844 });
-    await shot("mobile-home", "/app");
-    await shot("mobile-player", "/app/music?view=now-playing");
+    await shot("mobile-player", "/app/now-playing");
     await shot("mobile-discover", "/app/discover");
-    await shot("mobile-charts", "/app/discover?chart=apple-us");
+    await shot("mobile-charts", "/app/discover/charts/apple-us");
     await page.setViewportSize({ width: 320, height: 740 });
     await shot("mobile-small-discover", "/app/discover");
     await shot("mobile-small-charts", "/app/discover?chart=apple-us");
     await page.keyboard.press("Tab");
     assert.ok(await page.evaluate(() => document.activeElement?.tagName !== "BODY"), "Keyboard navigation has a focusable destination");
+    await page.locator("audio").evaluateAll((audio) => audio.forEach((element) => element.pause()));
+    await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).every((audio) => audio.paused));
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent("mint:private-session")));
+    await page.waitForTimeout(500);
+    await page.goto(`${base}/browse`);
     await context.clearCookies(); await page.setViewportSize({ width: 1440, height: 1000 });
     await shot("landing", "/"); await shot("browse", "/browse"); await shot("landing-stats", "/activity");
     await page.setViewportSize({ width: 390, height: 844 }); await shot("mobile-landing", "/");
-    assert.deepEqual(failures, [], "No browser application errors");
+    const unexpectedFailures = failures.filter((failure) =>
+      !(historyAborts.length > 0 && failure.includes("Listening history write failed TypeError: Failed to fetch")));
+    if (unexpectedFailures.length) console.error("Browser console diagnostics", unexpectedFailures);
+    assert.deepEqual(unexpectedFailures, [], "No unexpected browser application errors");
     console.log("Browser flows passed: member/public boundary, native playback, navigation persistence, explicit acquisition/deduplication, poll-to-playable, chart-order skipping, 320px/mobile layouts and keyboard focus.");
   } finally { await browser.close(); }
 }

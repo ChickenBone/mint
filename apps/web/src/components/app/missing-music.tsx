@@ -21,7 +21,7 @@ export function MissingMusic({ query }: { query: string }) {
     {results && <ol className="mt-5 divide-y divide-line">{results.map((item) => <li key={item.id} className="py-4">
       <div className="flex flex-wrap items-center gap-3"><div className="min-w-0 flex-1"><h3 className="font-semibold">{item.title}</h3><p className="text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}</p></div>
         <a href={`https://musicbrainz.org/recording/${item.id}`} target="_blank" rel="noreferrer" className="min-h-11 py-3 text-xs text-muted hover:text-fg">Recording details</a></div>
-      {requested[item.id] || item.existing && !["failed", "queued"].includes(item.existing.stage) ? <Link href={["ready", "analyzing"].includes(item.existing?.stage ?? "") ? `/app/music?view=search&q=${encodeURIComponent(`${item.artist} ${item.title}`)}` : "/app/jobs"} className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-mint">
+      {requested[item.id] || item.existing && !["failed", "queued"].includes(item.existing.stage) ? <Link href={["ready", "analyzing"].includes(item.existing?.stage ?? "") ? `/app/search?q=${encodeURIComponent(`${item.artist} ${item.title}`)}` : "/app/jobs"} className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-mint">
         {requested[item.id] ? "Requested · view progress" : ["ready", "analyzing"].includes(item.existing!.stage) ? "Already available · find in library" : "Already requested · view progress"}
       </Link> : <form className="mt-3 flex flex-wrap items-end gap-3" onSubmit={async (event) => {
         event.preventDefault(); const youtubeUrl = String(new FormData(event.currentTarget).get("youtubeUrl") ?? "").trim();

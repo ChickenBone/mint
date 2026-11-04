@@ -32,6 +32,11 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
     const result = await musicRequest<Shelf>(`discover?${query}`); setShelf(result); setMode(next);
   };
   return <section className="mx-auto max-w-6xl">
+    <nav aria-label="Discover views" className="mb-6 flex flex-wrap gap-4 text-sm font-semibold">
+      <Link href="/app/discover" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Discover</Link>
+      <Link href="/app/discover/mixes" aria-current="page" className="inline-flex min-h-11 items-center text-fg">Your mixes</Link>
+      <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Charts</Link>
+    </nav>
     <header className="grid grid-cols-[7rem_minmax(0,1fr)] items-end gap-5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-8">
       <PlaylistCover collection={collection} />
       <div><h1 className="text-3xl font-bold tracking-tight sm:text-5xl">{collection.title}</h1>
@@ -66,7 +71,7 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
       }}><label className="sr-only" htmlFor="mix-name">Saved mix name</label><input id="mix-name" name="title" required maxLength={200} className={`${field} w-44`} placeholder="Name this mix" /><button className={button} disabled={busy}>Save as playlist</button></form>
     </div>}
     {!shelf.items.length ? <div className="py-10"><p className="text-muted">{mode === "sonic" ? "No measured matches yet. Analyze the seed songs and more library audio, then build this mix again." : mode === "rediscover" ? "Keep listening. Your history will bring forgotten favorites back here." : "Playable songs will appear as your library finishes importing."}</p>
-      <Link href="/app/music" className="mt-5 inline-block text-sm text-mint underline">Open your music library</Link></div>
+      <Link href="/app/library" className="mt-5 inline-block text-sm text-mint underline">Open your music library</Link></div>
       : <MusicTrackList playAsQueue entries={shelf.items.map((r) => ({ key: r.track.id, track: r.track, reason: r.reason }))} actions={(_, track) =>
         <button className={button} disabled={busy} aria-label={`${likes.has(track.id) ? "Unlike" : "Like"} ${track.title} in Mint`} aria-pressed={likes.has(track.id)} onClick={() => void run(async () => {
           const liked = likes.has(track.id); await musicRequest(`likes/${track.id}`, liked ? "DELETE" : "PUT");

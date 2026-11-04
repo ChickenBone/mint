@@ -49,7 +49,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           ["/app/history", "Listening history", "Recent listens, private sessions and history controls"],
           ["/app/devices", "Devices & parties", "Listening handoff, remote controls and shared queues"],
           ["/app/jobs", "Activity & requests", "Acquisition progress, failures, retries and cancellation"],
-          ["/app/library", "Library activity", "Every indexed and incoming song, including metadata status"],
+          ["/app/library", "Music library", "Search and play the shared music catalog"],
           ["/app/workers", "Workers", "Register and manage your download machines"],
           ...(user.role === "admin" ? [["/app/admin", "Admin", "Approvals, Plex, audio analysis and service diagnostics"]] : []),
         ].map(([href, title, description]) => <Link key={href} href={href!} className="group flex items-center justify-between gap-4 border-b border-line py-6">
@@ -144,7 +144,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <div className="mb-6"><InstallApp /></div>
           <p className="mb-4 max-w-2xl text-muted">Listen to downloaded music directly in Mint. Browsing, playback, queues, lyrics and sound controls belong to Mint; Plex remains the private library server. The separate installed Plexamp app is optional and needs its own Plex library invitation.</p>
           <div className="mb-6 flex flex-wrap gap-3">
-            <Link href="/app/music" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Open music</Link>
+            <Link href="/app/library" className="rounded-full bg-mint px-5 py-2.5 font-semibold text-mint-ink hover:brightness-110">Open music</Link>
             <a href="plexamp://" className="rounded-full bg-elevated px-5 py-2.5 font-semibold hover:bg-hover">Open Plexamp</a>
           </div>
           <ol className="flex max-w-2xl list-decimal flex-col gap-2 pl-5 text-muted marker:text-faint">
