@@ -62,6 +62,39 @@ export async function getAccessToken(userId: string): Promise<string> {
   return tok.access_token;
 }
 
+export async function findRequestedVideo(userId: string, track: { title: string; artist: string; durationSec: number | null }): Promise<string | null> {
+  const user = await getDb().query.users.findFirst({ where: eq(schema.users.id, userId), columns: { status: true } });
+  if (user?.status !== "active") throw new YoutubeAuthError("The requesting member no longer has approved access.");
+  const token = await getAccessToken(userId);
+  const found = await httpJson<{ items: Array<{ id?: { videoId?: string } }> }>(`${API}/search`, {
+    headers: { authorization: `Bearer ${token}` },
+    query: { q: `${track.artist} ${track.title} official audio`, part: "snippet", type: "video", maxResults: 10, videoCategoryId: "10" },
+  });
+  const ids = found.items.flatMap((item) => item.id?.videoId && /^[A-Za-z0-9_-]{11}$/.test(item.id.videoId) ? [item.id.videoId] : []);
+  const candidates = await videosById(token, ids);
+  return selectRequestedVideo(track, candidates);
+}
+
+export function selectRequestedVideo(track: { title: string; artist: string; durationSec: number | null }, candidates: YtVideo[]): string | null {
+  const normalize = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const wanted = normalize(track.title), artist = normalize(track.artist.split(/ feat\.? | ft\.? |, /i)[0]!);
+  const words = wanted.split(" ").filter(Boolean);
+  const versions = ["live", "remix", "cover", "karaoke", "instrumental"];
+  const duration = (value: string | null) => {
+    const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value ?? "");
+    return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : null;
+  };
+  const matches = candidates.flatMap((video) => {
+    const title = normalize(video.title), channel = normalize(video.channelTitle), seconds = duration(video.durationIso);
+    if (!artist || !words.length || !words.every((word) => title.split(" ").includes(word)) ||
+        (!title.includes(artist) && !channel.includes(artist)) ||
+        versions.some((version) => !wanted.split(" ").includes(version) && title.split(" ").includes(version)) ||
+        (track.durationSec && (seconds === null || Math.abs(track.durationSec - seconds) > 12))) return [];
+    return [{ id: video.id, score: (channel.includes(artist) ? 2 : 0) + (/\btopic\b/.test(channel) ? 2 : 0) + (title.includes("official audio") ? 1 : 0) }];
+  }).sort((a, b) => b.score - a.score);
+  return matches[0]?.id ?? null;
+}
+
 function toVideo(v: VideoResource): YtVideo | null {
   if (!v.snippet) return null;
   return {

@@ -176,6 +176,7 @@ export const userTracks = pgTable(
       .notNull()
       .references(() => tracks.id, { onDelete: "cascade" }),
     likedAt: timestamp("liked_at", { withTimezone: true }).notNull().defaultNow(),
+    origin: text("origin").notNull().default("youtube"),
   },
   (t) => [primaryKey({ columns: [t.userId, t.trackId] }), index("user_tracks_track_idx").on(t.trackId)],
 );

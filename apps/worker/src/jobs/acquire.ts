@@ -16,6 +16,7 @@ import { queues } from "../queues";
 import * as cobalt from "../services/cobalt";
 import * as lidarr from "../services/lidarr";
 import { matchRecording } from "../services/musicbrainz";
+import { findRequestedVideo } from "../services/youtube";
 import { progress, stage, updateTrack } from "../track-state";
 import { bridgeProgress, getRecord } from "./torbox-bridge";
 
@@ -45,6 +46,12 @@ async function toCobalt(job: Job<AcquireJob>, token: string | undefined, reason:
     // Complete the state machine without downloading a lossy fallback.
     return later(job, token, { ...job.data, step: "match" }, 0);
   }
+  if (track && !track.youtubeVideoId) {
+    if (!job.data.requestedBy) throw new Error("This request needs a YouTube video URL, or a linked YouTube account for source lookup.");
+    const videoId = await findRequestedVideo(job.data.requestedBy, track);
+    if (!videoId) throw new Error("No verified YouTube recording matched this request. Add a YouTube video URL and retry, or use Lidarr.");
+    await updateTrack(track.id, { youtubeVideoId: videoId });
+  }
   log.info({ trackId: job.data.trackId, reason }, "falling back to Cobalt");
   await stage(job.data.trackId, "downloading", `${reason} → YouTube via Cobalt`);
   return later(job, token, { ...job.data, step: "cobalt" }, 0);
@@ -64,7 +71,6 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
     const reused = await reusePendingTrack(track);
     if (reused) return { reused };
   }
-  if (!track.youtubeVideoId) throw new Error("Track has no YouTube acquisition identity");
   const step = job.data.step ?? "match";
 
   if (step === "match") {
@@ -151,6 +157,7 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
   }
 
   // step === "cobalt"
+  if (!track.youtubeVideoId) return toCobalt(job, token, "Resolving the requested recording's YouTube source");
   if (track.existingFilePath) return toCobalt(job, token, "No lossless source available");
   if (!job.data.local && (await shouldHandOff())) {
     await updateTrack(

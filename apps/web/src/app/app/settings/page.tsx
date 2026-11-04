@@ -117,6 +117,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           </Section>
         )}
 
+        <Section title="Spotify playlists" sub="Read-only playlist sync with playback from your local Plex-indexed songs. Missing songs never trigger downloads.">
+          <Link href="/app/spotify" className="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold ring-1 ring-line hover:bg-hover">Manage Spotify account and playlists</Link>
+        </Section>
+
         <Section title="Listen">
           <div className="mb-6"><InstallApp /></div>
           <p className="mb-4 max-w-2xl text-muted">Listen to downloaded music directly in Mint. Browsing, playback, queues, lyrics and sound controls belong to Mint; Plex remains the private library server. The separate installed Plexamp app is optional and needs its own Plex library invitation.</p>

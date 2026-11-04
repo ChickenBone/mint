@@ -36,7 +36,7 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   const { getRedis } = await import("@mint/core/redis");
   const { encrypt } = await import("@mint/core/crypto");
   const { computeStats, toTrackView } = await import("@mint/core");
-  const { eq, sql } = await import("drizzle-orm");
+  const { and, eq, sql } = await import("drizzle-orm");
   const { indexLibrary } = await import("../library-index");
   const { keepExisting, requestExistingUpgrade, reusePendingTrack } = await import("../existing-track");
   const { queues, connection } = await import("../queues");
@@ -162,6 +162,13 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   const [alias1] = await db.select().from(schema.trackVideos).where(eq(schema.trackVideos.videoId, "fixture0001"));
   const [alias2] = await db.select().from(schema.trackVideos).where(eq(schema.trackVideos.videoId, "fixture0002"));
   assert.equal(alias1!.trackId, alias2!.trackId);
+  const [requested] = await db.select({ id: schema.tracks.id }).from(schema.tracks).where(eq(schema.tracks.existingLibraryKey, "fixture-server:1:4"));
+  await db.insert(schema.userTracks).values({ userId: user!.id, trackId: requested!.id, origin: "request" });
+  await db.update(schema.userTracks).set({ origin: "request" }).where(eq(schema.userTracks.trackId, lossless.id));
+  await processSync(sync);
+  assert.equal((await db.select().from(schema.userTracks).where(eq(schema.userTracks.trackId, requested!.id)))[0]!.origin, "request");
+  assert.equal((await db.select().from(schema.userTracks).where(eq(schema.userTracks.trackId, lossless.id)))[0]!.origin, "youtube");
+  await db.delete(schema.userTracks).where(and(eq(schema.userTracks.userId, user!.id), eq(schema.userTracks.trackId, requested!.id)));
 
   const beforeWrites = offsets.length;
   for (const write of [

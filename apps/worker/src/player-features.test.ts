@@ -26,7 +26,7 @@ test("lyrics lookup identifies Mint, uses exact metadata, bounds responses and h
   const lookup = (response: Response) => fetchLyrics(track, async (input, init) => {
     assert.equal(new URL(String(input)).pathname, "/api/get");
     assert.equal(new URL(String(input)).searchParams.get("duration"), "90");
-    assert.match(new Headers(init?.headers).get("user-agent")!, /Mint\/2.6/);
+    assert.match(new Headers(init?.headers).get("user-agent")!, /Mint\/3.5/);
     assert.equal(init?.redirect, "error");
     return response;
   });

@@ -1,5 +1,4 @@
-import { LogOut } from "lucide-react";
-import { logout } from "@/app/actions/auth";
+import { SignOut } from "@/components/app/sign-out";
 import { MobileNav, SidebarNav } from "@/components/app/sidebar-nav";
 import { MusicNavigation, MusicStage, PlayerBar, PlayerProvider } from "@/components/app/player";
 import { LiveDot } from "@/components/live-dot";
@@ -40,11 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <MusicNavigation />
           <div className="flex shrink-0 items-center gap-3">
           <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
-          <form action={logout}>
-            <button type="submit" aria-label="Sign out" className="inline-flex items-center gap-1.5 rounded-full px-3 py-2.5 text-sm font-semibold text-muted transition hover:bg-elevated hover:text-fg">
-              <LogOut className="size-4" aria-hidden /><span className="hidden sm:inline">Sign out</span>
-            </button>
-          </form>
+          <SignOut />
           </div>
         </div>
         <MusicStage>{children}</MusicStage>

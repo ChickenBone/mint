@@ -2,7 +2,7 @@ import { CHANNEL, computeStats, jobId, publish, toTrackView, type MaintenanceJob
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
 import type { Job } from "bullmq";
-import { and, asc, eq, isNotNull, isNull, lt } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { config } from "../config";
 import { wireIntegrations } from "../integrations";
 import { indexLibrary } from "../library-index";
@@ -58,7 +58,7 @@ async function plexPlaylists(userId: string) {
     .select({ key: schema.tracks.plexRatingKey })
     .from(schema.userTracks)
     .innerJoin(schema.tracks, eq(schema.tracks.id, schema.userTracks.trackId))
-    .where(and(eq(schema.userTracks.userId, userId), isNotNull(schema.tracks.plexRatingKey)))
+    .where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube"), isNotNull(schema.tracks.plexRatingKey)))
     .orderBy(asc(schema.userTracks.likedAt));
   const likedKey = await plex.syncPlaylist(`Mint · ${user.name} · Liked`, liked.map((l) => l.key!), acct.plexPlaylistKey);
   if (likedKey !== acct.plexPlaylistKey) {
@@ -115,6 +115,9 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
       return backfillArtwork();
     case "leases":
       return reapLeases();
+    case "listening-queues":
+      return getDb().execute(sql`delete from playback_queues where id in
+        (select id from playback_queues where expires_at <= now() order by expires_at limit 10)`);
     case "torbox-tick":
       return torboxTick();
     case "plex-playlists":

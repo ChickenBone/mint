@@ -10,8 +10,9 @@ const csp = [
   "script-src 'self' 'unsafe-inline'" + (dev ? " 'unsafe-eval'" : ""),
   "style-src 'self' 'unsafe-inline'",
   // Cover art is always remote: Cover Art Archive (redirects to archive.org) or YouTube thumbnails.
-  "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://archive.org https://*.archive.org",
-  "media-src 'none'",
+  "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://archive.org https://*.archive.org https://i.scdn.co https://mosaic.scdn.co",
+  // Next client navigation retains the initial document policy, including after sign-in.
+  "media-src 'self' blob:",
   "font-src 'self'",
   `connect-src 'self' ${extraConnect}`.trim(),
   "frame-ancestors 'none'",
@@ -45,8 +46,8 @@ const config: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }, { key: "Service-Worker-Allowed", value: "/" }],
       },
       {
-        source: "/app/:path*",
-        headers: [{ key: "Content-Security-Policy", value: csp.replace("media-src 'none'", "media-src 'self'") }],
+        source: "/offline.html",
+        headers: [{ key: "Cache-Control", value: "no-cache" }],
       },
     ];
   },

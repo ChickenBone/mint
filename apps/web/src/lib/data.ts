@@ -1,9 +1,10 @@
 import "server-only";
 import { trackArtwork } from "./artwork-query";
+import { catalogSearch } from "./catalog-search";
 import { computeStats, toTrackView, toWorkerView, type Stats, type TrackView } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
-import { and, asc, desc, eq, ilike, inArray, isNotNull, lt, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, lt, notInArray, sql } from "drizzle-orm";
 
 const db = () => getDb();
 const t = schema.tracks;
@@ -58,8 +59,7 @@ export async function searchLibrary(opts: { q?: string; cursor?: string | null; 
   const q = opts.q?.trim().slice(0, 100);
   const conds = [inArray(t.stage, [...LIBRARY_STAGES])];
   if (q) {
-    const like = `%${q.replace(/[%_\\]/g, "\\$&")}%`;
-    conds.push(or(ilike(t.title, like), ilike(t.artist, like), ilike(t.album, like))!);
+    conds.push(catalogSearch(q).where!);
   }
   if (opts.cursor) {
     const [artist, title, id] = JSON.parse(Buffer.from(opts.cursor, "base64url").toString()) as [string, string, string];
@@ -84,17 +84,18 @@ export async function searchLibrary(opts: { q?: string; cursor?: string | null; 
   };
 }
 
-export async function getLikedTracks(userId: string): Promise<TrackView[]> {
-  const rows = await db()
+export async function getLikedTracks(userId: string, limit?: number): Promise<TrackView[]> {
+  const query = db()
     .select({ track: t })
     .from(schema.userTracks)
     .innerJoin(t, eq(t.id, schema.userTracks.trackId))
-    .where(eq(schema.userTracks.userId, userId))
+    .where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube")))
     .orderBy(desc(schema.userTracks.likedAt));
+  const rows = limit === undefined ? await query : await query.limit(limit);
   return rows.map((r) => toTrackView(r.track));
 }
 
-export async function getUserJobs(userId: string, opts: { failedOnly?: boolean } = {}): Promise<TrackView[]> {
+export async function getUserJobs(userId: string, opts: { failedOnly?: boolean; limit?: number } = {}): Promise<TrackView[]> {
   const rows = await db()
     .select({ track: t })
     .from(schema.userTracks)
@@ -106,7 +107,7 @@ export async function getUserJobs(userId: string, opts: { failedOnly?: boolean }
       ),
     )
     .orderBy(desc(t.updatedAt))
-    .limit(500);
+    .limit(opts.limit ?? 500);
   return rows.map((r) => toTrackView(r.track));
 }
 

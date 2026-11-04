@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0a0d0c"><title>Mint · Offline music</title><link rel="manifest" href="/manifest.webmanifest"><link rel="stylesheet" href="/offline.css"><script defer src="/offline.js"></script></head>
+<body><main>
+  <header><a href="/app/music">Mint</a><a href="/app/downloads">Manage downloads</a></header>
+  <h1>Your music.<br>Even out here.</h1>
+  <p id="status" role="status">Opening your downloaded music…</p>
+  <p id="error" role="alert"></p>
+  <section aria-label="Offline music player" id="player" hidden>
+    <h2 id="title">Choose a song</h2><p id="artist"></p>
+    <audio id="audio" preload="metadata"></audio>
+    <label class="seek">Seek <input id="seek" aria-label="Seek" type="range" min="0" max="1000" value="0"><span id="time">0:00</span></label>
+    <div class="controls"><button id="shuffle" aria-pressed="false">Shuffle</button><button id="previous">Previous</button><button id="toggle">Play</button><button id="next">Next</button><button id="repeat" aria-pressed="false">Repeat</button></div>
+    <label class="volume">Volume <input id="volume" aria-label="Volume" type="range" min="0" max="100" value="100"></label>
+  </section>
+  <div class="toolbar"><label>Collection <select id="collection"><option value="">All downloaded songs</option></select></label><label>Search downloads <input id="search" type="search" placeholder="Song, artist or album"></label><button id="clear">Remove device downloads</button></div>
+  <ol id="songs" aria-label="Downloaded songs"></ol>
+  <p class="note">Only explicitly downloaded music is stored here. Offline access needs renewal every seven days. Browser storage may be reclaimed by your device. To change accounts, reconnect and sign in; signing out removes downloads.</p>
+</main></body></html>

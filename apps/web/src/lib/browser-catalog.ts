@@ -1,9 +1,25 @@
-import { catalogPageSchema, type PlayerCollection, type PlayerItem } from "./player-protocol";
+import { catalogPageSchema, collectionSchema, type PlayerCollection, type PlayerItem } from "./player-protocol";
+
+export const metadataFilterKeys = ["artist", "album", "codec", "minYear", "maxYear"] as const;
+export function collectionFromParams(params: Pick<URLSearchParams, "get">) {
+  const filters = Object.fromEntries(metadataFilterKeys.flatMap((key) => {
+    const value = params.get(key);
+    return value ? [[key, key === "minYear" || key === "maxYear" ? Number(value) : value]] : [];
+  }));
+  return collectionSchema.safeParse({ kind: params.get("kind") ?? "library", id: params.get("id"),
+    query: params.get("q") || undefined, filters });
+}
 
 export function collectionParams(collection: PlayerCollection) {
   const params = new URLSearchParams({ kind: collection.kind });
   if ("id" in collection) params.set("id", collection.id);
   if (collection.kind === "library" && collection.query) params.set("q", collection.query);
+  if (collection.kind === "library" && collection.filters) {
+    for (const key of metadataFilterKeys) {
+      const value = collection.filters[key];
+      if (value !== undefined && value !== "") params.set(key, String(value));
+    }
+  }
   return params;
 }
 
@@ -26,13 +42,14 @@ export async function loadCollection(collection: PlayerCollection, signal: Abort
     params.set("start", String(tracks.length));
     const page = await fetchCatalog(params, signal, fetcher);
     if (page.start !== tracks.length || (total !== undefined && page.total !== total) ||
-        (!page.items.length && tracks.length < page.total) || page.items.some((track) => track.type !== "track" || seen.has(track.id))) {
+        (!page.items.length && tracks.length < page.total) || page.items.some((track) => track.type !== "track" || seen.has(track.occurrenceId ?? track.id))) {
       throw new Error("The library changed while loading. Select the music again.");
     }
     total = page.total;
     for (const track of page.items) {
-      if (!/^[0-9a-f-]{36}$/i.test(track.id) || seen.has(track.id)) throw new Error("The catalog returned an invalid or repeated track.");
-      seen.add(track.id); tracks.push(track);
+      const identity = track.occurrenceId ?? track.id;
+      if (!/^[0-9a-f-]{36}$/i.test(track.id) || seen.has(identity)) throw new Error("The catalog returned an invalid or repeated track.");
+      seen.add(identity); tracks.push(track);
     }
   } while (tracks.length < total);
   return tracks;

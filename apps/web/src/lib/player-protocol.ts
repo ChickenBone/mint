@@ -10,20 +10,28 @@ export const playerItemSchema = z.object({
   albumId: z.string().max(20_000).optional(),
   artistId: z.string().max(20_000).optional(),
   duration: z.number().finite().nonnegative().optional(),
-  queueId: z.string().regex(/^\d+$/).optional(),
+  occurrenceId: z.uuid().optional(),
+  queueId: z.union([z.string().regex(/^\d+$/), z.uuid()]).optional(),
 });
 export type PlayerItem = z.infer<typeof playerItemSchema>;
 export const dspSchema = z.object({
   enabled: z.boolean(), preamp: z.number().min(-18).max(0),
   bands: z.array(z.number().min(-12).max(12)).length(10),
   compressor: z.boolean(), crossfade: z.number().min(0).max(12),
+  fadeMode: z.enum(["fixed", "smart", "off"]).default("fixed"),
+  normalize: z.boolean().default(false), albumSafe: z.boolean().default(true),
+  targetLufs: z.number().min(-23).max(-9).default(-16),
 });
 export type DspSettings = z.infer<typeof dspSchema>;
-export const defaultDsp: DspSettings = { enabled: false, preamp: -6, bands: Array(10).fill(0), compressor: false, crossfade: 0 };
+export const defaultDsp: DspSettings = { enabled: false, preamp: -6, bands: Array(10).fill(0), compressor: false, crossfade: 0,
+  fadeMode: "fixed", normalize: false, albumSafe: true, targetLufs: -16 };
 export const collectionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("library"), query: z.string().max(100).optional() }),
+  z.object({ kind: z.literal("library"), query: z.string().max(100).optional(),
+    filters: z.object({ artist: z.string().max(200).optional(), album: z.string().max(200).optional(), codec: z.string().max(100).optional(),
+      minYear: z.number().int().min(1000).max(3000).optional(), maxYear: z.number().int().min(1000).max(3000).optional() }).optional() }),
   z.object({ kind: z.literal("liked") }),
   z.object({ kind: z.literal("playlist"), id: z.uuid() }),
+  z.object({ kind: z.literal("spotify"), id: z.uuid() }),
   z.object({ kind: z.literal("artist"), id: z.string().max(20_000).regex(/^ar_[A-Za-z0-9_-]+$/) }),
   z.object({ kind: z.literal("album"), id: z.string().max(20_000).regex(/^al_[A-Za-z0-9_-]+$/) }),
 ]);
@@ -41,13 +49,19 @@ export const playerStateSchema = z.object({
   track: playerItemSchema.nullable(), queue: z.array(playerItemSchema).max(1000),
   queueTotal: z.number().int().nonnegative(), queueOffset: z.number().int().nonnegative(),
   dsp: dspSchema.optional(), dspAvailable: z.boolean().optional(), transitioning: z.boolean().optional(),
+  transitionDetail: z.string().optional(), normalizationDb: z.number().finite().optional(),
+  playbackFormat: z.enum(["original", "mp3"]).optional(),
 });
 export type PlayerState = z.infer<typeof playerStateSchema>;
 export type MusicView = "home" | "library" | "search" | "now-playing";
 export type PlayerCommand =
   | { action: "play" | "next-in-queue" | "add-to-queue"; item: PlayerItem; shuffle?: boolean }
-  | { action: "collection"; collection: PlayerCollection; shuffle: boolean; id?: string }
+  | { action: "collection"; collection: PlayerCollection; shuffle: boolean; id?: string; occurrenceId?: string }
+  | { action: "context"; context: z.infer<typeof import("@mint/core/devices").deviceQueueContextSchema>; position: number; paused: boolean; repeat: number }
   | { action: "dsp"; settings: DspSettings }
+  | { action: "items"; items: PlayerItem[]; index?: number; position?: number; paused?: boolean; shuffle?: boolean; repeat?: number }
+  | { action: "pause" | "resume" }
+  | { action: "format"; format: "original" | "mp3" }
   | { action: "toggle" | "previous" | "next" | "shuffle" | "repeat" | "clear" | "state" }
   | { action: "seek" | "volume"; value: number }
   | { action: "skip" | "remove"; queueId: string }

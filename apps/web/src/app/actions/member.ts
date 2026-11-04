@@ -52,7 +52,7 @@ export async function retryTrack(trackId: string, forceCobalt = false): Promise<
     .update(schema.tracks)
     .set({ stage: "queued", progress: 0, error: null, detail: forceCobalt ? "Retrying via YouTube" : "Retrying", filePath: null })
     .where(eq(schema.tracks.id, trackId));
-  await enqueueRetry(trackId, forceCobalt);
+  await enqueueRetry(trackId, forceCobalt, user.id);
   return {};
 }
 

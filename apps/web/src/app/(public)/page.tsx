@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 const steps: Array<[string, string]> = [
   ["Link YouTube Music", "Sign in with Google once. Mint reads your likes and the playlists you choose. It never posts, rates or changes anything."],
   ["Find the real release", "Each song is matched against MusicBrainz and requested through Lidarr, which grabs the album over TorBox. If no release turns up, Mint rips the audio from YouTube instead."],
-  ["Tag, file, scan", "Files are tagged with artwork and moved into the shared library. Plex scans them in and runs sonic analysis so Sonic Radio and Sweet Fades just work."],
-  ["Play it in Plexamp", "Your likes and synced playlists appear as Plex playlists under your name. Like a song on YouTube and it lands in Plexamp minutes later."],
+  ["Tag, file, scan", "Files are tagged with artwork and moved into the shared Plex library. Mint measures the audio for its own Smart Fades, loudness controls and discovery."],
+  ["Play it in Mint", "Listen in Mint with your likes, playlists and recommendations together. Plex stays behind the scenes as the library server; no embedded player or separate music app is needed."],
 ];
 
 export default async function Home() {

@@ -5,6 +5,7 @@ import { and, eq } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
 import { fetchLyrics, LyricsBusyError } from "@/lib/lyrics-provider";
 import { rateLimit } from "@/lib/rate-limit";
+import { lyricMatches } from "@mint/core/listening-db";
 
 export const dynamic = "force-dynamic";
 const json = (body: unknown, status = 200, retry?: number) => Response.json(body, { status, headers: {
@@ -19,9 +20,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     if (!await rateLimit(`lyrics:${user.id}`, 30, 60)) return json({ error: "Too many lyrics requests. Try again in a minute." }, 429, 60);
     const track = await getDb().query.tracks.findFirst({ where: and(eq(schema.tracks.id, id), PLAYABLE) });
     if (!track) return json({ error: "This track is not available for playback." }, 404);
+    const [match] = await getDb().select().from(lyricMatches).where(and(eq(lyricMatches.userId, user.id), eq(lyricMatches.trackId, id))).limit(1);
+    if (match?.lyrics) return json({ lyrics: match.lyrics, offsetMs: match.offsetMs, source: "LRCLIB", corrected: true });
     const redis = getRedis(), cacheKey = `mint:lyrics:v1:${id}:${track.updatedAt.getTime()}`;
     const cached = await redis.get(cacheKey);
-    if (cached) return json(JSON.parse(cached));
+    if (cached) return json({ ...JSON.parse(cached), offsetMs: match?.offsetMs ?? 0 });
     const cooldown = await redis.ttl("mint:lyrics:cooldown");
     if (cooldown > 0) return json({ error: "LRCLIB is busy. Please wait before retrying." }, 429, cooldown);
     if (!await rateLimit("lyrics:provider", 60, 60)) return json({ error: "Lyrics lookups are busy. Try again in a minute." }, 429, 60);
@@ -31,7 +34,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       const lyrics = await fetchLyrics({ artist: track.artist, title: track.title, album: track.album, duration: track.durationSec ?? track.existingDurationSec });
       const body = { lyrics, source: "LRCLIB" };
       await redis.set(cacheKey, JSON.stringify(body), "EX", lyrics ? 86400 : 3600);
-      return json(body);
+      return json({ ...body, offsetMs: match?.offsetMs ?? 0 });
     } catch (error) {
       if (!(error instanceof LyricsBusyError)) throw error;
       await redis.set("mint:lyrics:cooldown", "1", "EX", error.retryAfter);

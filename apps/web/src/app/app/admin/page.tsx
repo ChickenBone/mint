@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { decideRequest, retryAllFailed, setMemberRole, setMemberStatus } from "@/app/actions/admin";
 import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
 import { ActionButton } from "@/components/app/admin-controls";
@@ -22,6 +23,7 @@ export default async function Admin() {
   return (
     <>
       <PageHeader title="Admin" sub="Requests, members and the health of everything behind the wall." />
+      <Link href="/app/admin/analysis" className="mb-8 inline-flex min-h-11 items-center rounded-lg border border-line px-4 py-2 font-semibold hover:bg-hover">Audio analysis, coverage and resource controls →</Link>
 
       <section className="mb-12">
         <h2 className="mb-4 text-xl font-bold">Access requests {requests.length > 0 && <span className="text-mint tabular">({requests.length})</span>}</h2>

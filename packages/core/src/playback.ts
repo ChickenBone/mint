@@ -16,4 +16,4 @@ export async function activePlaybackSession(sessionHash: string, userId: string)
   return session ?? null;
 }
 
-export interface PlaybackClaim { userId: string; sessionHash: string; trackId: string }
+export interface PlaybackClaim { userId: string; sessionHash: string; trackId: string; format?: "mp3" }

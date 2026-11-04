@@ -125,13 +125,13 @@ export async function processSync(job: Job<SyncJob>) {
     if (trackIds.length) {
       await db
         .insert(schema.userTracks)
-        .values(trackIds.map((trackId) => ({ userId, trackId })))
-        .onConflictDoNothing();
+        .values([...new Set(trackIds)].map((trackId) => ({ userId, trackId })))
+        .onConflictDoUpdate({ target: [schema.userTracks.userId, schema.userTracks.trackId], set: { origin: "youtube" } });
     }
     // Un-liked songs leave the member's list; the files stay in the shared library.
     await db
       .delete(schema.userTracks)
-      .where(and(eq(schema.userTracks.userId, userId), trackIds.length ? notInArray(schema.userTracks.trackId, trackIds) : sql`true`));
+      .where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube"), trackIds.length ? notInArray(schema.userTracks.trackId, trackIds) : sql`true`));
 
     // Playlists
     await emit(userId, { status: "syncing", message: "Reading your playlists…", found: liked.length });

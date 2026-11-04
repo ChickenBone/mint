@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 import { BrowserDSP } from "../src/lib/browser-dsp";
 import { loadCollection, shuffled } from "../src/lib/browser-catalog";
 import { NativePlayer } from "../src/lib/native-player";
@@ -35,12 +36,51 @@ function tracks(count: number): PlayerItem[] {
     artist: "Mint Test", album: "Original fixtures", type: "track", duration: 90_000, albumId: "al_fixture",
   }));
 }
+type FixtureQueue = { rows: PlayerItem[]; order: string[]; shuffle: boolean; revision: number };
+const serverQueues = new WeakMap<Storage, Map<string, FixtureQueue>>();
 function setup(rows = tracks(4), storage = new MemoryStorage(), memberId = "member-one", fetcher?: typeof fetch) {
   const elements = [audioFixture(), audioFixture()] as const;
   const requests: number[] = [], errors: string[] = [];
   const load: typeof fetch = fetcher ?? (async (input, init) => {
     assert.equal(init?.cache, "no-store"); assert.equal(init?.credentials, "same-origin");
     const url = new URL(String(input), "http://mint.test");
+    if (url.pathname.startsWith("/api/player/queue")) {
+      let sessions = serverQueues.get(storage);
+      if (!sessions) { sessions = new Map(); serverQueues.set(storage, sessions); }
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+      let id = url.pathname.split("/")[4], position = Number(url.searchParams.get("position")) || 0;
+      if (!id) {
+        id = randomUUID();
+        const entries = rows.map((track) => ({ ...track, queueId: randomUUID() }));
+        const queue = { rows: body.shuffle ? shuffled(entries) : entries, order: entries.map((item) => item.queueId), shuffle: Boolean(body.shuffle), revision: 1 };
+        sessions.set(id, queue); requests.push(-1);
+        position = body.trackId ? queue.rows.findIndex((track) => track.id === body.trackId) : 0;
+      }
+      const queue = sessions.get(id)!;
+      if (body?.edit) {
+        const current = queue.rows.find((track) => track.queueId === body.currentId)!;
+        const index = queue.rows.indexOf(current), edit = body.edit;
+        if (edit.action === "shuffle") {
+          queue.shuffle = edit.enabled;
+          queue.rows = edit.enabled ? [...queue.rows.slice(0, index + 1), ...shuffled(queue.rows.slice(index + 1))]
+            : queue.rows.slice().sort((a, b) => queue.order.indexOf(a.queueId!) - queue.order.indexOf(b.queueId!));
+        } else if (edit.action === "remove") queue.rows = queue.rows.filter((item) => item.queueId !== edit.entryId);
+        else if (edit.action === "clear") queue.rows = queue.rows.slice(0, index + 1);
+        else if (edit.action === "append" || edit.action === "append-collection") {
+          const ids = edit.action === "append" ? edit.trackIds : rows.map((item) => item.id);
+          const entries = ids.map((id: string) => ({ ...rows.find((item) => item.id === id)!, queueId: randomUUID() }));
+          queue.rows.splice(edit.next ? index + 1 : queue.rows.length, 0, ...entries); queue.order.push(...entries.map((item: PlayerItem) => item.queueId!));
+        } else if (edit.action === "move") {
+          const from = queue.rows.findIndex((item) => item.queueId === edit.entryId), to = queue.rows.findIndex((item) => item.queueId === edit.before);
+          if (from <= index || to <= index) return Response.json({ error: "Only upcoming songs can be moved." }, { status: 400 });
+          if (from !== to) { const target = queue.rows[to]!, [entry] = queue.rows.splice(from, 1); queue.rows.splice(queue.rows.indexOf(target), 0, entry!); }
+        }
+        position = Math.max(0, queue.rows.indexOf(current) >= 0 ? queue.rows.indexOf(current) : Math.min(index, queue.rows.length - 1));
+        queue.revision++;
+      } else if (init?.method === "GET") requests.push(position);
+      const offset = Math.max(0, position - 20);
+      return Response.json({ context: { id, revision: queue.revision, total: queue.rows.length, offset, position, shuffle: queue.shuffle }, items: queue.rows.slice(offset, offset + 100) });
+    }
     const start = Number(url.searchParams.get("start")), size = Number(url.searchParams.get("size"));
     requests.push(start);
     return Response.json({ items: rows.slice(start, start + size), start, total: rows.length });
@@ -53,14 +93,53 @@ function setup(rows = tracks(4), storage = new MemoryStorage(), memberId = "memb
 }
 const library = { action: "collection", collection: { kind: "library" }, shuffle: false } as const;
 
-test("native queue loads every page, exposes a bounded window, and preserves selection beyond page one", async () => {
+test("manual Next retries a cancelled boundary preload without changing the selected context", { timeout: 5000 }, async () => {
+  const rows = tracks(220).map((track) => ({ ...track, queueId: randomUUID() })), id = randomUUID();
+  let reads = 0, started!: () => void;
+  const preloading = new Promise<void>((resolve) => { started = resolve; });
+  const fetcher: typeof fetch = async (input, init) => {
+    const url = new URL(String(input), "http://mint.test"), position = Number(url.searchParams.get("position")) || 0;
+    if (init?.method === "GET" && ++reads === 1) {
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal!.addEventListener("abort", () => reject(new DOMException("Cancelled preload", "AbortError")), { once: true });
+        started();
+      });
+    }
+    const offset = Math.max(0, position - 20);
+    return Response.json({ context: { id, revision: 1, total: rows.length, offset, position, shuffle: false }, items: rows.slice(offset, offset + 100) });
+  };
+  const { engine, elements, errors } = setup(rows, new MemoryStorage(), "member-one", fetcher);
+  try {
+    await engine.execute(library);
+    for (let i = 0; i < 99; i++) await engine.execute({ action: "next" });
+    elements[0].currentTime = 80; elements[0].dispatchEvent(new Event("timeupdate"));
+    await preloading;
+    await engine.execute({ action: "next" });
+    assert.equal(engine.getState().track!.id, rows[100]!.id);
+    assert.equal(engine.getState().queueTotal, 220); assert.equal(reads, 2);
+    assert.deepEqual(errors, []);
+  } finally { engine.dispose(); }
+});
+
+test("appending a large collection never downloads its complete metadata into the browser", async () => {
+  const { engine, requests } = setup(tracks(6010));
+  try {
+    await engine.execute(library);
+    await engine.execute({ action: "next-in-queue", item: { id: "ar_fixture", type: "artist", title: "Mint Test" } });
+    assert.equal(engine.getState().queueTotal, 12020);
+    assert.equal(engine.getState().queue.length, 100);
+    assert.deepEqual(requests, [-1]);
+  } finally { engine.dispose(); }
+});
+
+test("native queue starts with one bounded page and preserves selection beyond page one", async () => {
   const rows = tracks(17_020), { engine, requests, elements } = setup(rows);
   try {
     await engine.execute({ ...library, id: rows[1100]!.id });
     const state = engine.getState();
-    assert.deepEqual(requests, Array.from({ length: 35 }, (_, i) => i * 500));
-    assert.equal(state.queueTotal, 17_020); assert.ok(state.queue.length <= 1000);
-    assert.equal(state.queueOffset, 1000); assert.equal(state.track!.id, rows[1100]!.id);
+    assert.deepEqual(requests, [-1]);
+    assert.equal(state.queueTotal, 17_020); assert.ok(state.queue.length <= 100);
+    assert.equal(state.queueOffset, 1080); assert.equal(state.track!.id, rows[1100]!.id);
     assert.equal(elements[0].src, `/api/player/audio/${rows[1100]!.id}`);
     assert.equal(state.playing, true);
     await engine.execute({ action: "previous" });
@@ -76,7 +155,8 @@ test("shuffle is reversible, unique, and preserves the currently playing item", 
     const current = engine.getState().track!.queueId;
     await engine.execute({ action: "shuffle" });
     assert.equal(engine.getState().track!.queueId, current);
-    assert.equal(new Set(engine.getState().queue.map((track) => track.queueId)).size, 620);
+    assert.equal(new Set(engine.getState().queue.map((track) => track.queueId)).size, 100);
+    assert.equal(engine.getState().queueTotal, 620);
     await engine.execute({ action: "shuffle" });
     assert.deepEqual(engine.getState().queue.map((track) => track.queueId), initial);
     assert.deepEqual(shuffled([1, 2, 3, 4], () => 0), [2, 3, 4, 1]);
@@ -112,6 +192,36 @@ test("removing the current song selects its successor; removing the final song s
     assert.equal(engine.getState().track!.title, "Song 2"); assert.equal(engine.getState().playing, true);
     await engine.execute({ action: "remove", queueId: engine.getState().track!.queueId! });
     assert.equal(engine.getState().track, null); assert.equal(engine.getState().playing, false);
+  } finally { engine.dispose(); }
+});
+
+test("explicit device queues preserve duplicate occurrences, positions and paused state, including empty queues", async () => {
+  const { engine, elements } = setup();
+  try {
+    const [one, two] = tracks(2);
+    await engine.execute({ action: "items", items: [one!, two!, one!], index: 2, position: 15_000, paused: true });
+    assert.equal(engine.getState().queueTotal, 3); assert.equal(engine.getState().time, 15_000);
+    assert.equal(engine.getState().playing, false); assert.equal(new Set(engine.getState().queue.map((track) => track.queueId)).size, 3);
+    await engine.execute({ action: "resume" }); assert.equal(engine.getState().playing, true);
+    await engine.execute({ action: "items", items: [] });
+    assert.equal(engine.getState().track, null); assert.equal(engine.getState().queueTotal, 0);
+    assert.ok(elements.every((element) => element.paused && !element.getAttribute("src")));
+  } finally { engine.dispose(); }
+});
+
+test("fades-off playback promotes its preloaded deck at the song boundary without reloading it", async () => {
+  const { engine, elements } = setup(tracks(2));
+  try {
+    await engine.execute(library);
+    elements[0].currentTime = 80; elements[0].dispatchEvent(new Event("timeupdate"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const prepared = elements[1].src;
+    assert.ok(prepared.endsWith(tracks(2)[1]!.id));
+    elements[0].dispatchEvent(new Event("ended"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(elements[1].src, prepared); assert.equal(elements[1].paused, false);
+    assert.equal(elements[0].getAttribute("src"), null);
+    assert.equal(engine.getState().track!.id, tracks(2)[1]!.id);
   } finally { engine.dispose(); }
 });
 
@@ -255,10 +365,13 @@ test("original DSP preserves headroom, applies EQ, schedules equal-power fades a
     assert.equal(context.nodes[1]!.gain.value, 6);
     assert.ok(Math.abs(context.nodes[11]!.gain.value - 10 ** (-15.1 / 20)) < 1e-8);
     dsp.fade(a, b, 4);
-    const out = context.nodes[13]!.gain.curves[0]!, incoming = context.nodes[14]!.gain.curves[0]!;
+    const out = context.nodes[13]!.gain.curves[0]!, incoming = context.nodes[15]!.gain.curves[0]!;
     for (let i = 0; i < 64; i++) assert.ok(Math.abs(out[i]! ** 2 + incoming[i]! ** 2 - 1) < 1e-6);
     dsp.select(a);
-    assert.equal(context.nodes[13]!.gain.value, 1); assert.equal(context.nodes[14]!.gain.value, 0);
+    assert.equal(context.nodes[13]!.gain.value, 1); assert.equal(context.nodes[15]!.gain.value, 0);
+    dsp.normalize(a, -4);
+    await dsp.configure({ ...dsp.settings, normalize: true });
+    assert.ok(Math.abs(context.nodes[14]!.gain.value - 10 ** (-4 / 20)) < 1e-8);
     await dsp.configure(defaultDsp);
     assert.equal(context.nodes[1]!.gain.value, 0); assert.equal(context.nodes[11]!.gain.value, 1);
     assert.equal(context.nodes[12]!.ratio.value, 1);
@@ -276,12 +389,13 @@ test("failed standby preload is not retried on every timeupdate, and pause cance
   Object.defineProperty(globalThis, "window", { configurable: true, value: { AudioContext: ContextFixture } });
   const fixture = setup();
   try {
-    await fixture.engine.execute({ action: "dsp", settings: { ...defaultDsp, crossfade: 4 } });
+    await fixture.engine.execute({ action: "dsp", settings: { ...defaultDsp, crossfade: 4, albumSafe: false } });
     await fixture.engine.execute(library);
     let loads = 0;
     fixture.elements[1].load = () => { loads++; };
     fixture.elements[0].currentTime = 82;
     fixture.elements[0].dispatchEvent(new Event("timeupdate"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
     assert.equal(loads, 1);
     fixture.elements[1].dispatchEvent(new Event("error"));
     fixture.elements[0].dispatchEvent(new Event("timeupdate"));

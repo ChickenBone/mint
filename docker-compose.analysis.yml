@@ -1,0 +1,22 @@
+# Optional audio-analysis offload, on a separate machine. No database/Redis/Plex credentials or music mounts.
+# Point ANALYSIS_SERVER_URL at a private/VPN-only worker:8080 reachable from this machine.
+# Use a distinct random ANALYSIS_WORKER_TOKEN (at least 32 characters) on both workers.
+name: mint-analysis
+services:
+  analysis:
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-analysis:${MINT_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      ANALYSIS_SERVER_URL: ${ANALYSIS_SERVER_URL:?Set the private analysis server URL}
+      ANALYSIS_WORKER_TOKEN: ${ANALYSIS_WORKER_TOKEN:?Set a separate analysis worker token}
+      ANALYSIS_CACHE_DIR: /work
+    volumes: [analysis_cache:/work]
+    mem_limit: 768m
+    cpus: 2
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+volumes:
+  analysis_cache:

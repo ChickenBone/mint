@@ -6,7 +6,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
+import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
+import { analysisSchema } from "@mint/core/analysis";
+import { authorizeOffline, clearOffline, listOffline, offlineAudio, offlineSettings } from "@/lib/offline";
+import { startDeviceBridge } from "@/lib/device-client";
+import { ListeningHistory } from "@/lib/listening-history";
+import { TrackMusicActions } from "./track-music-actions";
 import { NativePlayer } from "@/lib/native-player";
 import { collectionParams, itemCollection } from "@/lib/browser-catalog";
 import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
@@ -40,7 +45,7 @@ export function MusicNavigation() {
     {(["home", "library", "search"] as const).map((key) => {
       const active = path === "/app/music" && view === key;
       return <Link key={key} href={key === "home" ? "/app/music" : `/app/music?view=${key}`} aria-current={active ? "page" : undefined}
-        className={`rounded-full px-3 py-2 hover:bg-hover hover:text-fg ${active ? "bg-elevated text-fg" : "text-muted"}`}>{key === "home" ? "Discover" : key === "library" ? "Browse" : "Search"}</Link>;
+        className={`rounded-full px-3 py-2 hover:bg-hover hover:text-fg ${active ? "bg-elevated text-fg" : "text-muted"}`}>{key === "home" ? "Albums" : key === "library" ? "Browse" : "Search"}</Link>;
     })}
     <InstallApp compact />
   </nav>;
@@ -82,26 +87,129 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
 
   useEffect(() => {
     if (!first.current || !second.current) return;
-    const player = new NativePlayer({ memberId, elements: [first.current, second.current], update: setState, error: setError });
+    const history = new ListeningHistory((event) => {
+      if (!navigator.onLine) return;
+      void fetch("/api/music/history", { method: "POST", cache: "no-store", keepalive: true,
+        headers: { "content-type": "application/json" }, body: JSON.stringify(event) }).then((response) => {
+        if (!response.ok) throw new Error("Listening history could not be saved.");
+      }).catch((error: unknown) => { console.error("Listening history write failed", error); setError("This play could not be saved to listening history. Playback is unaffected."); });
+    });
+    const player = new NativePlayer({ memberId, elements: [first.current, second.current], update: (state) => { setState(state); history.update(state); }, error: setError,
+      source: async (track, format) => {
+        try {
+          const local = await offlineAudio(memberId, track.id);
+          if (local) return local;
+        } catch (error) {
+          console.error("Offline music storage unavailable", error);
+          setError("Device storage is unavailable. Mint will stream this song while connected.");
+        }
+        if (!navigator.onLine) throw new Error("This song is not downloaded, or offline access expired. Reconnect or open the offline player.");
+        return `/api/player/audio/${track.id}${format === "mp3" ? "?format=mp3" : ""}`;
+      },
+      analysis: async (id) => {
+        if (!navigator.onLine) return null;
+        const response = await fetch(`/api/player/analysis/${id}`, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
+        if (!response.ok) throw new Error("Track analysis could not load. Smart Fades will use a short fixed fallback.");
+        const body = await response.json();
+        return body.result ? analysisSchema.parse(body.result) : null;
+      },
+    });
     engine.current = player;
     const controller = new AbortController();
+    const items = async (ids: string[], signal?: AbortSignal) => {
+      const result: PlayerItem[] = [];
+      for (let start = 0; start < ids.length; start += 5000) {
+        signal?.throwIfAborted();
+        const response = await fetch("/api/player/items", { method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ ids: ids.slice(start, start + 5000) }), signal });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "The device queue could not load.");
+        result.push(...body.items.map((item: unknown) => playerItemSchema.parse(item)));
+      }
+      return result;
+    };
+    const devices = startDeviceBridge({ memberId, getState: () => player.getDeviceState(), error: setError,
+      execute: async (command, signal) => {
+        signal?.throwIfAborted();
+        if (command.action === "handoff") throw new Error("Use the explicit handoff command.");
+        if (command.action === "queue-edit") {
+          if (command.edit.action === "append") {
+            const [track] = await items([command.edit.trackId], signal);
+            await player.execute({ action: "add-to-queue", item: track! });
+          } else if (command.edit.action === "remove") await player.execute({ action: "remove", queueId: command.edit.entryId });
+          else await player.execute({ action: "move", queueId: command.edit.entryId, before: command.edit.before });
+        } else if (command.action === "queue") {
+          if (!command.trackIds.length) { await player.execute({ action: "items", items: [] }); return; }
+          const previous = player.getState();
+          const tracks = await items(command.trackIds, signal); signal?.throwIfAborted();
+          const cancel = () => player.pause(); signal?.addEventListener("abort", cancel, { once: true });
+          try {
+            await player.execute({ action: "items", items: tracks, index: command.currentIndex, paused: !previous.playing,
+              position: tracks[command.currentIndex]?.id === previous.track?.id ? previous.time : 0 });
+            signal?.throwIfAborted();
+          } finally { signal?.removeEventListener("abort", cancel); }
+        } else if (command.action === "play") await player.execute({ action: "resume" });
+        else if (command.action === "seek") await player.execute({ action: "seek", value: command.value * 1000 });
+        else await player.execute(command);
+      },
+      applyHandoff: async (handoff, signal) => {
+        if (handoff.queueContext) {
+          await player.execute({ action: "context", context: handoff.queueContext, position: handoff.position * 1000, paused: true, repeat: handoff.repeat });
+        } else {
+          const tracks = await items(handoff.queue, signal);
+          signal?.throwIfAborted();
+          await player.execute({ action: "items", items: tracks, index: handoff.currentIndex, position: handoff.position * 1000,
+            paused: true, shuffle: handoff.shuffle, repeat: handoff.repeat });
+        }
+        signal?.throwIfAborted();
+        const cancel = () => player.pause();
+        signal?.addEventListener("abort", cancel, { once: true });
+        try {
+          if (handoff.playing) {
+            await player.execute({ action: "resume" }); signal?.throwIfAborted();
+            if (!player.getState().playing) throw new Error("The destination did not start playing. Tap Play on that device first.");
+          }
+        } finally { signal?.removeEventListener("abort", cancel); }
+      },
+    });
+    let lastRenewed = 0;
+    const downloadedAccess = async () => {
+      const settings = await offlineSettings();
+      return settings?.grant.memberId === memberId && settings.grant.expiresAt > Date.now() &&
+        (await listOffline(memberId)).some((song) => song.id === player.getState().track?.id);
+    };
     const verify = async () => {
       try {
         const response = await fetch("/api/player/session", { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) });
         if (controller.signal.aborted) return;
-        if (response.status === 401) player.revoke("Playback access has expired. Sign in again.");
+        if (response.status === 401) { player.revoke("Playback access has expired. Sign in again."); await clearOffline(); }
         else if (!response.ok) player.revoke("Mint could not verify playback access. Check your connection and press Play to retry.");
-        else if ((await response.json()).memberId !== memberId) player.revoke("The signed-in account changed. Reload Mint before listening.");
-      } catch {
-        if (!controller.signal.aborted) player.revoke("Mint could not verify playback access. Check your connection and press Play to retry.");
+        else if ((await response.json()).memberId !== memberId) { player.revoke("The signed-in account changed. Reload Mint before listening."); await clearOffline(); }
+        else if (Date.now() - lastRenewed > 60_000) {
+          if ("indexedDB" in window) await authorizeOffline(memberId, controller.signal);
+          lastRenewed = Date.now();
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        try {
+          if (await downloadedAccess()) return;
+        } catch (storageError) { console.error("Offline access check failed", storageError); }
+        console.error("Playback verification failed", error);
+        player.revoke("Mint could not verify playback access. Reconnect, or open Downloads to use saved music.");
       }
     };
+    void verify();
     const timer = setInterval(() => { void verify(); }, 15_000);
-    const pagehide = () => player.pause();
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel("mint-access") : null;
+    if (channel) channel.onmessage = (event) => { if (event.data?.type === "sign-out") player.revoke("You signed out in another Mint tab."); };
+    const pagehide = () => { player.pause(); history.flush(); };
+    const privacyChanged = () => history.reset();
     window.addEventListener("pagehide", pagehide);
+    window.addEventListener("mint:private-session", privacyChanged);
     return () => {
       controller.abort(); clearInterval(timer); window.removeEventListener("pagehide", pagehide);
-      player.dispose(); engine.current = null;
+      window.removeEventListener("mint:private-session", privacyChanged);
+      history.flush(); channel?.close(); devices.dispose(); player.dispose(); engine.current = null;
     };
   }, [memberId]);
   useEffect(() => {
@@ -211,6 +319,7 @@ function TrackMenu({ selection, close, command, browse }: {
   const ref = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ left: Math.max(8, Math.min(selection.x, window.innerWidth - 272)), top: 8 });
   const item = selection.item;
+  const router = useRouter();
   useEffect(() => {
     const menu = ref.current;
     if (!menu) return;
@@ -219,7 +328,7 @@ function TrackMenu({ selection, close, command, browse }: {
     const dismiss = (event: PointerEvent) => { if (!menu.contains(event.target as Node)) close(); };
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape" || event.key === "Tab") { if (event.key === "Escape") event.preventDefault(); close(); return; }
-      const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+      const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
       const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
       if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
         event.preventDefault();
@@ -242,6 +351,13 @@ function TrackMenu({ selection, close, command, browse }: {
       item: { id: item.artistId!, type: "artist", title: item.artist ?? "Artist" } })}>Shuffle this artist</button>}
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "next-in-queue", item })}>Play next</button>
     <button role="menuitem" className={menuClass} onClick={() => act({ action: "add-to-queue", item })}>Add to queue</button>
+    <button role="menuitem" className={menuClass} onClick={() => {
+      close();
+      const params = collectionParams(itemCollection(item));
+      if (item.type === "track") params.set("track", item.id);
+      params.set("title", item.title);
+      router.push(`/app/downloads?${params}`);
+    }}>Download {item.type === "track" ? "song" : item.type}</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => { close(); browse(item); }}>Open {item.type}</button>}
     {item.albumId && <button role="menuitem" className={menuClass} onClick={() => {
       close(); browse({ id: item.albumId!, type: "album", title: item.album ?? "Album", artist: item.artist });
@@ -250,6 +366,7 @@ function TrackMenu({ selection, close, command, browse }: {
       close(); browse({ id: item.artistId!, type: "artist", title: item.artist ?? "Artist" });
     }}>Go to artist</button>}
     {item.queueId && <button role="menuitem" className={menuClass} onClick={() => act({ action: "remove", queueId: item.queueId! })}>Remove from queue</button>}
+    <TrackMusicActions key={item.id} item={item} close={close} />
   </div>;
 }
 

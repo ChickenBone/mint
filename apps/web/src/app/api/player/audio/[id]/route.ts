@@ -5,6 +5,7 @@ import { getUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 180;
 const json = (error: string, status: number) => Response.json({ error }, { status, headers: { "cache-control": "private, no-store" } });
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
@@ -14,7 +15,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (!UUID.test(id)) return json("Invalid track", 400);
   const session = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!session) return json("Sign in required", 401);
-  const token = signToken<PlaybackClaim>("playback", { userId: user.id, sessionHash: sha256(session), trackId: id }, 30_000);
+  const requested = new URL(request.url).searchParams.get("format");
+  if (requested && requested !== "mp3") return json("Unsupported compatibility format", 400);
+  const token = signToken<PlaybackClaim>("playback", { userId: user.id, sessionHash: sha256(session), trackId: id,
+    ...(requested === "mp3" ? { format: "mp3" as const } : {}) }, 30_000);
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (request.headers.has("range")) headers.range = request.headers.get("range")!;
   let response: Response;

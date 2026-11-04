@@ -10,6 +10,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { config } from "./config";
 import { log } from "./log";
 import { sonicNeighbors } from "./services/plex";
+import { compatibleAudio } from "./transcode";
 
 const TYPES: Record<string, string> = {
   ".mp3": "audio/mpeg", ".flac": "audio/flac", ".m4a": "audio/mp4", ".mp4": "audio/mp4",
@@ -76,11 +77,17 @@ export async function servePlayback(req: IncomingMessage, res: ServerResponse, t
   let handle;
   try {
     const resolved = await confinedMedia(file, [config.musicDir, config.existingMusicDir]);
-    const type = TYPES[path.extname(resolved).toLowerCase()];
-    if (!type) return void res.writeHead(415).end("This audio format is not supported by the browser MVP");
+    const type = claim.format === "mp3" ? "audio/mpeg" : TYPES[path.extname(resolved).toLowerCase()];
+    if (!type) return void res.writeHead(415).end("This format needs compatibility conversion. Choose MP3 compatibility playback.");
     handle = await open(resolved, constants.O_RDONLY | constants.O_NOFOLLOW);
     if (process.platform === "linux") {
       await confinedMedia(await realpath(`/proc/self/fd/${handle.fd}`), [config.musicDir, config.existingMusicDir]);
+    }
+    if (claim.format === "mp3") {
+      const cached = await compatibleAudio(trackId, handle, claim);
+      if (!await activePlaybackSession(claim.sessionHash, claim.userId)) return void res.writeHead(401).end("Playback membership revoked");
+      await handle.close();
+      handle = await open(cached, constants.O_RDONLY | constants.O_NOFOLLOW);
     }
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size === 0) return void res.writeHead(404).end("Audio file is unavailable");

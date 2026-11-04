@@ -14,6 +14,7 @@ export interface SyncJob {
 
 export interface AcquireJob {
   trackId: string;
+  requestedBy?: string;
   /** Internal state machine cursor; survives delayed re-queues. */
   step?: "match" | "lidarr-add" | "lidarr-wait" | "cobalt";
   lidarrAlbumId?: number;
@@ -53,6 +54,7 @@ export type MaintenanceJob =
   | { kind: "library-index" }
   | { kind: "artwork" }
   | { kind: "leases" }
+  | { kind: "listening-queues" }
   | { kind: "plex-playlists"; userId: string };
 
 export const jobId = {

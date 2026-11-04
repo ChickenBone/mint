@@ -36,6 +36,48 @@
       "when": 1793729600000,
       "tag": "0004_existing_library",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793729600001,
+      "tag": "0005_analysis",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793729600002,
+      "tag": "0006_music",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793729600003,
+      "tag": "0007_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793729600004,
+      "tag": "0008_listening",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793729600005,
+      "tag": "0009_playback_scale",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793729600006,
+      "tag": "0010_spotify",
+      "breakpoints": true
     }
   ]
 }

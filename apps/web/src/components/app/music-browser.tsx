@@ -5,11 +5,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, Clock3, Play, Search } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { collectionSchema, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
-import { collectionParams, fetchCatalog } from "@/lib/browser-catalog";
+import { type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
+import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKeys } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
 import { TrackMenuButton, usePlayer } from "./player";
+import { MissingMusic } from "./missing-music";
 
 const kinds = ["track", "album", "artist", "playlist"] as const;
 type Kind = typeof kinds[number];
@@ -23,8 +24,8 @@ function itemHref(item: PlayerItem) {
 export function MusicBrowser() {
   const router = useRouter(), params = useSearchParams();
   const rawType = params.get("type");
-  const type: Kind = kinds.find((kind) => kind === rawType) ?? (params.get("view") === "home" || !params.get("view") ? "album" : "track");
-  const parsed = collectionSchema.safeParse({ kind: params.get("kind") ?? "library", id: params.get("id"), query: params.get("q") || undefined });
+  const type: Kind = kinds.find((kind) => kind === rawType) ?? "track";
+  const parsed = collectionFromParams(params);
   const collection: PlayerCollection | null = parsed.success ? parsed.data : null;
   const q = params.get("q") ?? "";
   const start = Math.max(0, Number(params.get("start")) || 0);
@@ -37,9 +38,10 @@ export function MusicBrowser() {
   const page = result?.key === key ? result.page : undefined;
   const error = result?.key === key ? result.error : undefined;
   const valid = collection !== null;
+  const listing = collection?.kind !== "library" || Boolean(q.trim()) || params.get("view") === "library";
 
   useEffect(() => {
-    if (!valid) return;
+    if (!valid || !listing) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
       void fetchCatalog(new URLSearchParams(key), controller.signal).then((page) => {
@@ -49,7 +51,7 @@ export function MusicBrowser() {
       });
     }, 0);
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [key, valid, retry, q]);
+  }, [key, valid, listing, retry, q]);
 
   const change = (patch: Record<string, string>) => {
     const next = new URLSearchParams(params);
@@ -58,6 +60,12 @@ export function MusicBrowser() {
     router.replace(`/app/music?${next}`, { scroll: false });
   };
   if (!collection) return <div role="alert" className="py-12"><h1 className="text-3xl font-bold">This collection link isn&apos;t valid.</h1><Link href="/app/music?view=library" className="mt-4 inline-block text-mint underline">Open your library</Link></div>;
+  if (!listing) return <div className="mx-auto max-w-4xl py-5">
+    <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">Find your next song.</h1>
+    <p className="my-5 max-w-xl text-sm leading-relaxed text-muted">Your shared library is a music backlog, not a list you need to scroll. Search with a few title or artist words; Mint handles prefixes, accents and close spellings.</p>
+    <CatalogSearch key="backlog-search" query={q} />
+    <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/app" className="inline-flex min-h-11 items-center text-mint hover:underline">Your daily recommendations</Link><Link href="/app/music?view=library" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Browse the catalog</Link></div>
+  </div>;
   const first = page?.items[0];
   const title = collection.kind === "album" ? first?.album ?? "Album"
     : collection.kind === "artist" ? first?.artist ?? "Artist"
@@ -83,6 +91,26 @@ export function MusicBrowser() {
       {type !== "playlist" && <CollectionActions collection={collection.kind === "library" ? { ...collection, query: q } : collection} empty={!page?.items.length} label={collection.kind === "library" && q ? "results" : collection.kind} />}
     </div>
     {type !== "playlist" && <CatalogSearch key={`${collection.kind}:${"id" in collection ? collection.id : ""}:${type}:${params.get("view")}`} query={q} />}
+    {collection.kind === "library" && type !== "playlist" && <details className="mb-7 border-y border-line py-4">
+      <summary className="cursor-pointer text-sm font-semibold">Filter library{Object.values(collection.filters ?? {}).some((v) => v !== undefined && v !== "") ? " · active" : ""}</summary>
+      <form key={metadataFilterKeys.map((key) => params.get(key) ?? "").join(":")} className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" onSubmit={(event) => {
+        event.preventDefault(); const values = new FormData(event.currentTarget);
+        change(Object.fromEntries(metadataFilterKeys.map((key) => [key, String(values.get(key) ?? "").trim()])));
+      }}>
+        <p className="text-sm leading-relaxed text-muted sm:col-span-2 lg:col-span-3">Artist and album contain your text. Codec matches exactly. Play and Shuffle use these same filters across the full library.</p>
+        {metadataFilterKeys.map((key) => <label key={key} className="text-sm text-muted">
+          {{ artist: "Artist contains", album: "Album contains", codec: "Codec", minYear: "Year from", maxYear: "Year through" }[key]}
+          <input name={key} defaultValue={params.get(key) ?? ""} type={key === "minYear" || key === "maxYear" ? "number" : "text"}
+            min={key === "minYear" || key === "maxYear" ? 1000 : undefined} max={key === "minYear" || key === "maxYear" ? 3000 : undefined}
+            maxLength={key === "codec" ? 100 : 200} placeholder={key === "codec" ? "flac, opus, mp3…" : undefined}
+            className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg ring-1 ring-line focus:ring-mint" />
+        </label>)}
+        <div className="flex flex-wrap items-end gap-2">
+          <button className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink">Apply filters</button>
+          <button type="button" className="min-h-11 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover" onClick={() => change(Object.fromEntries(metadataFilterKeys.map((key) => [key, ""])))}>Clear filters</button>
+        </div>
+      </form>
+    </details>}
     {error ? <div role="alert" className="py-8"><p className="text-warn">{error}</p><button className="mt-4 min-h-11 rounded-full bg-elevated px-5 hover:bg-hover" onClick={() => setRetry((n) => n + 1)}>Retry loading music</button></div>
       : !page ? <p role="status" className="py-12 text-muted">Opening your music…</p>
       : !page.items.length ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? "No matches on this shelf." : "Nothing here yet."}</h2><p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">{q ? "Try an artist name, album or fewer words." : type === "playlist" ? "Your YouTube Music playlists appear after syncing. Manage imports in Settings." : "Music appears here as files finish importing. Check Jobs for progress."}</p></div>
@@ -95,6 +123,7 @@ export function MusicBrowser() {
         <button disabled={start + page.items.length >= page.total} onClick={() => change({ start: String(start + 100) })} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 hover:bg-hover disabled:opacity-40">Next<ChevronRight className="ml-1 size-4" /></button>
       </div>
     </nav>}
+    {collection.kind === "library" && q.trim().length >= 2 && <MissingMusic key={q} query={q} />}
   </div>;
 }
 
@@ -148,8 +177,8 @@ function CatalogTracks({ items, collection }: { items: PlayerItem[]; collection:
     </div>
     <ol className="mt-2">{items.map((item, index) => {
       const current = player.state.track?.id === item.id;
-      const play = () => player.command({ action: "collection", collection, id: item.id, shuffle: false });
-      return <li key={item.id} onContextMenu={(event) => {
+      const play = () => player.command({ action: "collection", collection, id: item.id, occurrenceId: item.occurrenceId, shuffle: false });
+      return <li key={item.occurrenceId ?? item.id} onContextMenu={(event) => {
         if ((event.target as HTMLElement).closest("a,input")) return;
         event.preventDefault(); player.menu(item, { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button"));
       }} onKeyDown={(event) => {

@@ -41,6 +41,10 @@ x-public-env: &public-env
   LIDARR_API_KEY: ""
   PROWLARR_API_KEY: ""
   USENET_INDEXER_API_KEY: ""
+  ANALYSIS_WORKER_TOKEN: ""
+  SPOTIFY_CLIENT_ID: ""
+  SPOTIFY_CLIENT_SECRET: ""
+  SPOTIFY_API_MODE: ""
 
 services:
   init:
@@ -86,6 +90,9 @@ services:
     environment:
       <<: *public-env
       PLAYBACK_WORKER_URL: http://worker:8080
+      SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
+      SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
+      SPOTIFY_API_MODE: ${SPOTIFY_API_MODE:-development}
     volumes: [secrets:/secrets:ro]
     networks: [edge, data]
     depends_on: &needs-data

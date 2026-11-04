@@ -44,12 +44,20 @@ jobs:
       - run: npm run lint
       - name: Install audio integration test tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Create isolated Spotify integration database
+        run: node --input-type=module -e "import pg from 'pg'; const client = new pg.Client({connectionString:process.env.DATABASE_URL}); await client.connect(); await client.query('CREATE DATABASE mint_spotify_test'); await client.end();"
+        env:
+          DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
       - run: npm test
         env:
           MINT_LIBRARY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
           MINT_LIBRARY_TEST_REDIS_URL: redis://localhost:6379/0
           MINT_TORBOX_TEST_REDIS_URL: redis://localhost:6379/14
           MINT_AUDIO_TEST: "true"
+          ANALYSIS_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
+          MUSIC_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
+          DEVICE_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
+          MINT_SPOTIFY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_spotify_test
       - run: npm run build
       - run: npm audit --omit=dev --audit-level=moderate
       - name: Validate deployment files
@@ -57,6 +65,7 @@ jobs:
           docker compose config --quiet
           docker compose -f docker-compose.nas.yml config --quiet
           docker compose -f docker-compose.nas-migrate.yml config --quiet
+          ANALYSIS_SERVER_URL=http://worker:8080 ANALYSIS_WORKER_TOKEN=fixture-only-analysis-token-not-production docker compose -f docker-compose.analysis.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet
           node --test deploy/docker/compose.test.mjs
           docker create --name mint-caddy-test-binary caddy:2

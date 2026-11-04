@@ -7,12 +7,13 @@ import test from "node:test";
 
 const source = readFileSync(new URL("../../docker-compose.nas.yml", import.meta.url), "utf8");
 const docker = process.env.COMPOSE_DOCKER_BINARY || "docker";
-const resolve = (yaml) =>
+const resolve = (yaml, env = {}) =>
   JSON.parse(
     execFileSync(docker, ["compose", "--project-name", "mint-test", "-f", "-", "config", "--format", "json"], {
       input: yaml,
       encoding: "utf8",
       stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...env },
     }),
   );
 
@@ -118,19 +119,34 @@ test("CLI stack does not leak media credentials from shared env-file into public
     const composePath = docker.endsWith(".exe") && process.platform !== "win32"
       ? execFileSync("wslpath", ["-w", file], { encoding: "utf8" }).trim()
       : file;
-    const keys = ["TORBOX_API_KEY", "PLEX_TOKEN", "PLEX_CLAIM", "LIDARR_API_KEY", "PROWLARR_API_KEY", "USENET_INDEXER_API_KEY"];
-    writeFileSync(file, keys.map((key) => `${key}=fixture-only`).join("\n"));
+    const keys = ["TORBOX_API_KEY", "PLEX_TOKEN", "PLEX_CLAIM", "LIDARR_API_KEY", "PROWLARR_API_KEY", "USENET_INDEXER_API_KEY", "ANALYSIS_WORKER_TOKEN"];
+    const spotifyKeys = ["SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"];
+    writeFileSync(file, [...keys, ...spotifyKeys].map((key) => `${key}=fixture-only`).join("\n"));
     const yaml = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8").replace("path: .env", `path: ${JSON.stringify(composePath)}`);
-    const { services } = resolve(yaml);
+    const { services } = resolve(yaml, Object.fromEntries(spotifyKeys.map((key) => [key, "fixture-only"])));
     for (const key of keys) {
       assert.equal(services.worker.environment[key], "fixture-only");
       for (const name of ["web", "hub", "realtime"]) assert.equal(services[name].environment[key], "");
+    }
+    for (const key of spotifyKeys) {
+      assert.equal(services.worker.environment[key], "fixture-only");
+      assert.equal(services.web.environment[key], "fixture-only");
+      for (const name of ["hub", "realtime"]) assert.equal(services[name].environment[key], "");
     }
     assert.equal(services.worker.volumes.find((v) => v.target === "/prowlarr-config").read_only, true);
     assert.deepEqual(Object.keys(services.prowlarr.networks), ["media"]);
     assert.equal(services.prowlarr.ports[0].host_ip, "127.0.0.1");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("NAS Spotify credentials reach only web and the pipeline worker", () => {
+  const { services } = resolve(source.replace('&spotify-id ""', '&spotify-id "fixture-only"').replace('&spotify-secret ""', '&spotify-secret "fixture-only"'));
+  for (const [name, service] of Object.entries(services)) {
+    for (const key of ["SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"]) {
+      assert.equal(service.environment?.[key], ["web", "worker"].includes(name) ? "fixture-only" : undefined);
+    }
   }
 });
 

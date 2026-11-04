@@ -18,6 +18,10 @@ x-settings:
   # Optional until you want to link YouTube Music; see README -> Google.
   GOOGLE_CLIENT_ID: &google-id ""
   GOOGLE_CLIENT_SECRET: &google-secret ""
+  # Optional read-only Spotify playlist sync. Register the public callback; see docs/spotify.md.
+  SPOTIFY_CLIENT_ID: &spotify-id ""
+  SPOTIFY_CLIENT_SECRET: &spotify-secret ""
+  SPOTIFY_API_MODE: &spotify-mode "development"
   # Optional: without TorBox, Mint uses Cobalt for every download.
   TORBOX_API_KEY: &torbox-key ""
   # Mint-owned folders: relative to the UGOS Compose Project storage path.
@@ -47,6 +51,10 @@ x-settings:
   EXISTING_MUSIC_FOLDER: &existing-music-folder "./existing-library"
   # Same existing music directory as the external Plex server sees it.
   EXISTING_PLEX_MUSIC_DIR: &existing-plex-dir "/music"
+  # Optional analysis offload: a distinct random secret, never a Plex or volunteer-worker token.
+  ANALYSIS_WORKER_TOKEN: &analysis-worker-token ""
+  # Set true only after a separately hosted Mint analysis worker can reach the private gateway.
+  ANALYSIS_REMOTE_ONLY: &analysis-remote-only "false"
 
 x-app: &app
   restart: unless-stopped
@@ -170,6 +178,9 @@ services:
       PLAYBACK_WORKER_URL: http://worker:8080
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
+      SPOTIFY_CLIENT_ID: *spotify-id
+      SPOTIFY_CLIENT_SECRET: *spotify-secret
+      SPOTIFY_API_MODE: *spotify-mode
     volumes:
       - type: bind
         source: *secrets-folder
@@ -225,8 +236,13 @@ services:
       ADMIN_EMAIL: *admin-email
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
+      SPOTIFY_CLIENT_ID: *spotify-id
+      SPOTIFY_CLIENT_SECRET: *spotify-secret
+      SPOTIFY_API_MODE: *spotify-mode
       TORBOX_API_KEY: *torbox-key
       REMOTE_DOWNLOADS: "never"
+      ANALYSIS_WORKER_TOKEN: *analysis-worker-token
+      ANALYSIS_REMOTE_ONLY: *analysis-remote-only
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents

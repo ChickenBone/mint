@@ -19,7 +19,9 @@ interface Props {
 export function MobileNav({ isAdmin, pendingRequests }: Pick<Props, "isAdmin" | "pendingRequests">) {
   const path = usePathname();
   const links = [
-    { href: "/app", label: "Home" }, { href: "/app/liked", label: "Liked songs" },
+    { href: "/app", label: "Home" }, { href: "/app/liked", label: "YouTube likes" },
+    { href: "/app/collections", label: "Mint playlists & likes" }, { href: "/app/discover", label: "Discover" }, { href: "/app/history", label: "Listening history" },
+    { href: "/app/downloads", label: "Downloads" }, { href: "/app/devices", label: "Devices" },
     { href: "/app/jobs", label: "Jobs" }, { href: "/app/workers", label: "Workers" }, { href: "/app/settings", label: "Settings" },
     ...(isAdmin ? [{ href: "/app/admin", label: `Admin${pendingRequests ? ` (${pendingRequests})` : ""}` }] : []),
   ];
@@ -53,6 +55,9 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
     { href: "/app", label: "Home", icon: Home, exact: true },
     { href: "/app/library", label: "Library", icon: Library },
     { href: "/app/music", label: "Music", icon: Music2 },
+    { href: "/app/discover", label: "Discover", icon: Music2 },
+    { href: "/app/downloads", label: "Downloads", icon: Library },
+    { href: "/app/devices", label: "Devices", icon: Server },
     { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
     { href: "/app/workers", label: "Workers", icon: Server },
     { href: "/app/settings", label: "Settings", icon: Settings },
@@ -88,6 +93,10 @@ export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: 
           <ListMusic className="size-5" aria-hidden /> Your music
         </p>
         <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+          <li><Link href="/app/collections" aria-current={path.startsWith("/app/collections") ? "page" : undefined}
+            className="flex min-h-11 items-center gap-3 rounded-md px-3 py-3 font-semibold text-muted hover:bg-hover hover:text-fg"><ListMusic className="size-5" />Mint playlists & likes</Link></li>
+          <li><Link href="/app/history" aria-current={path === "/app/history" ? "page" : undefined}
+            className="flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm text-muted hover:bg-hover hover:text-fg">Listening history</Link></li>
           <li>
             <Link
               href="/app/liked"

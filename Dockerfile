@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# One Dockerfile, four images: --target web | worker (also runs the hub) | realtime | agent
+# One Dockerfile: --target web | worker (also runs the hub) | analysis | realtime | agent
 
 ARG NODE_VERSION=22
 
@@ -66,6 +66,21 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["tini", "--", "mint-entrypoint"]
 CMD ["node", "--enable-source-maps", "dist/index.js"]
+
+# ---- analysis: optional audio-only offload worker; no database or media-service credentials ----
+FROM node:${NODE_VERSION}-bookworm-slim AS analysis
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg ca-certificates tini \
+ && rm -rf /var/lib/apt/lists/*
+ENV NODE_ENV=production ANALYSIS_CACHE_DIR=/work
+WORKDIR /app
+COPY --from=build /repo/apps/worker/dist/analysis-worker.js ./analysis-worker.js
+COPY --from=build /repo/apps/worker/dist/analysis-worker.js.map ./analysis-worker.js.map
+RUN mkdir -p /work && chown node:node /work
+USER node
+VOLUME ["/work"]
+ENTRYPOINT ["tini", "--"]
+CMD ["node", "--enable-source-maps", "analysis-worker.js"]
 
 # ---- realtime: WebSocket gateway ----
 FROM node:${NODE_VERSION}-bookworm-slim AS realtime

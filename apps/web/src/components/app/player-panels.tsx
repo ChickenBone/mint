@@ -6,6 +6,8 @@ import { defaultDsp, type DspSettings, type PlayerCommand, type PlayerState } fr
 import { lyricsSchema, parseLrc, type Lyrics } from "@/lib/lyrics";
 import { InstallApp } from "../install-app";
 import { Artwork } from "../artwork";
+import { TrackAnalysis } from "./track-analysis";
+import { LyricsMatch } from "./lyrics-match";
 
 export function PlayerPanel({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -57,6 +59,11 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
     <label className="block text-sm">Volume <span className="float-right text-muted tabular">{state.volume}%</span>
       <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="mt-2 h-8 w-full accent-mint" />
     </label>
+    <div><h3 className="mb-3 font-semibold">Audio compatibility</h3>
+      <div className="flex flex-wrap gap-2">{(["original", "mp3"] as const).map((format) => <button key={format} aria-pressed={(state.playbackFormat ?? "original") === format} className={control}
+        onClick={() => command({ action: "format", format })}>{format === "original" ? "Original audio" : "MP3 compatibility"}</button>)}</div>
+      <p className="mt-3 text-xs leading-relaxed text-muted">Original audio is streamed unchanged. Compatibility mode creates a private 192 kbps MP3 copy on the worker, with byte-range seeking after conversion; the original stays untouched. First play can take up to two minutes.</p>
+    </div>
     {!state.dspAvailable && <p role="status" className="text-sm text-muted">Sound processing is not supported by this browser. Standard playback is still available.</p>}
     {state.dspAvailable && <fieldset disabled={applying} className="space-y-5 disabled:opacity-50">
       <legend className="mb-3 text-lg font-bold">Your sound</legend>
@@ -78,10 +85,21 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
         <input aria-label="Preamp" type="range" min="-18" max="0" step=".5" value={current.preamp} onChange={(event) => update({ preamp: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
       </label>
       <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.compressor} onChange={(event) => update({ compressor: event.target.checked })} className="size-5 accent-mint" />Dynamic range compression</label>
-      <label className="block text-sm">Smooth transitions <span className="float-right text-muted tabular">{current.crossfade ? `${current.crossfade}s` : "Off"}</span>
+      <label className="flex flex-col gap-2 text-sm">Transition style
+        <select aria-label="Transition style" value={current.fadeMode} onChange={(event) => update({ fadeMode: event.target.value as DspSettings["fadeMode"] })} className="min-h-11 rounded-md border border-line bg-elevated px-3">
+          <option value="off">Off · original track boundaries</option><option value="fixed">Fixed crossfade</option><option value="smart">Smart Fades · content-aware</option>
+        </select>
+      </label>
+      <label className="block text-sm">Maximum overlap <span className="float-right text-muted tabular">{current.crossfade ? `${current.crossfade}s` : "Off"}</span>
         <input aria-label="Crossfade seconds" type="range" min="0" max="12" step="1" value={current.crossfade} onChange={(event) => update({ crossfade: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
       </label>
-      <p className="text-xs leading-relaxed text-muted">Shape your sound on this device. Crossfades blend the end of one song into the next; leave them off for continuous albums. Boosted EQ reserves headroom to reduce clipping. Repeat-one does not crossfade.</p>
+      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.albumSafe} onChange={(event) => update({ albumSafe: event.target.checked })} className="size-5 accent-mint" />Preserve continuous albums when not shuffled</label>
+      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.normalize} onChange={(event) => update({ normalize: event.target.checked })} className="size-5 accent-mint" />Loudness normalization</label>
+      {current.normalize && <label className="block text-sm">Target loudness <span className="float-right text-muted tabular">{current.targetLufs} LUFS</span>
+        <input aria-label="Target loudness" type="range" min="-23" max="-9" step="1" value={current.targetLufs} onChange={(event) => update({ targetLufs: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
+      </label>}
+      <p className="text-xs leading-relaxed text-muted">Mint Smart Fades use measured silence and boundary energy, not Plexamp&apos;s proprietary engine. Missing analysis uses a short fixed fade; missing loudness data applies no normalization. EQ and overlap reserve headroom. Repeat-one never fades.</p>
+      <p role="status" className="text-xs text-muted">{state.transitionDetail ?? "Transitions off"}{current.normalize ? ` · gain ${(state.normalizationDb ?? 0).toFixed(1)} dB` : ""}</p>
       <div className="flex flex-wrap gap-2">
         <button disabled={!dirty} className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"
           onClick={() => void apply(current)}>{applying ? "Applying…" : "Apply sound"}</button>
@@ -89,7 +107,8 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
       </div>
       <p role="status" className="text-sm text-muted">{feedback || (dirty ? "Unsaved sound changes" : "Settings are saved on this device.")}</p>
     </fieldset>}
-    <div><h3 className="mb-3 font-semibold">Listen on your phone</h3><InstallApp /><p className="mt-3 text-xs leading-relaxed text-muted">Audio settings stay on this device for your account. Installation needs HTTPS. Music still needs a server connection.</p></div>
+    <TrackAnalysis state={state} command={command} />
+    <div><h3 className="mb-3 font-semibold">Listen on your phone</h3><InstallApp /><p className="mt-3 text-xs leading-relaxed text-muted">Audio settings stay on this device for your account. Installation needs HTTPS. Save songs in Downloads before going offline.</p></div>
   </div>;
 }
 
@@ -130,14 +149,14 @@ export function LyricsPanel({ state, command }: { state: PlayerState; command: (
   return id ? <TrackLyrics key={id} id={id} state={state} command={command} /> : <p className="text-sm text-muted">Choose a song to see its lyrics.</p>;
 }
 function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; command: (command: PlayerCommand) => void }) {
-  const [result, setResult] = useState<{ lyrics: Lyrics | null } | null>(null);
+  const [result, setResult] = useState<{ lyrics: Lyrics | null; offsetMs: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [retryRemaining, setRetryRemaining] = useState(0);
   const [follow, setFollow] = useState(true);
   const active = useRef<HTMLButtonElement>(null);
   const lines = useMemo(() => parseLrc(result?.lyrics?.syncedLyrics ?? ""), [result]);
-  const index = lines.findLastIndex((line) => line.time <= state.time);
+  const index = lines.findLastIndex((line) => line.time + (result?.offsetMs ?? 0) <= state.time);
   useEffect(() => {
     const controller = new AbortController();
     void fetch(`/api/player/lyrics/${id}`, { signal: controller.signal, cache: "no-store" }).then(async (response) => {
@@ -146,7 +165,7 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
         setRetryRemaining(Number(response.headers.get("retry-after")) || 5);
         throw new Error(body.error ?? "Lyrics could not load.");
       }
-      if (!controller.signal.aborted) setResult({ lyrics: body.lyrics === null ? null : lyricsSchema.parse(body.lyrics) });
+      if (!controller.signal.aborted) setResult({ lyrics: body.lyrics === null ? null : lyricsSchema.parse(body.lyrics), offsetMs: Number(body.offsetMs) || 0 });
     }).catch((error: unknown) => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Lyrics could not load."); });
     return () => controller.abort();
   }, [id, retry]);
@@ -161,6 +180,7 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
   return <div onWheel={() => setFollow(false)} onTouchMove={() => setFollow(false)}>
     <p className="font-semibold">{state.track?.title}</p><p className="mt-1 text-sm text-muted">{state.track?.artist}</p>
     <p className="mt-4 text-xs leading-relaxed text-muted">Lyrics from <a className="underline hover:text-fg" href="https://lrclib.net" target="_blank" rel="noreferrer">LRCLIB</a>. Looking up lyrics sends the song&apos;s title, artist, album and duration, never its audio.</p>
+    <LyricsMatch id={id} title={`${state.track?.title ?? ""} ${state.track?.artist ?? ""}`} offset={result?.offsetMs ?? 0} refresh={() => { setError(null); setResult(null); setRetry((value) => value + 1); }} />
     {error ? <div role="alert" className="mt-6 text-sm"><p className="text-warn">{error}</p><button disabled={retryRemaining > 0} className="mt-3 min-h-11 rounded-full bg-elevated px-4 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
       onClick={() => { setError(null); setResult(null); setRetry((n) => n + 1); }}>{retryRemaining > 0 ? `Retry in ${retryRemaining}s` : "Retry lyrics"}</button></div>
       : !result ? <p role="status" className="mt-6 text-sm text-muted">Finding lyrics…</p>
@@ -169,7 +189,7 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
       : lines.length ? <div className="mt-6">
         <button aria-pressed={follow} onClick={() => setFollow(!follow)} className="sticky top-0 mb-5 min-h-11 rounded-full bg-elevated px-4 text-xs font-semibold hover:bg-hover">{follow ? "Following the song" : "Resume following"}</button>
         <ol className="space-y-3 pb-16">{lines.map((line, i) => <li key={`${line.time}-${i}`}><button ref={i === index ? active : undefined} aria-current={i === index ? "true" : undefined}
-          aria-label={`Seek to ${Math.floor(line.time / 1000)} seconds: ${line.text || "Instrumental break"}`} onClick={() => command({ action: "seek", value: line.time })}
+          aria-label={`Seek to ${Math.floor((line.time + (result?.offsetMs ?? 0)) / 1000)} seconds: ${line.text || "Instrumental break"}`} onClick={() => command({ action: "seek", value: Math.max(0, line.time + (result?.offsetMs ?? 0)) })}
           className={`min-h-11 text-left text-xl font-bold leading-relaxed transition-colors hover:text-mint ${i === index ? "text-mint" : "text-muted"}`}>{line.text || "♪"}</button></li>)}</ol>
       </div> : result.lyrics.plainLyrics ? <p className="mt-6 whitespace-pre-line text-lg leading-relaxed">{result.lyrics.plainLyrics}</p>
       : <p className="mt-6 text-muted">Lyrics have not been added for this track.</p>}

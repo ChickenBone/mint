@@ -20,6 +20,7 @@ test("approved-member streaming, range seeking, session revocation and member-pr
   const root = await mkdtemp(path.join(os.tmpdir(), "mint-playback-http-"));
   Object.assign(process.env, {
     DATABASE_URL: base.href, MUSIC_DIR: root, EXISTING_MUSIC_DIR: root,
+    STAGING_DIR: path.join(root, "staging"),
     MINT_SIGNING_SECRET: randomBytes(32).toString("hex"),
   });
   const { getDb, closeDb, schema } = await import("@mint/core/db");
@@ -106,6 +107,25 @@ test("approved-member streaming, range seeking, session revocation and member-pr
     assert.equal(head.headers.get("content-length"), String(bytes.length));
     assert.equal((await fetch(`${origin}/${song!.id}`, { headers: { ...headers, range: "bytes=99999-" } })).status, 416);
     assert.equal((await fetch(`${origin}/${queued!.id}`, { headers: { authorization: `Bearer ${token(queued!.id)}` } })).status, 404);
+    if (process.env.MINT_AUDIO_TEST === "true") {
+      const rate = 22050, pcm = Buffer.alloc(rate * 2), wav = Buffer.alloc(44);
+      for (let i = 0; i < rate; i++) pcm.writeInt16LE(Math.round(Math.sin(i / rate * Math.PI * 880) * 10000), i * 2);
+      wav.write("RIFF", 0); wav.writeUInt32LE(36 + pcm.length, 4); wav.write("WAVEfmt ", 8);
+      wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+      wav.writeUInt32LE(rate, 24); wav.writeUInt32LE(rate * 2, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
+      wav.write("data", 36); wav.writeUInt32LE(pcm.length, 40);
+      const original = Buffer.concat([wav, pcm]);
+      await writeFile(file, original);
+      const compatibility = signToken("playback", { trackId: song!.id, userId: member!.id, sessionHash, format: "mp3" }, 30_000);
+      const compatibleHeaders = { authorization: `Bearer ${compatibility}` };
+      const full = await fetch(`${origin}/${song!.id}`, { headers: compatibleHeaders });
+      assert.equal(full.status, 200); assert.equal(full.headers.get("content-type"), "audio/mpeg");
+      const mp3 = Buffer.from(await full.arrayBuffer()); assert.ok(mp3.length > 1000);
+      const seeking = await fetch(`${origin}/${song!.id}`, { headers: { ...compatibleHeaders, range: "bytes=10-29" } });
+      assert.equal(seeking.status, 206); assert.deepEqual(Buffer.from(await seeking.arrayBuffer()), mp3.subarray(10, 30));
+      const { readFile } = await import("node:fs/promises");
+      assert.deepEqual(await readFile(file), original, "compatibility conversion must never mutate the original");
+    }
     await db.update(schema.sessions).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(schema.sessions.id, sessionHash));
     assert.equal((await fetch(`${origin}/${song!.id}`, { headers })).status, 401);
     await db.update(schema.sessions).set({ expiresAt: new Date(Date.now() + 60_000) }).where(eq(schema.sessions.id, sessionHash));

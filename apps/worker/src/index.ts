@@ -24,6 +24,9 @@ import { log } from "./log";
 import { connection, queues } from "./queues";
 import { updateTrack } from "./track-state";
 import { servePlayback, serveSonic } from "./playback";
+import { startAnalysisScheduler } from "./analysis-jobs";
+import { serveAnalysisWorker } from "./analysis-http";
+import { startSpotifyScheduler } from "./spotify-jobs";
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL || "admin@mint.local";
@@ -50,6 +53,8 @@ async function main() {
   await seedAdmin();
   await ensureDir(config.stagingDir);
   for (const note of await wireIntegrations()) log.warn(note);
+  const analysis = startAnalysisScheduler();
+  const spotify = await startSpotifyScheduler();
 
   const acquireWorker = new Worker(QUEUE.acquire, processAcquire as Processor, { connection, concurrency: config.concurrency.acquire });
   const finalizeWorker = new Worker(QUEUE.finalize, processFinalize, { connection, concurrency: config.concurrency.finalize });
@@ -83,6 +88,7 @@ async function main() {
   await m.upsertJobScheduler("artwork", { every: 30_000 }, { name: "artwork", data: { kind: "artwork" } });
   await m.upsertJobScheduler("stats", { every: 5_000 }, { name: "stats", data: { kind: "stats" } });
   await m.upsertJobScheduler("leases", { every: 30_000 }, { name: "leases", data: { kind: "leases" } });
+  await m.upsertJobScheduler("listening-queues", { every: 3_600_000 }, { name: "listening-queues", data: { kind: "listening-queues" } });
   await m.upsertJobScheduler("health", { every: 30_000 }, { name: "health", data: { kind: "health" } });
   await m.upsertJobScheduler("torbox-tick", { every: 15_000 }, { name: "torbox-tick", data: { kind: "torbox-tick" } });
   await m.upsertJobScheduler("schedule-sync", { every: config.syncIntervalMin * 60_000 }, { name: "schedule-sync", data: { kind: "schedule-sync" } });
@@ -92,6 +98,15 @@ async function main() {
   }
 
   const server = http.createServer(async (req, res) => {
+    if (req.url?.startsWith("/analysis/")) {
+      try { await serveAnalysisWorker(req, res); }
+      catch (err) {
+        log.error({ err }, "analysis worker request failed");
+        if (!res.headersSent) res.writeHead(503, { "content-type": "application/json", "cache-control": "private, no-store" }).end('{"error":"Analysis service unavailable; inspect worker diagnostics"}');
+        else res.destroy();
+      }
+      return;
+    }
     const sonic = /^\/sonic\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
     if (sonic && req.method === "GET") {
       try { await serveSonic(req, res, sonic[1]!); }
@@ -123,6 +138,8 @@ async function main() {
   const shutdown = async (signal: string) => {
     log.info({ signal }, "shutting down");
     server.close();
+    await analysis.close();
+    await spotify.close();
     await Promise.allSettled(workers.map((w) => w.close()));
     await Promise.allSettled(Object.values(queues).map((q) => q.close()));
     await connection.quit().catch(() => undefined);

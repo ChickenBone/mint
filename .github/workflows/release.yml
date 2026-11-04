@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [web, worker, realtime, agent]
+        target: [web, worker, realtime, agent, analysis]
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
