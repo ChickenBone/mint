@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { getDb, schema } from "@mint/core/db";
 import { analysisSchema, analysisControlsSchema, ANALYSIS_VERSION, DEFAULT_ANALYSIS_CONTROLS, withinAnalysisWindow, type AnalysisControls } from "@mint/core/analysis";
-import { analysisSettings, analysisWorkers, enqueueAnalysis, trackAnalysis } from "@mint/core/analysis-db";
+import { advanceAnalysisBackfill, analysisSettings, analysisWorkers, enqueueAnalysis, trackAnalysis } from "@mint/core/analysis-db";
 import { and, eq, sql } from "drizzle-orm";
 import { analyzeAudio } from "./analysis-engine";
 import { config } from "./config";
@@ -17,7 +17,7 @@ export async function getAnalysisControls(): Promise<AnalysisControls> {
   return parsed.success ? parsed.data : { ...DEFAULT_ANALYSIS_CONTROLS };
 }
 
-export async function analysisHeartbeat(id: string, mode: "local" | "remote", error: string | null = null) {
+export async function analysisHeartbeat(id: string, mode: "local" | "remote" | "coordinator", error: string | null = null) {
   await getDb().insert(analysisWorkers).values({ id, mode, error }).onConflictDoUpdate({
     target: analysisWorkers.id, set: { mode, error, seenAt: new Date() },
   });
@@ -114,13 +114,15 @@ async function runLease(lease: AnalysisLease, signal: AbortSignal) {
 /** Persistent rows are the queue: restarts resume pending/expired leases without a memory-only cursor. */
 export function startAnalysisScheduler() {
   const id = `nas-${randomUUID()}`, controller = new AbortController(), running = new Set<Promise<void>>();
+  const mode = process.env.ANALYSIS_REMOTE_ONLY === "true" ? "coordinator" : "local";
   let busy = false, lastBackfill = 0, lastHeartbeat = 0, lastClaim = 0;
   const tick = async () => {
     if (busy || controller.signal.aborted) return;
     busy = true;
     try {
       const controls = await getAnalysisControls();
-      if (Date.now() - lastHeartbeat > 15_000) { await analysisHeartbeat(id, "local"); lastHeartbeat = Date.now(); }
+      if (Date.now() - lastHeartbeat > 15_000) { await analysisHeartbeat(id, mode); lastHeartbeat = Date.now(); }
+      await advanceAnalysisBackfill(getDb());
       if (!controls.enabled || controls.paused) return;
       if (Date.now() - lastBackfill > 60_000) {
         await enqueueAnalysis(getDb());
@@ -140,10 +142,12 @@ export function startAnalysisScheduler() {
       }
     } catch (err) {
       log.error({ err }, "analysis scheduler failed");
-      await analysisHeartbeat(id, "local", analysisError(err)).catch(() => undefined);
+      await analysisHeartbeat(id, mode, analysisError(err)).catch(() => undefined);
     } finally { busy = false; }
   };
-  const timer = setInterval(() => void tick(), 2000);
-  void tick();
-  return { close: async () => { clearInterval(timer); controller.abort(); await Promise.allSettled([...running]); } };
+  let currentTick: Promise<void> | null = null;
+  const dispatch = () => { currentTick ??= tick().finally(() => { currentTick = null; }); };
+  const timer = setInterval(dispatch, 2000);
+  dispatch();
+  return { close: async () => { clearInterval(timer); controller.abort(); await currentTick; await Promise.allSettled([...running]); } };
 }

@@ -6,10 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { DEFAULT_ANALYSIS_CONTROLS } from "@mint/core/analysis";
-import { analysisSettings, analysisWorkers, cancelAnalysis, enqueueAnalysis, similarAnalyzedTracks, trackAnalysis } from "@mint/core/analysis-db";
+import { advanceAnalysisBackfill, analysisBackfills, analysisSettings, analysisWorkers, cancelAnalysis, enqueueAnalysis, similarAnalyzedTracks, startAnalysisBackfill, trackAnalysis } from "@mint/core/analysis-db";
 import { analyzeAudio } from "./analysis-engine";
 import { authorizedAnalysisWorker, serveAnalysisWorker } from "./analysis-http";
 import { claimAnalysis, finishAnalysis, startAnalysisScheduler } from "./analysis-jobs";
@@ -48,7 +48,7 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
     globals.__mintDb = { db, pool }; config.musicDir = root; config.existingMusicDir = root;
     await mkdir(root);
     try {
-      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis"]) {
+      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0011_analysis_backfill"]) {
         const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
         for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
       }
@@ -166,7 +166,98 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
             body: JSON.stringify({ analysis: bass }),
           })).status, 409);
           assert.equal((await row(b.id)).status, "cancelled");
+          await setControls({ concurrency: 2 });
+          assert.equal(await enqueueAnalysis(db, { refresh: true, retryFailed: true }), 3);
+          const workerId = `analysis-parallel-${randomUUID()}`;
+          await Promise.all(Array.from({ length: 2 }, () => runRemoteAnalysis({
+            server: base, token: process.env.ANALYSIS_WORKER_TOKEN!, cacheDir,
+            signal: new AbortController().signal, once: true, workerId,
+          })));
+          assert.equal((await db.select().from(trackAnalysis)).filter((job) => job.status === "complete").length, 2);
+          assert.equal((await db.select().from(trackAnalysis)).filter((job) => job.status === "pending").length, 1);
+          assert.equal((await db.select().from(analysisWorkers).where(eq(analysisWorkers.id, workerId))).length, 1);
+          assert.deepEqual(await readdir(cacheDir), []);
         } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+      });
+      await suite.test("full-library scans exceed 500, resume atomically and never replace pending/running jobs", async () => {
+        await setControls({ paused: true });
+        const fixtures = await db.insert(schema.tracks).values(Array.from({ length: 1203 }, (_, i) => ({
+          title: `Bulk original ${i}`, artist: "Synthetic only", stage: "ready" as const, filePath: toneFile,
+        }))).returning({ id: schema.tracks.id });
+        const protectedIds = fixtures.slice(0, 2).map((track) => track.id);
+        const leaseId = randomUUID();
+        await db.insert(trackAnalysis).values([
+          { trackId: protectedIds[0]!, status: "running", attempts: 2, leaseId, leaseExpiresAt: new Date(Date.now() + 60_000) },
+          { trackId: protectedIds[1]!, status: "pending", attempts: 2 },
+          { trackId: fixtures[2]!.id, status: "failed", attempts: 3 },
+          { trackId: fixtures[3]!.id, status: "cancelled", attempts: 1 },
+        ]);
+        assert.ok(await startAnalysisBackfill(db, "all"));
+        assert.equal(await startAnalysisBackfill(db, "all"), null);
+        const first = await advanceAnalysisBackfill(db);
+        assert.equal(first?.scanned, 500);
+        assert.equal(first?.status, "queuing");
+        const [persisted] = await db.select().from(analysisBackfills);
+        assert.equal(persisted?.cursor, first?.cursor);
+        const concurrent = await Promise.all([advanceAnalysisBackfill(db), advanceAnalysisBackfill(db)]);
+        assert.ok(concurrent.some((scan) => scan?.status === "queued"));
+        const [finished] = await db.select().from(analysisBackfills);
+        assert.equal(finished?.scanned, 1206);
+        assert.equal(finished?.total, 1206);
+        assert.equal((await row(protectedIds[0]!)).leaseId, leaseId);
+        assert.equal((await row(protectedIds[0]!)).attempts, 2);
+        assert.equal((await row(protectedIds[1]!)).attempts, 2);
+        assert.equal((await row(fixtures[2]!.id)).status, "pending");
+        assert.equal((await row(fixtures[3]!.id)).status, "pending");
+        assert.equal(await claimAnalysis(), null, "bulk actions must not bypass pause");
+        const before = (await db.select().from(trackAnalysis)).length;
+        await advanceAnalysisBackfill(db);
+        assert.equal((await db.select().from(trackAnalysis)).length, before);
+        await startAnalysisBackfill(db, "all");
+        await advanceAnalysisBackfill(db);
+        await cancelAnalysis(db);
+        assert.equal((await advanceAnalysisBackfill(db))?.status, "cancelled");
+        assert.equal((await row(protectedIds[0]!)).status, "cancelled");
+        const remoteOnly = process.env.ANALYSIS_REMOTE_ONLY;
+        process.env.ANALYSIS_REMOTE_ONLY = "true";
+        const scan = async () => (await db.select().from(analysisBackfills))[0]!;
+        await startAnalysisBackfill(db, "all");
+        let scheduler = startAnalysisScheduler();
+        try {
+          let deadline = Date.now() + 5000;
+          while ((await scan()).scanned < 500 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+          assert.equal((await scan()).scanned, 500);
+          await scheduler.close();
+          scheduler = startAnalysisScheduler();
+          deadline = Date.now() + 8000;
+          while ((await scan()).status === "queuing" && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+          assert.equal((await scan()).scanned, 1206);
+          assert.equal((await scan()).status, "queued");
+          assert.ok((await db.select().from(analysisWorkers)).some((worker) => worker.mode === "coordinator"));
+          assert.equal(await claimAnalysis(), null, "paused remote-only scans queue without starting audio processing");
+        } finally {
+          await scheduler.close();
+          if (remoteOnly === undefined) delete process.env.ANALYSIS_REMOTE_ONLY; else process.env.ANALYSIS_REMOTE_ONLY = remoteOnly;
+        }
+        await db.delete(trackAnalysis).where(inArray(trackAnalysis.trackId, fixtures.map((track) => track.id)));
+        await db.delete(schema.tracks).where(inArray(schema.tracks.id, fixtures.map((track) => track.id)));
+      });
+      await suite.test("missing-only library scans preserve completed, failed and cancelled measurements", async () => {
+        await db.update(trackAnalysis).set({ status: "complete", result }).where(eq(trackAnalysis.trackId, a.id));
+        await db.update(trackAnalysis).set({ status: "failed" }).where(eq(trackAnalysis.trackId, b.id));
+        await db.update(trackAnalysis).set({ status: "cancelled" }).where(eq(trackAnalysis.trackId, c.id));
+        await startAnalysisBackfill(db, "missing");
+        assert.equal((await advanceAnalysisBackfill(db))?.queued, 0);
+        assert.equal((await row(a.id)).status, "complete");
+        assert.equal((await row(b.id)).status, "failed");
+        assert.equal((await row(c.id)).status, "cancelled");
+        await db.update(trackAnalysis).set({ version: 0 }).where(eq(trackAnalysis.trackId, b.id));
+        await startAnalysisBackfill(db, "missing");
+        assert.equal((await advanceAnalysisBackfill(db))?.queued, 1);
+        assert.equal((await row(b.id)).status, "pending");
+        await db.delete(schema.tracks);
+        assert.equal((await startAnalysisBackfill(db, "all"))?.status, "queued");
+        assert.equal((await advanceAnalysisBackfill(db))?.total, 0);
       });
     } finally {
       globals.__mintDb = previousDb; config.musicDir = previousRoot; config.existingMusicDir = previousExisting;

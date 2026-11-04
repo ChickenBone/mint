@@ -6,7 +6,9 @@ export const agentImage = () => process.env.AGENT_IMAGE ?? "ghcr.io/chickenbone/
 export function workerCompose() {
   return `# Mint volunteer worker: ${publicUrl()}/app/workers
 #   1. Put your token in a .env file next to this one:  MINT_WORKER_TOKEN=mint_wk_...
+#      Optional override: MINT_URL=https://your-mint-host
 #   2. docker compose up -d
+# Downloads only. Audio analysis uses a separate private/VPN-connected mint-analysis container.
 # Needs outbound HTTPS only. No ports are opened on this machine.
 name: mint-worker
 
@@ -15,7 +17,7 @@ services:
     image: ${agentImage()}
     restart: unless-stopped
     environment:
-      MINT_URL: ${publicUrl()}
+      MINT_URL: \${MINT_URL:-${publicUrl()}}
       MINT_WORKER_TOKEN: \${MINT_WORKER_TOKEN:?put MINT_WORKER_TOKEN in .env}
       COBALT_URL: http://cobalt:9000
       AGENT_CONCURRENCY: \${AGENT_CONCURRENCY:-2}

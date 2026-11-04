@@ -12,12 +12,12 @@ import { analyzeAudio } from "./analysis-engine";
 
 const leaseSchema = z.object({ lease: z.object({ trackId: z.uuid(), leaseId: z.uuid(), controls: analysisControlsSchema }).nullable() });
 
-export async function runRemoteAnalysis(options: { server: string; token: string; cacheDir: string; signal: AbortSignal; once?: boolean }) {
+export async function runRemoteAnalysis(options: { server: string; token: string; cacheDir: string; signal: AbortSignal; once?: boolean; workerId?: string }) {
   const base = new URL(options.server);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error("Analysis server must be an HTTP(S) URL without embedded credentials");
   if (options.token.length < 32) throw new Error("ANALYSIS_WORKER_TOKEN must be at least 32 characters");
   await mkdir(options.cacheDir, { recursive: true, mode: 0o700 });
-  const workerId = `analysis-${randomUUID()}`;
+  const workerId = options.workerId ?? `analysis-${randomUUID()}`;
   const request = async (endpoint: string, init: RequestInit = {}) => {
     const response = await fetch(new URL(endpoint, base), { ...init, redirect: "error",
       signal: init.signal ?? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
@@ -73,17 +73,23 @@ export async function runRemoteAnalysis(options: { server: string; token: string
 async function main() {
   const server = process.env.ANALYSIS_SERVER_URL, token = process.env.ANALYSIS_WORKER_TOKEN;
   if (!server || !token) throw new Error("ANALYSIS_SERVER_URL and a separate ANALYSIS_WORKER_TOKEN are required");
+  const concurrency = Number(process.env.ANALYSIS_CONCURRENCY ?? "1");
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 4) throw new Error("ANALYSIS_CONCURRENCY must be an integer from 1 to 4");
   const controller = new AbortController();
   process.once("SIGTERM", () => controller.abort());
   process.once("SIGINT", () => controller.abort());
-  while (!controller.signal.aborted) {
-    try { await runRemoteAnalysis({ server, token, cacheDir: process.env.ANALYSIS_CACHE_DIR ?? ".mint-analysis", signal: controller.signal }); }
-    catch (error) {
-      if (controller.signal.aborted) return;
-      console.error("Analysis worker connection failed", error instanceof Error ? error.message : "Unknown failure");
-      await sleep(10_000, undefined, { signal: controller.signal }).catch(() => undefined);
+  const workerId = `analysis-${randomUUID()}`;
+  console.log(`Mint analysis worker starting with ${concurrency} slot(s); global admin limits still apply.`);
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    while (!controller.signal.aborted) {
+      try { await runRemoteAnalysis({ server, token, workerId, cacheDir: process.env.ANALYSIS_CACHE_DIR ?? ".mint-analysis", signal: controller.signal }); }
+      catch (error) {
+        if (controller.signal.aborted) return;
+        console.error("Analysis worker connection failed; check the private/VPN server URL and separate analysis token", error instanceof Error ? error.message : "Unknown failure");
+        await sleep(10_000, undefined, { signal: controller.signal }).catch(() => undefined);
+      }
     }
-  }
+  }));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

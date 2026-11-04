@@ -17,6 +17,19 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("separate analysis machines have configurable resources without media-server credentials or open ports", () => {
+  const analysis = readFileSync(new URL("../../docker-compose.analysis.yml", import.meta.url), "utf8");
+  const env = { ANALYSIS_SERVER_URL: "http://100.64.0.10:8080", ANALYSIS_WORKER_TOKEN: "fixture-only-separate-analysis-token-at-least-32" };
+  const defaults = resolve(analysis, env).services.analysis;
+  assert.equal(defaults.environment.ANALYSIS_CONCURRENCY, "1");
+  assert.equal(defaults.ports, undefined);
+  for (const key of ["DATABASE_URL", "REDIS_URL", "PLEX_TOKEN", "MINT_WORKER_TOKEN"]) assert.equal(defaults.environment[key], undefined);
+  const powerful = resolve(analysis, { ...env, ANALYSIS_CONCURRENCY: "4", ANALYSIS_CPUS: "4", ANALYSIS_MEMORY_LIMIT: "3g" }).services.analysis;
+  assert.equal(powerful.environment.ANALYSIS_CONCURRENCY, "4");
+  assert.equal(Number(powerful.cpus), 4);
+  assert.equal(Number(powerful.mem_limit), 3 * 1024 ** 3);
+});
+
 test("NAS template is self-contained and uses project-relative bind folders", () => {
   const config = resolve(source);
   assert.equal(Object.keys(config.services).length, 13);

@@ -179,6 +179,38 @@ Docker and local builds no longer fetch Plexamp or require `player:prepare`, `ta
 
 **Optional separate analysis machine:** [`docker-compose.analysis.yml`](docker-compose.analysis.yml) uses the `mint-analysis` image with only `ANALYSIS_SERVER_URL`, a dedicated random `ANALYSIS_WORKER_TOKEN` (at least 32 characters), and disposable local scratch storage. Configure the same token on the pipeline worker and optionally set `ANALYSIS_REMOTE_ONLY=true` there. It needs no database, Redis, Plex credentials or originals mount: short-lived leased audio copies are analyzed and removed. The server URL must be reachable over your private/VPN network; Docker's `worker` hostname only resolves within its own network. Never publish worker 8080 to the public internet. The volunteer-acquisition token is unrelated. NAS users can edit the two analysis settings at the top of the template; leave them unchanged for local analysis. This optional image is published with V3.5, not the V3.1 foundation.
 
+To connect a powerful desktop over a VPN:
+
+1. Generate a dedicated secret with `openssl rand -hex 32`. Set `ANALYSIS_WORKER_TOKEN` to it on the **NAS pipeline worker**, and `ANALYSIS_REMOTE_ONLY=true` if the NAS should coordinate but never decode audio. Recreate that service after changing its environment. Do not put this token on the public web service.
+2. Make worker port 8080 reachable **only on the NAS's private/VPN interface**. For example, add this override to the NAS Compose project, replacing the example IP with the NAS's actual VPN address:
+
+   ```yaml
+   services:
+     worker:
+       ports:
+         - "100.64.0.10:8080:8080"
+   ```
+
+   Apply it along with your existing Compose file (`docker compose -f compose.yml -f compose.analysis-access.yml up -d --no-deps worker`). Restrict access to trusted analysis machines; do not bind to `0.0.0.0`, forward the router port, or add this endpoint to Cloudflare Tunnel. Port 8080 also serves private pipeline endpoints.
+3. On the desktop, save `docker-compose.analysis.yml` as `compose.yml` in a **separate directory** from your volunteer download worker. Create a private `.env` (`chmod 600 .env`) with:
+
+   ```dotenv
+   ANALYSIS_SERVER_URL=http://100.64.0.10:8080
+   ANALYSIS_WORKER_TOKEN=replace-with-the-separate-analysis-secret
+   ANALYSIS_CONCURRENCY=4
+   ANALYSIS_CPUS=4
+   ANALYSIS_MEMORY_LIMIT=3g
+   ```
+
+   Run `docker compose pull && docker compose up -d`, then `docker compose logs --tail=50 analysis`. Default allocation is one analysis slot, two CPUs and 768 MB; increase all three deliberately on a powerful machine. Multiple slots share one machine identity and still obey the global admin concurrency cap (maximum four).
+4. Open **Admin → Audio analysis**. Confirm a processor is connected, set **Concurrent files** to the desired global limit, and save the resource controls. Select **Analyze all missing files** for a complete missing-coverage scan, or confirm **Reprocess entire library** to also requeue completed, failed and cancelled files. Neither option interrupts or duplicates pending/running jobs. The NAS coordinator is shown separately from actual audio processors.
+
+Full-library scans persist their cursor and enqueue in batches of 500 with no total-library cap, resuming after worker restarts. Scan progress reports files checked and jobs added; finishing the scan is not the same as finishing audio processing. Pause, enable, UTC schedule and per-file budgets still apply to processing, including after “reprocess.” Cancel stops both further bulk queueing and existing pending/running jobs; completed measurements and originals are kept. Failed/cancelled files are not included by missing-only scans unless their analysis version is obsolete. Adding a machine does not automatically reprocess completed music.
+
+This offloads **Mint's measured audio analysis**, not Plex's own sonic scans. Any optional Plex analysis still runs on the Plex server.
+
+**Updating this analysis change:** pipeline worker startup applies migration `0011_analysis_backfill`. Back up PostgreSQL and update/restart the pipeline worker before the web image. Also update `mint-analysis` on the desktop to use configurable parallel slots. These changes do not require a Plex rescan or a new Plex claim.
+
 Keep `/volume2/MusicVol2` mounted read-only at `/existing-music` in the worker. If Plex also sees those originals at `/existing-music`, keep `EXISTING_PLEX_MUSIC_DIR=/existing-music`, your existing Plex token, section ID `2` and read-only configuration. After recreating services, sign in, open **Music**, and play an indexed, downloaded track. Open Jobs or Settings and confirm playback continues. Missing tracks still need successful indexing; this update does not repair mismatched mounts. Logged-out `/app/music` redirects to login; native catalog/session/media requests require approved membership.
 
 Everything runs from one compose file on your server. Volunteer workers are optional extra machines. The NAS template adds `cloudflared → Caddy` as the public entry path, with no published Caddy ports. The diagram below shows the direct-hosting command-line stack; both use the same application and media boundaries.
@@ -365,14 +397,20 @@ Anyone with an approved account can lend a machine to rip YouTube audio. The mac
 
    ```bash
    mkdir mint-worker && cd mint-worker
-   curl -o docker-compose.yml https://mint.chickenbone.dev/worker.yml
+   curl -fsSL -o compose.yml https://mint.chickenbone.dev/worker.yml
    echo "MINT_WORKER_TOKEN=mint_wk_..." > .env
+   echo "MINT_URL=https://mint.chickenbone.dev" >> .env
+   chmod 600 .env
    docker compose up -d
    ```
 
 3. The worker appears online within a minute. Admins approve new workers in **Admin → Workers**, unless `WORKER_AUTO_APPROVE=true`. Owners can revoke their own workers at any time, and revoking releases any job the worker held.
 
 The image is `ghcr.io/chickenbone/mint-agent`. It bundles nothing but Node, and runs read‑only with all capabilities dropped. The compose file pairs it with a private Cobalt container. Tuning: `AGENT_CONCURRENCY` (1–4, default 2).
+
+Volunteer agents perform **downloads only**, not sonic/audio analysis. Use the separate private-network analysis setup above for that work. The NAS template defaults to local acquisition (`REMOTE_DOWNLOADS=never`); set the NAS pipeline worker to `REMOTE_DOWNLOADS=auto` or `always` if you want approved volunteers to receive downloads.
+
+**“Never connected” / heartbeat `fetch failed`:** look at the startup log's `mint` address. `http://localhost:3000` inside a container means the agent is calling itself. Older generated Compose downloads could bake in that build-time URL; new downloads are generated at runtime and support a `.env` override. In an **existing** Compose file, explicitly change `services.agent.environment.MINT_URL` to `https://mint.chickenbone.dev` (or `${MINT_URL:?set your public Mint HTTPS origin}`), then run `docker compose up -d --force-recreate agent`. A `.env` entry alone does not override an old hardcoded Compose environment value. No NAS port needs opening for volunteers. Check `docker compose logs --tail=50 agent`; connection failures now include the target origin and network error code when available. HTTP 401/403 indicates a token problem instead: match the token hint to the registered machine, revoke any shared/exposed token, and issue a new one.
 
 > GHCR packages from a private repository are private. After the first release, open the **mint-agent** package on GitHub → *Package settings* → *Change visibility* → **Public** so volunteers can pull it.
 

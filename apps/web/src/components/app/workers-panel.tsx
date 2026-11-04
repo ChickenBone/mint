@@ -61,15 +61,16 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
         "mkdir mint-worker && cd mint-worker",
         `curl -fsSL ${origin}/worker.yml -o compose.yml`,
         `echo "MINT_WORKER_TOKEN=${state.token}" > .env`,
+        `echo "MINT_URL=${origin}" >> .env`,
         "docker compose up -d",
       ].join("\n")
     : "";
 
   return (
-    <div className="grid gap-12">
+    <div className="grid min-w-0 grid-cols-1 gap-12">
       <section aria-labelledby="new-worker">
         <h2 id="new-worker" className="text-xl font-bold">Add a volunteer</h2>
-        <p className="mt-1 max-w-2xl text-sm text-muted">Each machine gets its own token so you can revoke one without touching the others.</p>
+        <p className="mt-1 max-w-2xl text-sm text-muted">These workers download through Cobalt; they do not analyze audio. Each machine gets its own token so you can revoke one without touching the others. Admins configure separate private-network analysis workers in Audio analysis.</p>
         <form action={action} className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
           <Field label="Name" name="name" placeholder="living-room-nas" required maxLength={40} error={state?.error} className="flex-1" autoComplete="off" />
           <SubmitButton pendingLabel="Creating…" className="sm:mb-0">Create token</SubmitButton>
@@ -100,6 +101,7 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
 
       <section aria-labelledby="your-workers">
         <h2 id="your-workers" className="text-xl font-bold">Your volunteer workers</h2>
+        <p className="mt-2 max-w-prose text-sm text-muted">Never connected? Check that Compose passes MINT_URL with your public Mint HTTPS address, not localhost. Confirm the token hint below matches your .env token, then run <code className="font-mono">docker compose up -d --force-recreate agent</code>. Never share the full token.</p>
         {workers.length === 0 ? (
           <div className="mt-4 flex max-w-xl items-center gap-4 rounded-xl bg-elevated p-5 text-muted">
             <Server className="size-8 shrink-0 text-faint" aria-hidden />

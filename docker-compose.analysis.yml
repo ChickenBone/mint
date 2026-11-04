@@ -10,9 +10,10 @@ services:
       ANALYSIS_SERVER_URL: ${ANALYSIS_SERVER_URL:?Set the private analysis server URL}
       ANALYSIS_WORKER_TOKEN: ${ANALYSIS_WORKER_TOKEN:?Set a separate analysis worker token}
       ANALYSIS_CACHE_DIR: /work
+      ANALYSIS_CONCURRENCY: ${ANALYSIS_CONCURRENCY:-1}
     volumes: [analysis_cache:/work]
-    mem_limit: 768m
-    cpus: 2
+    mem_limit: ${ANALYSIS_MEMORY_LIMIT:-768m}
+    cpus: ${ANALYSIS_CPUS:-2}
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     logging:

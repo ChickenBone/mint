@@ -9,6 +9,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { connectionFailure, loopbackUrl, mintUrl } from "./connection";
 import {
   AGENT_PROTOCOL_VERSION,
   type ClaimedJob,
@@ -33,7 +34,7 @@ function env(name: string, fallback?: string): string {
 }
 
 const cfg = {
-  url: env("MINT_URL", "https://mint.chickenbone.dev").replace(/\/$/, ""),
+  url: mintUrl(env("MINT_URL", "https://mint.chickenbone.dev")),
   token: env("MINT_WORKER_TOKEN"),
   cobalt: env("COBALT_URL", "http://cobalt:9000").replace(/\/$/, ""),
   cobaltKey: process.env.COBALT_API_KEY,
@@ -132,7 +133,7 @@ async function heartbeat() {
       state.status = "rejected";
       return;
     }
-    log("warn", "heartbeat failed", { error: (err as Error).message });
+    log("warn", "heartbeat failed; check MINT_URL, DNS and outbound HTTPS access", { mint: cfg.url, ...connectionFailure(err) });
   }
 }
 
@@ -327,6 +328,7 @@ async function main() {
   for (const f of await fs.readdir(cfg.workDir)) if (f.endsWith(".audio")) await fs.unlink(path.join(cfg.workDir, f)).catch(() => undefined);
 
   log("info", `mint-agent ${VERSION} starting`, { mint: cfg.url, cobalt: cfg.cobalt, concurrency: cfg.concurrency });
+  if (loopbackUrl(cfg.url)) log("warn", "MINT_URL points to this container. For a remote worker, set MINT_URL to your public Mint HTTPS origin in Compose environment.");
   await heartbeat();
   const loops = [heartbeatLoop(), ...Array.from({ length: cfg.concurrency }, (_, i) => slot(i))];
 

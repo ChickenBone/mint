@@ -27,10 +27,78 @@ export const analysisSettings = pgTable("analysis_settings", {
 
 export const analysisWorkers = pgTable("analysis_workers", {
   id: text("id").primaryKey(),
-  mode: text("mode", { enum: ["local", "remote"] }).notNull(),
+  mode: text("mode", { enum: ["local", "remote", "coordinator"] }).notNull(),
   seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   error: text("error"),
 });
+
+export const analysisBackfills = pgTable("analysis_backfills", {
+  id: text("id").primaryKey().default("global"),
+  mode: text("mode", { enum: ["missing", "all"] }).notNull(),
+  status: text("status", { enum: ["queuing", "queued", "cancelled"] }).notNull(),
+  cursor: uuid("cursor"),
+  upperBound: uuid("upper_bound"),
+  total: integer("total").notNull().default(0),
+  scanned: integer("scanned").notNull().default(0),
+  queued: integer("queued").notNull().default(0),
+  requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export async function startAnalysisBackfill(db: Db, mode: "missing" | "all", requestedBy?: string) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(35051002)`);
+    const [active] = await tx.select().from(analysisBackfills).where(eq(analysisBackfills.id, "global"));
+    if (active?.status === "queuing") return null;
+    const result = await tx.execute<{ total: number; upper_bound: string | null; started_at: string }>(sql`
+      select count(*)::integer as total, max(id::text)::uuid as upper_bound, now() as started_at from tracks
+      where stage in ('ready','analyzing') and coalesce(file_path,existing_file_path) is not null and created_at <= now()`);
+    const snapshot = result.rows[0]!;
+    const values = {
+      mode, status: snapshot.total ? "queuing" as const : "queued" as const,
+      cursor: null, upperBound: snapshot.upper_bound, total: snapshot.total, scanned: 0, queued: 0,
+      requestedBy: requestedBy ?? null, startedAt: new Date(snapshot.started_at), updatedAt: new Date(),
+    };
+    const [backfill] = await tx.insert(analysisBackfills).values(values)
+      .onConflictDoUpdate({ target: analysisBackfills.id, set: values }).returning();
+    return backfill!;
+  });
+}
+
+/** A bounded keyset scan persists its cursor atomically with queue inserts, including across restarts. */
+export async function advanceAnalysisBackfill(db: Db) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`select pg_advisory_xact_lock(35051002)`);
+    const [run] = await tx.select().from(analysisBackfills).where(eq(analysisBackfills.id, "global"));
+    if (!run || run.status !== "queuing") return run ?? null;
+    const batch = await tx.execute<{ id: string }>(sql`
+      select id from tracks where id <= ${run.upperBound}::uuid and created_at <= ${run.startedAt}
+        ${run.cursor ? sql`and id > ${run.cursor}::uuid` : sql``}
+        and stage in ('ready','analyzing') and coalesce(file_path,existing_file_path) is not null
+      order by id limit 500`);
+    const ids = batch.rows.map((row) => row.id);
+    let queued = 0;
+    if (ids.length) {
+      const result = await tx.execute(sql`
+        insert into track_analysis (track_id,version,status,requested_by,updated_at)
+        select ${tracks.id},${ANALYSIS_VERSION},'pending',${run.requestedBy}::uuid,now() from ${tracks}
+        where ${inArray(tracks.id, ids)}
+        on conflict (track_id) do update set version=excluded.version,status='pending',error=null,
+          attempts=0,lease_id=null,lease_expires_at=null,updated_at=now(),requested_by=excluded.requested_by
+        where track_analysis.status <> 'running'
+          and (track_analysis.status <> 'pending' or track_analysis.version <> ${ANALYSIS_VERSION})
+          and (${run.mode === "all"} or track_analysis.version <> ${ANALYSIS_VERSION})
+        returning track_id`);
+      queued = result.rowCount ?? 0;
+    }
+    const [updated] = await tx.update(analysisBackfills).set({
+      cursor: ids.at(-1) ?? run.cursor, status: ids.length < 500 ? "queued" : "queuing",
+      scanned: run.scanned + ids.length, queued: run.queued + queued, updatedAt: new Date(),
+    }).where(eq(analysisBackfills.id, "global")).returning();
+    return updated!;
+  });
+}
 
 export async function enqueueAnalysis(db: Db, options: { trackId?: string; requestedBy?: string; retryFailed?: boolean; refresh?: boolean } = {}) {
   const rows = await db.execute(sql`
@@ -42,6 +110,7 @@ export async function enqueueAnalysis(db: Db, options: { trackId?: string; reque
       and (a.track_id is null or a.version <> ${ANALYSIS_VERSION}
         ${options.retryFailed ? sql`or a.status = 'failed'` : sql``}
         ${options.refresh ? sql`or a.status in ('complete','cancelled')` : sql``})
+    and (a.status is null or a.status <> 'running')
     order by t.id limit 500
     on conflict (track_id) do update set version = excluded.version, status = 'pending', error = null,
       attempts = 0, lease_id = null, lease_expires_at = null, updated_at = now(), requested_by = excluded.requested_by
@@ -51,9 +120,16 @@ export async function enqueueAnalysis(db: Db, options: { trackId?: string; reque
 }
 
 export async function cancelAnalysis(db: Db, trackId?: string) {
-  return db.update(trackAnalysis).set({ status: "cancelled", leaseId: null, leaseExpiresAt: null, updatedAt: new Date() })
-    .where(and(inArray(trackAnalysis.status, ["pending", "running"]), ...(trackId ? [eq(trackAnalysis.trackId, trackId)] : [])))
-    .returning({ trackId: trackAnalysis.trackId });
+  return db.transaction(async (tx) => {
+    if (!trackId) {
+      await tx.execute(sql`select pg_advisory_xact_lock(35051002)`);
+      await tx.update(analysisBackfills).set({ status: "cancelled", updatedAt: new Date() })
+        .where(and(eq(analysisBackfills.id, "global"), eq(analysisBackfills.status, "queuing")));
+    }
+    return tx.update(trackAnalysis).set({ status: "cancelled", leaseId: null, leaseExpiresAt: null, updatedAt: new Date() })
+      .where(and(inArray(trackAnalysis.status, ["pending", "running"]), ...(trackId ? [eq(trackAnalysis.trackId, trackId)] : [])))
+      .returning({ trackId: trackAnalysis.trackId });
+  });
 }
 
 export async function similarAnalyzedTracks(db: Db, seedTrackIds: string[], limit = 30) {

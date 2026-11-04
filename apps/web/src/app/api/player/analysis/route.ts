@@ -1,6 +1,6 @@
 import { getDb, schema } from "@mint/core/db";
 import { ANALYSIS_VERSION, DEFAULT_ANALYSIS_CONTROLS, analysisControlsSchema } from "@mint/core/analysis";
-import { analysisSettings, analysisWorkers, cancelAnalysis, enqueueAnalysis, trackAnalysis } from "@mint/core/analysis-db";
+import { analysisBackfills, analysisSettings, analysisWorkers, cancelAnalysis, enqueueAnalysis, startAnalysisBackfill, trackAnalysis } from "@mint/core/analysis-db";
 import { PLAYABLE } from "@mint/core/playback";
 import { count, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -13,7 +13,7 @@ export async function GET() {
   if (auth.error) return auth.error;
   try {
     const db = getDb();
-    const [states, [total], [settings], workers, recent] = await Promise.all([
+    const [states, [total], [settings], workers, recent, [backfill]] = await Promise.all([
       db.select({ status: trackAnalysis.status, count: count() }).from(trackAnalysis).groupBy(trackAnalysis.status),
       db.select({ count: count() }).from(schema.tracks).where(PLAYABLE),
       db.select().from(analysisSettings).where(eq(analysisSettings.id, "global")),
@@ -22,6 +22,7 @@ export async function GET() {
         status: trackAnalysis.status, attempts: trackAnalysis.attempts, error: trackAnalysis.error, updatedAt: trackAnalysis.updatedAt,
         version: trackAnalysis.version }).from(trackAnalysis).innerJoin(schema.tracks, eq(schema.tracks.id, trackAnalysis.trackId))
         .orderBy(desc(trackAnalysis.updatedAt)).limit(50),
+      db.select().from(analysisBackfills).where(eq(analysisBackfills.id, "global")),
     ]);
     const controls = analysisControlsSchema.safeParse(settings?.controls);
     const statuses = Object.fromEntries(states.map((row) => [row.status, row.count]));
@@ -32,7 +33,7 @@ export async function GET() {
       version: ANALYSIS_VERSION, total: total?.count ?? 0, covered: current?.count ?? 0, statuses,
       controls: controls.success ? controls.data : DEFAULT_ANALYSIS_CONTROLS,
       workers: workers.map((worker) => ({ ...worker, online: Date.now() - worker.seenAt.getTime() < 60_000 })),
-      recent, notes: [
+      recent, backfill: backfill ?? null, notes: [
         "Original media is read-only. CPU-only measured audio descriptors are not neural embeddings.",
         "Failed/cancelled jobs require explicit retry. Interrupted leases resume automatically; completed files are re-fingerprinted weekly.",
         "Scheduling uses UTC. Pause stops active local analysis within two seconds; limits apply globally across workers.",
@@ -49,6 +50,7 @@ export async function GET() {
 const change = z.discriminatedUnion("action", [
   z.object({ action: z.literal("settings"), controls: analysisControlsSchema }).strict(),
   z.object({ action: z.enum(["backfill", "retry-failed", "refresh", "cancel-all"]) }).strict(),
+  z.object({ action: z.enum(["process-all", "reprocess-all"]) }).strict(),
 ]);
 export async function POST(request: Request) {
   const auth = await analysisAdmin(request);
@@ -66,6 +68,11 @@ export async function POST(request: Request) {
       return json({ controls: data.controls });
     }
     if (data.action === "cancel-all") return json({ cancelled: (await cancelAnalysis(db)).length });
+    if (data.action === "process-all" || data.action === "reprocess-all") {
+      const backfill = await startAnalysisBackfill(db, data.action === "reprocess-all" ? "all" : "missing", auth.user.id);
+      if (!backfill) return json({ error: "A library scan is already queuing files. Wait for it to finish or cancel it first." }, 409);
+      return json({ backfill }, 202);
+    }
     return json({ queued: await enqueueAnalysis(db, {
       requestedBy: auth.user.id, retryFailed: data.action === "retry-failed", refresh: data.action === "refresh",
     }), batchLimit: 500 });
