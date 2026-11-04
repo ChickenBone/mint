@@ -26,8 +26,8 @@ export default async function Home() {
             Every song you like, on a shelf we&nbsp;own.
           </h1>
           <p className="rise mt-8 max-w-xl text-lg text-muted sm:text-xl" style={{ "--rise-delay": "120ms" } as React.CSSProperties}>
-            Mint watches your YouTube Music likes, downloads each song to our server and serves it through Plexamp. Every cover on this page is
-            already here.
+            Bring your YouTube Music likes into a self-hosted music library. Listen in Mint, keep your files on our server, and follow every
+            download as it lands. Plex keeps the library organized behind the scenes.
           </p>
           <div className="rise mt-10 flex flex-wrap items-center gap-3" style={{ "--rise-delay": "220ms" } as React.CSSProperties}>
             <Link

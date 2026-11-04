@@ -32,7 +32,7 @@ export default async function Liked() {
         }
         sub={
           <p className="tabular">
-            {user.name} · {formatCount(tracks.length)} songs · {formatHours(secs)}. In Plexamp as <span className="text-fg">Mint · {user.name} · Liked</span>.
+            {user.name} · {formatCount(tracks.length)} songs · {formatHours(secs)}. Your synced YouTube Music likes, together in Mint.
           </p>
         }
       />

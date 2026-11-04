@@ -67,7 +67,7 @@ export function LiveStats({ initial }: { initial: Stats }) {
           <div className="mt-3 h-3 overflow-hidden rounded-full bg-hover" aria-hidden>
             <div className="h-full bg-warn transition-[width] duration-700 ease-out-expo" style={{ width: `${sonicShare * 100}%` }} />
           </div>
-          <p className="mt-3 text-sm text-faint">Analysed songs work with Plexamp Sonic Radio, Sweet Fades and sonically similar mixes.</p>
+          <p className="mt-3 text-sm text-faint">Plex-reported sonic coverage. Mint&apos;s own audio measurements and Smart Fades are managed separately.</p>
         </div>
       </div>
     </div>
