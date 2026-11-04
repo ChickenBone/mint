@@ -9,13 +9,13 @@ web
 ## Users
 - **Members**: approved people who link their YouTube Music (Google) account. Mint mirrors their liked songs and chosen playlists into a self-hosted Plex library, and they listen in Mint. They use the dashboard to watch progress, manage what syncs, and browse what they own.
 - **Admin (operator)**: runs the host server. Approves access requests, watches service health, and retries or cancels jobs.
-- **Public visitors**: anyone on mint.chickenbone.dev. They see live library stats and the job pipeline, browse the library (each song links out to YouTube Music), and can request access. The site never plays audio.
+- **Public visitors**: browse library metadata, artwork and chart availability, and request access. They cannot play audio or request acquisition. Library activity remains available separately from everyday browsing.
 
 ## Product Purpose
 Mint turns a person's YouTube Music likes into real files on a self-hosted server. It finds album-quality releases through Lidarr and TorBox, falls back to a self-hosted Cobalt rip from YouTube, tags the files, and imports them into Plex. Mint owns the listening experience; Plex remains the private library server. The job is done when a song liked on a phone is available to listen to without anyone touching it.
 
 ## Positioning
-Mint is a single live pipeline from "liked" to "on my own server," and every step is visible in real time over WebSockets. The public front page shows the pipeline running.
+Mint is a self-hosted listening service: private files, personal collections and discovery in one cohesive player. Its acquisition pipeline remains observable in management, not the organizing principle of listening.
 
 ## Operating Context
 - Hosted at mint.chickenbone.dev with Docker Compose. Images are published to GHCR from GitHub Actions.
@@ -38,13 +38,13 @@ Mint is a single live pipeline from "liked" to "on my own server," and every ste
 
 ## Brand Commitments
 - Name: **Mint**.
-- The member app must feel like Spotify: a sidebar library, playable track tables, artwork-led music views and persistent playback. Mint owns the entire interface and audio engine; navigation never remounts playback. Keep the existing dark/Figtree/mint visual identity and deliberate reduced-motion-aware animation.
+- The approved **Listening room** direction is spacious and artwork-first: Home, Discover and Library lead; collections remain close and operational tools live in Settings/Management. Desktop and mobile share destinations. Mint owns the interface and audio engine; navigation never remounts playback. Keep dark/Figtree/mint identity and restrained reduced-motion-aware animation.
 
 ## Evidence on Hand
 - There are no users, testimonials, or metrics yet. All stats on the front page must come from the live database and must never be invented.
 
 ## Product Principles
-1. Show the machine. Every job's stage and progress is visible, live.
+1. Music first, machinery within reach. Every job's progress and failure remains visible in management.
 2. Keep a hard wall between the public app and the media services.
 3. Fully automatic once linked. Manual actions are for exceptions only.
 4. Use album quality first and fall back to YouTube, and always label which source a file came from.

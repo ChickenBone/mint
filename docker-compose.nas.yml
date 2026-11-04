@@ -176,6 +176,7 @@ services:
     environment:
       MINT_DOMAIN: *domain
       PLAYBACK_WORKER_URL: http://worker:8080
+      MINT_CHARTS_ENABLED: "true" # Set false to disable external chart requests.
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
       SPOTIFY_CLIENT_ID: *spotify-id

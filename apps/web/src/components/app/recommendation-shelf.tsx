@@ -19,7 +19,7 @@ export function RecommendationShelf({ items }: { items: { track: TrackView; reas
       <div className="relative">
         <button disabled={!player?.ready || player.busy} aria-label={`Play ${track.title}`} className="block w-full rounded-md disabled:opacity-40" onClick={() => play(index)}>
           <Artwork track={track} className="w-full rounded-md" />
-          <span className="absolute bottom-2 right-2 grid size-11 place-items-center rounded-full bg-mint text-mint-ink transition-transform group-hover:scale-105 motion-reduce:transform-none"><Play className="size-5" fill="currentColor" /></span>
+          <span className="absolute bottom-3 right-3 grid size-11 place-items-center rounded-full bg-mint text-mint-ink opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"><Play className="size-5" fill="currentColor" /></span>
         </button>
       </div>
       <div className="mt-3 flex items-start gap-1"><div className="min-w-0 flex-1">

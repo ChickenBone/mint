@@ -9,6 +9,10 @@ import { PlaylistToggle } from "@/components/app/playlist-toggle";
 import { requireUser } from "@/lib/auth";
 import { getPlaylists, getYoutubeAccount } from "@/lib/data";
 import { timeAgo } from "@/lib/format";
+import { SyncPanel } from "@/components/app/sync-panel";
+import { syncStateOf } from "@/lib/data";
+import { SignOut } from "@/components/app/sign-out";
+import { ArrowUpRight } from "lucide-react";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -37,7 +41,21 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader title="Your space" sub="Your collection, connected accounts and the tools behind your music." />
+      <nav aria-label="Your listening and management tools" className="mb-12 grid gap-x-10 sm:grid-cols-2">
+        {[
+          ["/app/collections", "Your collection", "Playlists, Mint likes, smart rules and collaboration"],
+          ["/app/downloads", "Downloads", "Offline music and device storage"],
+          ["/app/history", "Listening history", "Recent listens, private sessions and history controls"],
+          ["/app/devices", "Devices & parties", "Listening handoff, remote controls and shared queues"],
+          ["/app/jobs", "Activity & requests", "Acquisition progress, failures, retries and cancellation"],
+          ["/app/library", "Library activity", "Every indexed and incoming song, including metadata status"],
+          ["/app/workers", "Workers", "Register and manage your download machines"],
+          ...(user.role === "admin" ? [["/app/admin", "Admin", "Approvals, Plex, audio analysis and service diagnostics"]] : []),
+        ].map(([href, title, description]) => <Link key={href} href={href!} className="group flex items-center justify-between gap-4 border-b border-line py-6">
+          <span><span className="block font-semibold">{title}</span><span className="mt-1 block text-sm leading-relaxed text-muted">{description}</span></span><ArrowUpRight className="size-4 shrink-0 text-muted group-hover:text-fg" />
+        </Link>)}
+      </nav>
       {sp.linked && <p className="mb-6 rounded-lg bg-mint/10 px-4 py-3 text-sm text-mint" role="status">YouTube Music is linked. Your first sync has started.</p>}
       {sp.error && (
         <p className="mb-6 rounded-lg bg-danger/10 px-4 py-3 text-sm text-danger" role="alert">
@@ -47,6 +65,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
       <div className="max-w-3xl">
         <Section title="YouTube Music">
+          {acct && <div className="mb-5"><SyncPanel initial={syncStateOf(acct)} /></div>}
           {acct ? (
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -141,6 +160,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
           <p className="text-muted">
             Signed in as <span className="text-fg">{user.email}</span>.
           </p>
+          <div className="mt-4"><SignOut /></div>
         </Section>
       </div>
     </>

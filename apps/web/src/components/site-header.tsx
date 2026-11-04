@@ -9,10 +9,10 @@ export async function SiteHeader() {
     <header className="sticky top-0 z-30 border-b border-line/60 bg-bg/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 min-[400px]:gap-3 sm:gap-6 sm:px-8">
         <Logo />
-        <nav className="flex items-center gap-3 min-[400px]:gap-4 sm:gap-5 text-sm font-medium text-muted">
-          <Link href="/browse" className="hidden transition-colors hover:text-fg min-[360px]:inline">Browse</Link>
-          <Link href="/#pipeline" className="hidden transition-colors hover:text-fg sm:inline">Pipeline</Link>
-          <Link href="/#how" className="hidden transition-colors hover:text-fg sm:inline">How it works</Link>
+        <nav aria-label="Public navigation" className="hidden items-center gap-5 text-sm font-medium text-muted sm:flex">
+          <Link href="/browse" className="transition-colors hover:text-fg">Browse</Link>
+          <Link href="/charts" className="transition-colors hover:text-fg">Charts</Link>
+          <Link href="/#how" className="transition-colors hover:text-fg">How it works</Link>
         </nav>
         <span className="ml-auto hidden sm:block">
           <LiveDot />
@@ -34,6 +34,11 @@ export async function SiteHeader() {
           )}
         </div>
       </div>
+      <nav aria-label="Public navigation" className="flex gap-6 border-t border-line/60 px-5 text-sm font-medium text-muted sm:hidden">
+        <Link href="/browse" className="inline-flex min-h-11 items-center hover:text-fg">Browse</Link>
+        <Link href="/charts" className="inline-flex min-h-11 items-center hover:text-fg">Charts</Link>
+        <Link href="/#how" className="inline-flex min-h-11 items-center hover:text-fg">How it works</Link>
+      </nav>
     </header>
   );
 }
@@ -43,9 +48,7 @@ export function SiteFooter() {
     <footer className="border-t border-line/60">
       <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-8 text-sm text-faint sm:flex-row sm:items-center sm:justify-between sm:px-8">
         <p>Mint is a private library for approved members. Public visitors can browse; members can listen.</p>
-        <p>
-          Listen in your browser or with <span className="text-muted">Plexamp</span>.
-        </p>
+        <Link href="/activity" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Library activity</Link>
       </div>
     </footer>
   );

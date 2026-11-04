@@ -7,8 +7,13 @@ import { MusicError } from "@mint/core/music";
 const recording = z.object({
   id: z.uuid(), title: z.string().trim().min(1).max(1000), artist: z.string().trim().min(1).max(1000),
   album: z.string().max(1000).nullable(), durationSec: z.number().int().positive().nullable(),
+  isrcs: z.array(z.string().max(100)).max(100).optional(),
 });
 export type RequestRecording = z.infer<typeof recording>;
+const normalize = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const sameRecordingMetadata = (track: { title: string; artist: string; durationSec: number | null }, item: RequestRecording) =>
+  normalize(track.title) === normalize(item.title) && normalize(track.artist) === normalize(item.artist) &&
+  (!track.durationSec || !item.durationSec || Math.abs(track.durationSec - item.durationSec) <= 2.5);
 export function youtubeSource(value?: string) {
   if (!value?.trim()) return null;
   let url: URL;
@@ -18,10 +23,11 @@ export function youtubeSource(value?: string) {
   if (!id || !/^[A-Za-z0-9_-]{11}$/.test(id)) throw new MusicError("Use a YouTube video link, not a playlist or channel.");
   return id;
 }
-export async function searchRecordings(userId: string, query: string, fetcher: typeof fetch = fetch) {
+export async function searchRecordings(userId: string, query: string, fetcher: typeof fetch = fetch, isrc?: string | null) {
   const escaped = query.replace(/(["\\+\-!(){}[\]^~*?:/]|&&|\|\|)/g, "\\$1");
   const url = new URL("https://musicbrainz.org/ws/2/recording");
-  url.search = new URLSearchParams({ query: escaped, fmt: "json", limit: "10" }).toString();
+  const identifier = isrc?.replaceAll("-", "").toUpperCase();
+  url.search = new URLSearchParams({ query: identifier && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(identifier) ? `isrc:${identifier}` : escaped, fmt: "json", limit: "10" }).toString();
   const response = await fetcher(url, { headers: { "user-agent": process.env.MUSICBRAINZ_USER_AGENT ?? "Mint/3.5 ( https://github.com/ChickenBone/mint )", accept: "application/json" }, signal: AbortSignal.timeout(10000) });
   if (!response.ok) throw new MusicError(response.status === 429 || response.status === 503 ? "MusicBrainz is busy. Wait a few seconds and search again." : "The recording catalog could not be reached. Try again.", 503);
   const reader = response.body?.getReader();
@@ -35,31 +41,37 @@ export async function searchRecordings(userId: string, query: string, fetcher: t
     id: z.uuid(), title: z.string(), length: z.number().nullish(),
     "artist-credit": z.array(z.object({ name: z.string() })).optional(),
     releases: z.array(z.object({ title: z.string() })).optional(),
+    isrcs: z.array(z.string().max(100)).max(100).optional(),
   })).max(10) }).parse(body);
   const items = raw.recordings.flatMap((item) => {
     const parsed = recording.safeParse({ id: item.id, title: item.title, artist: item["artist-credit"]?.map((credit) => credit.name).join(" / ") ?? "",
-      album: item.releases?.[0]?.title ?? null, durationSec: item.length ? Math.round(item.length / 1000) : null });
+      album: item.releases?.[0]?.title ?? null, durationSec: item.length ? Math.round(item.length / 1000) : null,
+      isrcs: item.isrcs?.map((isrc) => isrc.replaceAll("-", "").toUpperCase()) });
     return parsed.success ? [parsed.data] : [];
   });
-  const existing = items.length ? await getDb().select({ id: schema.tracks.id, recordingId: schema.tracks.mbRecordingId, stage: schema.tracks.stage }).from(schema.tracks).where(inArray(schema.tracks.mbRecordingId, items.map((item) => item.id))) : [];
+  const existing = items.length ? await getDb().select({ id: schema.tracks.id, recordingId: schema.tracks.mbRecordingId, stage: schema.tracks.stage }).from(schema.tracks).where(inArray(schema.tracks.mbRecordingId, items.map((item) => item.id))).limit(210) : [];
   return items.map((item) => ({ ...item, existing: existing.find((track) => track.recordingId === item.id) ?? null,
     token: signToken("music-request", { userId, recording: item }, 15 * 60_000) }));
 }
-export async function requestRecording(userId: string, token: string, source?: string) {
+export function readRequestRecording(userId: string, token: string) {
   const raw = verifyToken<{ userId: string; recording: unknown }>("music-request", token);
   if (!raw || raw.userId !== userId) throw new MusicError("This search result expired. Search for the song again.", 400);
-  const item = recording.parse(raw.recording), videoId = youtubeSource(source);
+  return recording.parse(raw.recording);
+}
+export async function requestRecording(userId: string, token: string, source?: string) {
+  const item = readRequestRecording(userId, token), videoId = youtubeSource(source);
   return getDb().transaction(async (tx) => {
     if (videoId) await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`video:${videoId}`}, 783))`);
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${item.id}, 783))`);
-    const candidates = await tx.select().from(schema.tracks).where(eq(schema.tracks.mbRecordingId, item.id)).orderBy(sql`case when ${schema.tracks.stage} in ('ready','analyzing') then 0 else 1 end`).limit(1).for("update");
+    const candidates = await tx.select().from(schema.tracks).where(eq(schema.tracks.mbRecordingId, item.id)).orderBy(sql`case when ${schema.tracks.stage} in ('ready','analyzing') then 0 else 1 end`).limit(21).for("update");
+    if (candidates.length > 1) throw new MusicError("Multiple library editions share this recording. Open Library and choose the exact edition; no new acquisition was started.", 409);
     let track = candidates[0];
+    if (track && !sameRecordingMetadata(track, item)) throw new MusicError("The indexed recording has conflicting version or duration metadata. Check this edition in Library before requesting it.", 409);
     if (videoId && !track?.youtubeVideoId) {
       const [existing] = await tx.select().from(schema.tracks).where(eq(schema.tracks.youtubeVideoId, videoId)).limit(1).for("update");
       if (existing && existing.id !== track?.id) {
-        const normalize = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
         if (existing.mbRecordingId && existing.mbRecordingId !== item.id ||
-            normalize(existing.title) !== normalize(item.title) || normalize(existing.artist) !== normalize(item.artist)) {
+            !sameRecordingMetadata(existing, item)) {
           throw new MusicError("That video belongs to a different recording in Mint. Choose another video or request without a video link.");
         }
         if (track) throw new MusicError("This video is already used by another library entry. Request without a video link.");

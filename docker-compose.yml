@@ -90,6 +90,7 @@ services:
     environment:
       <<: *public-env
       PLAYBACK_WORKER_URL: http://worker:8080
+      MINT_CHARTS_ENABLED: ${MINT_CHARTS_ENABLED:-true}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       SPOTIFY_API_MODE: ${SPOTIFY_API_MODE:-development}

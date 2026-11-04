@@ -1,145 +1,64 @@
 "use client";
 
 import clsx from "clsx";
-import { Artwork } from "@/components/artwork";
-import { Activity, Heart, Home, Library, ListMusic, Menu, Music2, Server, Settings, ShieldCheck } from "lucide-react";
+import { CircleUserRound, Compass, Download, Heart, History, Home, Library, ListMusic, Settings } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { Artwork } from "@/components/artwork";
 import { useRealtime } from "../realtime";
-import { Logo } from "@/components/logo";
 
 interface Props {
-  isAdmin: boolean;
-  pendingRequests: number;
-  activeJobs: number;
+  isAdmin: boolean; pendingRequests: number; activeJobs: number;
   playlists: Array<{ id: string; title: string; syncEnabled: boolean; itemCount: number; artworkUrl: string | null }>;
 }
-
-export function MobileNav({ isAdmin, pendingRequests }: Pick<Props, "isAdmin" | "pendingRequests">) {
-  const path = usePathname();
-  const links = [
-    { href: "/app", label: "Home" }, { href: "/app/liked", label: "YouTube likes" },
-    { href: "/app/collections", label: "Mint playlists & likes" }, { href: "/app/discover", label: "Discover" }, { href: "/app/history", label: "Listening history" },
-    { href: "/app/downloads", label: "Downloads" }, { href: "/app/devices", label: "Devices" },
-    { href: "/app/jobs", label: "Jobs" }, { href: "/app/workers", label: "Workers" }, { href: "/app/settings", label: "Settings" },
-    ...(isAdmin ? [{ href: "/app/admin", label: `Admin${pendingRequests ? ` (${pendingRequests})` : ""}` }] : []),
-  ];
-  return <header className="relative z-40 flex h-14 items-center justify-between gap-3 rounded-lg bg-surface px-4 text-sm font-semibold lg:hidden">
-    <Logo />
-    <Link href="/app/music" aria-current={path === "/app/music" ? "page" : undefined} className={path === "/app/music" ? "text-mint" : "text-muted hover:text-fg"}>Music</Link>
-    <Link href="/app/library" aria-current={path === "/app/library" ? "page" : undefined} className={path === "/app/library" ? "text-mint" : "text-muted hover:text-fg"}>Library</Link>
-    <details className="group" onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) event.currentTarget.open = false;
-    }} onKeyDown={(event) => {
-      if (event.key === "Escape") { event.currentTarget.open = false; event.currentTarget.querySelector("summary")?.focus(); }
-    }}>
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-full p-2 text-muted hover:bg-hover hover:text-fg [&::-webkit-details-marker]:hidden"><Menu className="size-5" /><span className="sr-only">More pages</span></summary>
-      <nav aria-label="More pages" className="absolute top-full right-0 mt-2 w-56 rounded-lg bg-elevated p-2 shadow-[0_12px_30px_-8px_#000] ring-1 ring-line">
-        {links.map(({ href, label }) =>
-          <Link key={href} href={href} aria-current={path === href ? "page" : undefined} onClick={(event) => { const details = event.currentTarget.closest("details"); if (details) details.open = false; }}
-            className={clsx("block rounded-md px-3 py-3 hover:bg-hover", path === href ? "text-mint" : "text-muted hover:text-fg")}>{label}</Link>)}
-      </nav>
-    </details>
-  </header>;
+const destinations = [
+  { href: "/app", label: "Home", icon: Home },
+  { href: "/app/discover", label: "Discover", icon: Compass },
+  { href: "/app/music?view=library&type=album", label: "Library", icon: Library },
+];
+function active(path: string, href: string) {
+  return href.startsWith("/app/music") ? path === "/app/music" || path === "/app/library" : path === href || href !== "/app" && path.startsWith(`${href}/`);
 }
-
-export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: Props) {
+export function MobileNav() {
   const path = usePathname();
-  const [pending, setPending] = useState(pendingRequests);
-  useRealtime((e) => {
-    if (e.type === "access-request") setPending(e.data.pending);
-  });
-
-  const items = [
-    { href: "/app", label: "Home", icon: Home, exact: true },
-    { href: "/app/library", label: "Library", icon: Library },
-    { href: "/app/music", label: "Music", icon: Music2 },
-    { href: "/app/discover", label: "Discover", icon: Music2 },
-    { href: "/app/downloads", label: "Downloads", icon: Library },
-    { href: "/app/devices", label: "Devices", icon: Server },
-    { href: "/app/jobs", label: "Jobs", icon: Activity, badge: activeJobs || undefined },
-    { href: "/app/workers", label: "Workers", icon: Server },
-    { href: "/app/settings", label: "Settings", icon: Settings },
-    ...(isAdmin ? [{ href: "/app/admin", label: "Admin", icon: ShieldCheck, badge: pending || undefined, alert: pending > 0 }] : []),
-  ];
-  const isActive = (href: string, exact?: boolean) => (exact ? path === href : path === href || path.startsWith(`${href}/`));
-
-  return (
-    <nav className="flex min-h-0 flex-1 flex-col gap-2" aria-label="Dashboard">
-      <ul className="rounded-lg bg-surface p-2">
-        {items.map(({ href, label, icon: Icon, exact, badge, alert }) => (
-          <li key={href}>
-            <Link
-              href={href}
-              aria-current={isActive(href, exact) ? "page" : undefined}
-              className={clsx(
-                "flex items-center gap-4 rounded-md px-3 py-2.5 font-semibold transition-colors",
-                isActive(href, exact) ? "text-fg" : "text-muted hover:text-fg",
-              )}
-            >
-              <Icon className="size-5" aria-hidden />
-              <span className="flex-1">{label}</span>
-              {badge != null && (
-                <span className={clsx("rounded-full px-2 py-0.5 text-xs tabular", alert ? "bg-mint text-mint-ink" : "bg-hover text-muted")}>{badge}</span>
-              )}
-            </Link>
-          </li>
-        ))}
+  return <nav aria-label="Main navigation" className="mobile-navigation flex items-center justify-around border-t border-line bg-bg px-2 pb-[env(safe-area-inset-bottom)] lg:hidden">
+    {[...destinations, { href: "/app/settings", label: "You", icon: CircleUserRound }].map(({ href, label, icon: Icon }) =>
+      <Link key={href} href={href} aria-current={active(path, href) ? "page" : undefined} className={clsx("flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold", active(path, href) ? "text-fg" : "text-muted hover:text-fg")}>
+        <Icon className="size-5" aria-hidden /><span>{label}</span>
+      </Link>)}
+  </nav>;
+}
+export function SidebarNav({ isAdmin, pendingRequests, activeJobs, playlists }: Props) {
+  const path = usePathname(), [pending, setPending] = useState(pendingRequests);
+  useRealtime((event) => { if (event.type === "access-request") setPending(event.data.pending); });
+  return <nav className="flex min-h-0 flex-1 flex-col" aria-label="Main navigation">
+    <ul className="space-y-1 px-4">{destinations.map(({ href, label, icon: Icon }) => <li key={href}>
+      <Link href={href} aria-current={active(path, href) ? "page" : undefined} className={clsx("flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-semibold transition-colors", active(path, href) ? "bg-elevated text-fg" : "text-muted hover:bg-surface hover:text-fg")}><Icon className="size-5" aria-hidden />{label}</Link>
+    </li>)}</ul>
+    <div className="mt-9 min-h-0 flex-1 overflow-y-auto px-4 scrollbar-thin">
+      <Link href="/app/collections" className="mb-3 flex min-h-11 items-center gap-3 px-4 text-xs font-semibold text-muted hover:text-fg"><ListMusic className="size-4" />Your collection</Link>
+      <ul className="space-y-1">
+        {[
+          { href: "/app/collections", label: "Playlists & Mint likes", icon: Heart },
+          { href: "/app/liked", label: "YouTube likes", icon: ListMusic },
+          { href: "/app/spotify", label: "Spotify playlists", icon: ListMusic },
+          { href: "/app/downloads", label: "Downloads", icon: Download },
+          { href: "/app/history", label: "Listening history", icon: History },
+        ].map(({ href, label, icon: Icon }) => <li key={href}><Link href={href} aria-current={active(path, href) ? "page" : undefined} className={clsx("flex min-h-11 items-center gap-3 rounded-xl px-4 text-sm hover:bg-surface", active(path, href) ? "text-fg" : "text-muted hover:text-fg")}><Icon className="size-4" aria-hidden />{label}</Link></li>)}
+        {playlists.slice(0, 6).map((playlist) => <li key={playlist.id}>
+          <Link href={`/app/playlists/${playlist.id}`} className="mt-2 flex items-center gap-3 rounded-xl p-3 hover:bg-surface">
+            <Artwork track={{ artworkUrl: playlist.artworkUrl ?? "" }} className="size-10 shrink-0 rounded-md" />
+            <span className="min-w-0"><span className="block truncate text-sm font-medium">{playlist.title}</span><span className="block text-xs text-faint">{playlist.itemCount} songs · YouTube</span></span>
+          </Link>
+        </li>)}
       </ul>
-
-      <div className="flex min-h-0 flex-1 flex-col rounded-lg bg-surface p-2">
-        <p className="flex items-center gap-3 px-3 py-2.5 font-semibold text-muted">
-          <ListMusic className="size-5" aria-hidden /> Your music
-        </p>
-        <ul className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-          <li><Link href="/app/collections" aria-current={path.startsWith("/app/collections") ? "page" : undefined}
-            className="flex min-h-11 items-center gap-3 rounded-md px-3 py-3 font-semibold text-muted hover:bg-hover hover:text-fg"><ListMusic className="size-5" />Mint playlists & likes</Link></li>
-          <li><Link href="/app/history" aria-current={path === "/app/history" ? "page" : undefined}
-            className="flex min-h-11 items-center gap-3 rounded-md px-3 py-3 text-sm text-muted hover:bg-hover hover:text-fg">Listening history</Link></li>
-          <li>
-            <Link
-              href="/app/liked"
-              aria-current={path === "/app/liked" ? "page" : undefined}
-              className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover", path === "/app/liked" && "bg-hover")}
-            >
-              <span className="grid size-12 place-items-center rounded bg-gradient-to-br from-mint to-[#1d6b4e] text-mint-ink">
-                <Heart className="size-5" fill="currentColor" aria-hidden />
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate font-medium">Liked songs</span>
-                <span className="block truncate text-sm text-muted">Synced from YouTube Music</span>
-              </span>
-            </Link>
-          </li>
-          {playlists.map((p) => {
-            const href = `/app/playlists/${p.id}`;
-            return (
-              <li key={p.id}>
-                <Link
-                  href={href}
-                  aria-current={path === href ? "page" : undefined}
-                  className={clsx("flex items-center gap-3 rounded-md p-2 transition-colors hover:bg-hover", path === href && "bg-hover")}
-                >
-                  {p.artworkUrl ? (
-                    <Artwork track={{ artworkUrl: p.artworkUrl }} className="size-12 rounded" />
-                  ) : (
-                    <span className="grid size-12 shrink-0 place-items-center rounded bg-elevated text-faint">
-                      <ListMusic className="size-5" aria-hidden />
-                    </span>
-                  )}
-                  <span className="min-w-0">
-                    <span className={clsx("block truncate font-medium", !p.syncEnabled && "text-muted")}>{p.title}</span>
-                    <span className="block truncate text-sm text-muted">
-                      {p.syncEnabled ? "Syncing" : "Not synced"} · {p.itemCount} songs
-                    </span>
-                  </span>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </nav>
-  );
+    </div>
+    <div className="mt-5 border-t border-line/60 p-4">
+      {(activeJobs > 0 || pending > 0) && <Link href={isAdmin && pending ? "/app/admin" : "/app/jobs"} className="mb-2 flex min-h-11 items-center gap-2 px-4 text-xs text-muted">
+        <span className={`size-1.5 rounded-full ${pending ? "bg-warn" : "bg-mint"}`} />{pending ? `${pending} awaiting approval` : `${activeJobs} songs on the way`}
+      </Link>}
+      <Link href="/app/settings" aria-current={path === "/app/settings" ? "page" : undefined} className="flex min-h-12 items-center gap-4 rounded-xl px-4 text-sm font-semibold text-muted hover:bg-surface hover:text-fg"><Settings className="size-5" aria-hidden />Settings & management</Link>
+    </div>
+  </nav>;
 }

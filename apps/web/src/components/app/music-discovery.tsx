@@ -8,6 +8,7 @@ import { musicRequest } from "@/lib/music-client";
 import { Heart, Play, Shuffle, X } from "lucide-react";
 import { usePlayer } from "./player";
 import { MusicTrackList } from "./music-track-list";
+import { DISCOVERY_MIXES, PlaylistCover } from "./discovery-shelves";
 
 type Shelf = { items: { track: TrackView; item: PlayerItem; reason: string }[]; explanation: string };
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
@@ -20,14 +21,22 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
   const [seedNames, setSeedNames] = useState<Record<string, string>>({}), [found, setFound] = useState<TrackView[]>([]);
   const [likes, setLikes] = useState(new Set(initialLikes)), [error, setError] = useState(""), [notice, setNotice] = useState(""), [busy, setBusy] = useState(false);
   const player = usePlayer();
+  const collection = DISCOVERY_MIXES.find((collection) => collection.mode === mode) ?? {
+    id: mode, title: labels[mode], cover: mode === "sonic" ? "Measured\nmix" : "Library\nradio", color: 3,
+    description: mode === "sonic" ? "Connections found in your music’s measured sound." : "Follow a few favorites into another corner of your library.",
+    href: "/app/discover", caption: "Mint mix",
+  };
   const run = async (fn: () => Promise<void>) => { setBusy(true); setError(""); setNotice(""); try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const load = async (next: DiscoveryMode) => {
     const query = new URLSearchParams({ mode: next }); for (const id of seeds) query.append("seed", id);
     const result = await musicRequest<Shelf>(`discover?${query}`); setShelf(result); setMode(next);
   };
   return <section className="mx-auto max-w-6xl">
-    <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl">Another side of your music.</h1>
-    <p className="mt-4 max-w-xl text-sm leading-relaxed text-muted">Real songs, already in your library. Follow your favorites, return to old ones, or build a mix from a few seeds. Nothing here starts a download.</p>
+    <header className="grid grid-cols-[7rem_minmax(0,1fr)] items-end gap-5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-8">
+      <PlaylistCover collection={collection} />
+      <div><h1 className="text-3xl font-bold tracking-tight sm:text-5xl">{collection.title}</h1>
+        <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">{collection.description}</p></div>
+    </header>
     <nav className="my-7 flex flex-wrap gap-2" aria-label="Discovery shelves">{(["for-you", "recent", "rediscover"] as const).map((value) =>
       <button key={value} className={`${button} ${mode === value ? "bg-fg text-bg" : ""}`} aria-pressed={mode === value} disabled={busy} onClick={() => void run(() => load(value))}>{labels[value]}</button>)}</nav>
     <details className="mb-7 border-y border-line py-5" open={mode === "radio" || mode === "sonic"}>

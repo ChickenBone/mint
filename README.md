@@ -2,13 +2,13 @@
 
 **Your music library. Your server. Your player.**
 
-Mint is a self-hosted music streaming app that brings your Plex music library, YouTube Music likes and playlists into one web dashboard. Listen in Mint's own player, manage your collection, and follow downloads and audio analysis in real time. Your music files stay on your server; Plex remains the library server, not an embedded player.
+Mint is a self-hosted music service that brings your Plex library, personal collections and fresh discoveries into a spacious, artwork-first listening room. Listen in Mint's own persistent player, explore real charts and keep operational tools in Settings & management. Your music files stay on your server; Plex remains the library server, not an embedded player.
 
 Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are published to **GitHub Container Registry** for amd64 and arm64. You can connect an existing Plex library read-only or start with the bundled Plex server.
 
 [Get started](#get-started) · [Self-hosting guide](docs/self-hosting.md) · [Screenshots](#screenshots) · [Updating](#updating-and-backups) · [Troubleshooting](#troubleshooting)
 
-![Mint's desktop music dashboard with personal recommendations, album artwork and a persistent music player](docs/screenshots/home.png)
+![Mint's listening room with personal recommendations, album artwork and a persistent music player](docs/screenshots/home.png)
 
 ## What you can do
 
@@ -19,12 +19,13 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | **Sync YouTube Music** | Import your liked songs and selected playlists through Google OAuth. Follow matching, acquisition, tagging and Plex scanning from one dashboard. |
 | **Import Spotify playlists** | Mirror playlist metadata and play songs already available locally. Spotify imports do **not** stream Spotify audio or automatically download missing songs. [Provider requirements](docs/spotify.md). |
 | **Shape your listening** | Equalizer, loudness normalization, waveform, Mint Smart Fades, lyrics and personal lyric corrections. Mint's own analysis does not require Plex Pass. |
-| **Discover and organize** | Library-based radio and mixes, editable and smart playlists, collaboration, and private listening history. |
+| **Discover and organize** | Generated playlist covers, daily mixes and artist radio, alongside editable and smart playlists, collaboration, and private listening history. |
+| **Explore real charts** | Keyless Apple Music country Top 50s, ListenBrainz community rankings and Audius trending/genre collections. Play local matches or explicitly request missing recordings; never automatic downloads. [Coverage, providers and setup](docs/charts.md). |
 | **Listen across devices** | Control awake browser clients, hand off playback, or share a party queue with one output device. [How devices work](docs/devices.md). |
 | **Take music offline** | Install the HTTPS web app from Android Chrome and explicitly download music for offline listening. Browser storage and background limits still apply. |
 | **Manage your instance** | Approve member accounts, monitor jobs and services, and optionally add Docker download workers or a separate private-network analysis machine. |
 
-Mint's public landing page shows library statistics, artwork and job progress. Visitors can browse and request an account; **only approved members can stream music**. Plex, Cobalt and acquisition credentials stay behind the private worker.
+Public visitors can explore artwork, library metadata and charts or request an account; **only approved members can stream music or request acquisition**. Public statistics and job progress remain available under Library activity. Plex, Cobalt and acquisition credentials stay behind the private worker.
 
 ## Get started
 
@@ -90,8 +91,8 @@ The [complete guide](docs/self-hosting.md#command-line-setup) explains provider 
 
 ### Your first session
 
-1. **Check Admin.** Confirm the worker and Plex are reachable. If using existing music, wait for indexing and correct any path-mapping errors before syncing.
-2. **Open Music.** Search or browse indexed songs and play a track. Linking a provider is not required to listen to existing music.
+1. **Check Settings & management → Admin.** Confirm the worker and Plex are reachable. If using existing music, wait for indexing and correct any path-mapping errors before syncing.
+2. **Open Library or Discover.** Browse indexed albums, search songs or explore charts. Linking a provider is not required to listen to existing music; keyless charts need no extra account.
 3. **Connect only what you need.** Set up [Google/YouTube Music](docs/self-hosting.md#google-youtube-music-linking), [Spotify playlists](docs/spotify.md), or [Lidarr + TorBox](docs/self-hosting.md#lidarr--torbox).
 4. **Invite your household.** People request an account on your own hostname; approve them in Admin. A separate Plex library invitation is needed only for external Plex clients.
 
@@ -105,9 +106,15 @@ Current desktop and mobile views, captured from a local demo instance. All names
 | **Now playing:** your music and queue, with lyrics and sound tools one tab away. | **Jobs:** see what is happening and where a track needs attention. |
 | ![Mint album library with artwork-led browsing and collection playback](docs/screenshots/library.png) | ![Mint audio analysis coverage, connected workers and full-library processing actions](docs/screenshots/analysis.png) |
 | **Library:** albums, artists, songs and playlists without loading everything at once. | **Audio analysis:** check coverage and queue full-library processing. |
+| ![Ranked chart discovery with provider attribution, local playback and explicit Add to library actions](docs/screenshots/charts.png) | ![Settings and management hub with collections, devices, activity and administration](docs/screenshots/settings.png) |
+| **Charts:** genuine provider rankings, clearly separated from local availability. | **Your space:** connected accounts and operational tools, away from everyday listening. |
+
+![Discover's generated playlist covers, daily mixes, artist radio and chart collections](docs/screenshots/discover.png)
 
 <p align="center">
   <img src="docs/screenshots/mobile-home.png" alt="Mint recommendations and persistent player on a phone" width="260">
+  &nbsp;
+  <img src="docs/screenshots/mobile-discover.png" alt="Swipeable Discover shelves with generated playlist covers, titles and descriptions" width="260">
   &nbsp;
   <img src="docs/screenshots/mobile-player.png" alt="Mint mobile Now playing screen with album cover and pinned playback controls" width="260">
 </p>
@@ -138,6 +145,7 @@ flowchart LR
   plex --> worker
   worker --> mint[Mint web app]
   spotify[Spotify playlist metadata] --> mint
+  charts[Apple / ListenBrainz / Audius chart metadata] --> mint
   mint --> listener[Approved members]
 ```
 
@@ -173,6 +181,7 @@ The worker applies database migrations; update it **before** web. In a NAS edito
 | A volunteer worker says “Never connected” | Its `MINT_URL` must be your public Mint HTTPS origin, not container-local `localhost`. [Worker diagnostics](docs/self-hosting.md#volunteer-workers). |
 | A song will not play | Check worker connectivity and file access. Use **MP3 compatibility** if the browser cannot decode its original format. |
 | Audio analysis is waiting | Check enable/pause, UTC schedule, concurrency and connected processors in **Admin → Audio analysis**. |
+| Charts are unavailable or stale | Read the provider/cache notice; check Redis and web outbound HTTPS. Worldwide community charts can legitimately lag. [Chart setup and limitations](docs/charts.md). |
 | An image pull is denied | Confirm the tag exists. Private forks/packages require GHCR sign-in with `read:packages`. |
 
 Use `docker compose ps` and `docker compose logs --tail=100 worker` for details. Review logs before sharing: tokens, paths and library metadata can be sensitive. [More troubleshooting](docs/self-hosting.md#troubleshooting).
@@ -181,6 +190,7 @@ Use `docker compose ps` and `docker compose logs --tail=100 worker` for details.
 
 - [Full self-hosting and integration reference](docs/self-hosting.md)
 - [Spotify playlist setup and restrictions](docs/spotify.md)
+- [Chart providers, geographic/genre coverage, caching and explicit requests](docs/charts.md)
 - [Devices, playback handoff and parties](docs/devices.md)
 - [Vercel deployment](docs/self-hosting.md#optional-the-website-on-vercel) — advanced; native playback requires separate private gateway connectivity and platform streaming-limit validation. It is not a drop-in replacement for the all-in-one stack.
 - [Local development](docs/self-hosting.md#development) — Node.js 22+, npm workspaces, PostgreSQL and Redis.

@@ -56,6 +56,7 @@ jobs:
           MINT_AUDIO_TEST: "true"
           ANALYSIS_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
           MUSIC_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
+          CHART_TEST_REDIS_URL: redis://localhost:6379/9
           DEVICE_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
           MINT_SPOTIFY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_spotify_test
       - run: npm run build

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
+import { ListMusic, Mic2, MoreHorizontal, Search, SlidersHorizontal, Volume2, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
 import { analysisSchema } from "@mint/core/analysis";
@@ -18,7 +18,6 @@ import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-pa
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
 import { MusicBrowser } from "./music-browser";
-import { InstallApp } from "../install-app";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
 interface PlayerContext {
@@ -39,15 +38,10 @@ export const usePlayer = () => useContext(Context);
 const empty: PlayerState = { playing: false, time: 0, duration: 0, volume: 100, shuffle: false, repeat: 0, track: null, queue: [], queueTotal: 0, queueOffset: 0 };
 
 export function MusicNavigation() {
-  const path = usePathname(), params = useSearchParams();
-  const view = params.get("view") ?? "home";
-  return <nav aria-label="Music views" className="flex min-w-0 items-center gap-1 text-xs font-semibold sm:text-sm">
-    {(["home", "library", "search"] as const).map((key) => {
-      const active = path === "/app/music" && view === key;
-      return <Link key={key} href={key === "home" ? "/app/music" : `/app/music?view=${key}`} aria-current={active ? "page" : undefined}
-        className={`rounded-full px-3 py-2 hover:bg-hover hover:text-fg ${active ? "bg-elevated text-fg" : "text-muted"}`}>{key === "home" ? "Albums" : key === "library" ? "Browse" : "Search"}</Link>;
-    })}
-    <InstallApp compact />
+  return <nav aria-label="Library search" className="flex min-w-0 flex-1 justify-end lg:justify-start">
+    <Link href="/app/music?view=search" className="flex min-h-11 items-center gap-3 rounded-full px-3 text-sm text-muted hover:bg-elevated hover:text-fg sm:w-full sm:max-w-sm sm:bg-elevated sm:px-5">
+      <Search className="size-4 shrink-0" /><span className="hidden sm:inline">Search your music</span><span className="sr-only sm:hidden">Search library</span>
+    </Link>
   </nav>;
 }
 
@@ -271,8 +265,8 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
     document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : panel === "lyrics" ? "Lyrics" : "Audio settings"}"]`)?.focus();
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
-    <main className="h-full overflow-y-auto px-4 pb-12 pt-5 scrollbar-thin sm:px-6" hidden={music}>{children}</main>
-    {music && !nowPlaying && <main className="h-full overflow-y-auto px-4 pb-12 pt-5 scrollbar-thin sm:px-6"><MusicBrowser /></main>}
+    <main id={music ? undefined : "listening-content"} tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin" hidden={music}>{children}</main>
+    {music && !nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin"><MusicBrowser /></main>}
     {nowPlaying && <NowPlaying state={player.state} ready={ready} command={player.command} panel={panel} setPanel={setPanel} returnTo={returnTo} onMore={(track, button) => {
       const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
     }} />}
@@ -287,7 +281,7 @@ export function PlayerBar() {
   const { panel, setPanel, nowPlaying, rememberReturn } = useContext(ShellContext)!;
   const track = state.track;
   if (nowPlaying) return null;
-  return <section aria-label="Music player" className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg bg-surface px-3 py-2 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-5 lg:py-3">
+  return <section aria-label="Music player" className="player-dock grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-line bg-bg px-4 py-3 lg:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-4">
     <div className="flex min-w-0 items-center gap-3">
       <Link href="/app/music?view=now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-12 rounded" /></Link>
       <div className="min-w-0">

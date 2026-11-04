@@ -59,7 +59,9 @@ export async function reusePendingTrack(track: typeof schema.tracks.$inferSelect
     isNotNull(schema.tracks.existingLibraryKey),
     eq(schema.tracks.libraryMatchKey, libraryMatchKey(track.artist, track.title)),
   ));
-  const matches = candidates.filter((candidate) => sameRecording(track, candidate));
+  const matches = candidates.filter((candidate) => sameRecording(track, candidate) &&
+    (!track.mbRecordingId || !candidate.mbRecordingId || track.mbRecordingId === candidate.mbRecordingId));
+  if (track.mbRecordingId && matches.length > 1) throw new Error("Multiple existing editions fit the requested recording. Choose an exact local edition; no duplicate was downloaded.");
   const existing = matches.find((candidate) => codecQuality(candidate.codec) === "lossless") ??
     (matches.length === 1 ? matches[0] : undefined);
   if (!existing) {
@@ -76,6 +78,7 @@ export async function reusePendingTrack(track: typeof schema.tracks.$inferSelect
     await tx.update(schema.trackVideos).set({ trackId: existing.id }).where(eq(schema.trackVideos.trackId, track.id));
     await tx.insert(schema.trackVideos).values({ videoId: track.youtubeVideoId!, trackId: existing.id }).onConflictDoNothing();
     await tx.update(schema.trackEvents).set({ trackId: existing.id }).where(eq(schema.trackEvents.trackId, track.id));
+    await tx.update(schema.chartEntryLinks).set({ trackId: existing.id }).where(eq(schema.chartEntryLinks.trackId, track.id));
     await tx.delete(schema.tracks).where(eq(schema.tracks.id, track.id));
   });
   await requestExistingUpgrade(existing, track.youtubeVideoId);

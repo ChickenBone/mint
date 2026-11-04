@@ -163,8 +163,18 @@ export const tracks = pgTable(
     index("tracks_stage_idx").on(t.stage),
     index("tracks_ready_idx").on(t.readyAt),
     index("tracks_artist_idx").on(t.artist),
+    index("tracks_chart_identity_idx").on(sql`mint_search_text(${t.artist})`, sql`mint_search_text(${t.title})`),
+    index("tracks_recording_idx").on(t.mbRecordingId).where(sql`${t.mbRecordingId} is not null`),
   ],
 );
+
+export const chartEntryLinks = pgTable("chart_entry_links", {
+  userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  entryId: text("entry_id").notNull(),
+  identity: text("identity").notNull(),
+  trackId: uuid("track_id").notNull().references(() => tracks.id, { onDelete: "cascade" }),
+}, (t) => [primaryKey({ columns: [t.userId, t.provider, t.entryId] })]);
 
 export const userTracks = pgTable(
   "user_tracks",

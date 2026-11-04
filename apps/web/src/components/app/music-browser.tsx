@@ -24,7 +24,7 @@ function itemHref(item: PlayerItem) {
 export function MusicBrowser() {
   const router = useRouter(), params = useSearchParams();
   const rawType = params.get("type");
-  const type: Kind = kinds.find((kind) => kind === rawType) ?? "track";
+  const type: Kind = kinds.find((kind) => kind === rawType) ?? (params.get("view") === "library" && !params.get("kind") ? "album" : "track");
   const parsed = collectionFromParams(params);
   const collection: PlayerCollection | null = parsed.success ? parsed.data : null;
   const q = params.get("q") ?? "";
@@ -65,6 +65,7 @@ export function MusicBrowser() {
     <p className="my-5 max-w-xl text-sm leading-relaxed text-muted">Your shared library is a music backlog, not a list you need to scroll. Search with a few title or artist words; Mint handles prefixes, accents and close spellings.</p>
     <CatalogSearch key="backlog-search" query={q} />
     <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/app" className="inline-flex min-h-11 items-center text-mint hover:underline">Your daily recommendations</Link><Link href="/app/music?view=library" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Browse the catalog</Link></div>
+    <MissingMusic key={q} query={q} />
   </div>;
   const first = page?.items[0];
   const title = collection.kind === "album" ? first?.album ?? "Album"
@@ -78,7 +79,7 @@ export function MusicBrowser() {
     <header className="mb-7 flex items-end gap-5">
       {collection.kind === "album" && first && <Artwork track={{ artworkUrl: first.thumb ?? "" }} className="hidden size-32 shrink-0 rounded-md sm:block" />}
       <div className="min-w-0">
-        <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">{title}</h1>
+        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{title}</h1>
         <p className="mt-3 text-sm text-muted">{collection.kind === "library" ? "Made for your music. Nothing between you and the next song." : collection.kind === "artist" ? "Albums and songs in your library." : first?.artist ?? "Downloaded music from your collection."}</p>
       </div>
     </header>

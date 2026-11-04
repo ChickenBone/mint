@@ -9,7 +9,7 @@ const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", displa
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.PUBLIC_URL ?? "https://mint.chickenbone.dev"),
   title: { default: "Mint — Self-hosted music streaming with Plex", template: "%s · Mint" },
-  description: "Stream your Plex music library in Mint. Sync YouTube Music likes, match Spotify playlists to local songs, and follow downloads in one self-hosted music dashboard.",
+  description: "Your music, with room for more. Listen to your Plex library, explore charts, sync YouTube likes and bring your playlists home.",
   openGraph: {
     title: "Mint — Self-hosted music streaming with Plex",
     description: "Your music library, one self-hosted player. Bring together Plex music, YouTube Music likes and Spotify playlist matches in Mint.",
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
   icons: { icon: "/api/app-icon/192", apple: "/api/app-icon/192" },
 };
 
-export const viewport: Viewport = { themeColor: "#0a0d0c", colorScheme: "dark", viewportFit: "cover" };
+export const viewport: Viewport = { themeColor: "#101311", colorScheme: "dark", viewportFit: "cover" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

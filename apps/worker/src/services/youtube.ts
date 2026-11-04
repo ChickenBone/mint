@@ -76,23 +76,25 @@ export async function findRequestedVideo(userId: string, track: { title: string;
 }
 
 export function selectRequestedVideo(track: { title: string; artist: string; durationSec: number | null }, candidates: YtVideo[]): string | null {
+  if (!track.durationSec) return null;
   const normalize = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const wanted = normalize(track.title), artist = normalize(track.artist.split(/ feat\.? | ft\.? |, /i)[0]!);
   const words = wanted.split(" ").filter(Boolean);
-  const versions = ["live", "remix", "cover", "karaoke", "instrumental"];
+  const versions = ["live", "remix", "cover", "karaoke", "instrumental", "remaster", "remastered", "acoustic", "demo", "extended"];
   const duration = (value: string | null) => {
     const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value ?? "");
     return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : null;
   };
   const matches = candidates.flatMap((video) => {
     const title = normalize(video.title), channel = normalize(video.channelTitle), seconds = duration(video.durationIso);
+    const artistChannel = [artist, `${artist} topic`, `${artist} official`, `${artist} vevo`, `${artist}vevo`].includes(channel);
     if (!artist || !words.length || !words.every((word) => title.split(" ").includes(word)) ||
-        (!title.includes(artist) && !channel.includes(artist)) ||
+        !artistChannel ||
         versions.some((version) => !wanted.split(" ").includes(version) && title.split(" ").includes(version)) ||
-        (track.durationSec && (seconds === null || Math.abs(track.durationSec - seconds) > 12))) return [];
+        (seconds === null || Math.abs(track.durationSec! - seconds) > 2.5)) return [];
     return [{ id: video.id, score: (channel.includes(artist) ? 2 : 0) + (/\btopic\b/.test(channel) ? 2 : 0) + (title.includes("official audio") ? 1 : 0) }];
   }).sort((a, b) => b.score - a.score);
-  return matches[0]?.id ?? null;
+  return matches.length === 1 ? matches[0]!.id : null;
 }
 
 function toVideo(v: VideoResource): YtVideo | null {

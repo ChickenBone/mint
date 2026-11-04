@@ -137,9 +137,9 @@ export async function importedFile(
 ): Promise<{ path: string; size: number } | null> {
   const tracks = await api<LidarrTrack[]>("/track", { query: { albumId } });
   const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-  const track =
-    tracks.find((t) => match.recordingId && t.foreignRecordingId === match.recordingId) ??
-    tracks.find((t) => norm(t.title) === norm(match.title));
+  const matches = tracks.filter((track) => match.recordingId ? track.foreignRecordingId === match.recordingId : norm(track.title) === norm(match.title));
+  if (matches.length > 1) throw new Error("Lidarr returned multiple editions of the requested recording. Choose a verified source instead.");
+  const track = matches[0];
   if (!track?.hasFile || !track.trackFileId) return null;
   const file = await api<{ path: string; size: number }>(`/trackfile/${track.trackFileId}`);
   return { path: file.path, size: file.size };

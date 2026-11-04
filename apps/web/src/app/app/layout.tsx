@@ -5,6 +5,7 @@ import { LiveDot } from "@/components/live-dot";
 import { Logo } from "@/components/logo";
 import { requireUser } from "@/lib/auth";
 import { getPendingCount, getPlaylists, getUserSummary } from "@/lib/data";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -18,9 +19,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <PlayerProvider memberId={user.id}>
-    <div className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] gap-2 bg-bg p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-[max(.5rem,env(safe-area-inset-top))] lg:grid-cols-[18rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
-      <aside className="hidden min-h-0 flex-col gap-2 lg:flex">
-        <div className="flex items-center justify-between rounded-lg bg-surface px-5 py-4">
+    <div className="app-shell grid h-dvh grid-rows-[minmax(0,1fr)_auto_auto] bg-bg lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
+      <a href="#listening-content" className="skip-link">Skip to content</a>
+      <aside className="hidden min-h-0 flex-col border-r border-line/60 lg:flex">
+        <div className="flex h-24 shrink-0 items-center justify-between px-8">
           <Logo />
           <LiveDot />
         </div>
@@ -32,19 +34,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
       </aside>
 
-      <MobileNav isAdmin={user.role === "admin"} pendingRequests={pending} />
-
-      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg bg-surface">
-        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-line px-4 sm:px-6">
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden bg-surface">
+        <div className="listening-topbar flex h-20 shrink-0 items-center justify-between gap-3 px-5 sm:px-10 xl:px-12">
+          <span className="lg:hidden"><Logo /></span>
           <MusicNavigation />
           <div className="flex shrink-0 items-center gap-3">
-          <span className="hidden text-sm text-muted sm:inline">{user.name}</span>
-          <SignOut />
+          <Link href="/app/settings" aria-label="Your account and settings" className="flex min-h-11 items-center gap-3 rounded-full px-2 text-sm text-muted hover:text-fg"><span className="hidden sm:inline">{user.name}</span><span className="grid size-9 place-items-center rounded-full bg-elevated font-bold text-fg">{user.name.slice(0, 1)}</span></Link>
+          <span className="hidden xl:block"><SignOut /></span>
           </div>
         </div>
         <MusicStage>{children}</MusicStage>
       </div>
       <PlayerBar />
+      <MobileNav />
     </div>
     </PlayerProvider>
   );

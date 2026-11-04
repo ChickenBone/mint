@@ -32,7 +32,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
   };
   const track = state.track;
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
-  return <main aria-label="Now playing" className="now-playing absolute inset-0 flex flex-col overflow-hidden">
+  return <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing absolute inset-0 flex flex-col overflow-hidden">
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-lg font-bold focus-visible:outline-none">Now playing</h1>
       <Link href={returnTo} aria-label="Close now playing" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">

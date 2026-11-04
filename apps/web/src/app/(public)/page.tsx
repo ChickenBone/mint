@@ -1,106 +1,46 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { ArtWall } from "@/components/art-wall";
+import { Artwork } from "@/components/artwork";
 import { FreshShelf } from "@/components/fresh-shelf";
-import { LiveStats } from "@/components/live-stats";
-import { PipelineBoard } from "@/components/pipeline-board";
-import { getActiveTracks, getLibraryArtwork, getRecentlyReady, getStats } from "@/lib/data";
+import { getLibraryArtwork, getRecentlyReady } from "@/lib/data";
+import { getUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
-
-const steps: Array<[string, string]> = [
-  ["Link YouTube Music", "Sign in with Google once. Mint reads your likes and the playlists you choose. It never posts, rates or changes anything."],
-  ["Find the real release", "Each song is matched against MusicBrainz and requested through Lidarr, which grabs the album over TorBox. If no release turns up, Mint rips the audio from YouTube instead."],
-  ["Tag, file, scan", "Files are tagged with artwork and moved into the shared Plex library. Mint measures the audio for its own Smart Fades, loudness controls and discovery."],
-  ["Play it in Mint", "Listen in Mint with your likes, playlists and recommendations together. Plex stays behind the scenes as the library server; no embedded player or separate music app is needed."],
-];
-
 export default async function Home() {
-  const [stats, active, fresh, wall] = await Promise.all([getStats(), getActiveTracks(120), getRecentlyReady(12), getLibraryArtwork()]);
-  return (
-    <>
-      <section className="relative isolate overflow-hidden">
-        <ArtWall tracks={wall} />
-        <div className="relative mx-auto flex min-h-[min(46rem,88svh)] max-w-7xl flex-col justify-end px-5 pt-28 pb-16 sm:px-8 sm:pb-24">
-          <h1 className="rise max-w-5xl text-[clamp(2.75rem,9vw,7.5rem)] leading-[0.92] font-extrabold tracking-[-0.045em]">
-            Every song you like, on a shelf we&nbsp;own.
-          </h1>
-          <p className="rise mt-8 max-w-xl text-lg text-muted sm:text-xl" style={{ "--rise-delay": "120ms" } as React.CSSProperties}>
-            Bring your YouTube Music likes into a self-hosted music library. Listen in Mint, keep your files on our server, and follow every
-            download as it lands. Plex keeps the library organized behind the scenes.
-          </p>
-          <div className="rise mt-10 flex flex-wrap items-center gap-3" style={{ "--rise-delay": "220ms" } as React.CSSProperties}>
-            <Link
-              href="/request-access"
-              className="inline-flex items-center gap-2 rounded-full bg-mint px-7 py-3.5 text-lg font-semibold text-mint-ink transition duration-300 ease-out-expo hover:scale-[1.03] hover:bg-mint-strong"
-            >
-              Request access <ArrowRight className="size-5" aria-hidden />
-            </Link>
-            <Link
-              href="/browse"
-              className="rounded-full bg-bg/60 px-7 py-3.5 text-lg font-semibold text-fg ring-1 ring-line backdrop-blur-sm transition hover:bg-elevated hover:ring-faint"
-            >
-              Browse the library
-            </Link>
-          </div>
+  const [fresh, wall, user] = await Promise.all([getRecentlyReady(12), getLibraryArtwork(), getUser()]);
+  return <>
+    <section className="mx-auto grid min-h-[min(44rem,85svh)] max-w-7xl items-center gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1.1fr_1fr] lg:gap-20 lg:py-24">
+      <div>
+        <h1 className="max-w-2xl text-[clamp(3.25rem,7vw,6rem)] font-bold leading-[1.02] tracking-[-0.04em]">A home for<br />your music.</h1>
+        <p className="mt-7 max-w-lg text-lg leading-relaxed text-muted">The songs you love. The ones you haven’t found yet. Your own library, with room for both.</p>
+        <div className="mt-9 flex flex-wrap items-center gap-3">
+          <Link href={user ? "/app" : "/request-access"} className="inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">{user ? "Open your music" : "Request access"}<ArrowRight className="size-4" /></Link>
+          <Link href="/browse" className="inline-flex min-h-12 items-center rounded-full px-5 font-semibold text-muted ring-1 ring-line hover:text-fg">Look around</Link>
         </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-5 pt-8 pb-28 sm:px-8" aria-labelledby="stats-h">
-        <h2 id="stats-h" className="sr-only">The library right now</h2>
-        <LiveStats initial={stats} />
-      </section>
-
-      <section className="mx-auto max-w-7xl px-5 pb-28 sm:px-8" aria-labelledby="fresh-h">
-        <div className="mb-8 flex items-end justify-between gap-4">
-          <div>
-            <h2 id="fresh-h" className="text-4xl font-extrabold tracking-[-0.03em] sm:text-6xl">Just landed</h2>
-            <p className="mt-3 max-w-xl text-muted">The newest songs in the library. New arrivals drop in here the moment Plex picks them up.</p>
-          </div>
-          <Link href="/browse" className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-muted hover:text-fg">
-            Show all <ArrowRight className="size-4" aria-hidden />
-          </Link>
-        </div>
-        <FreshShelf initial={fresh} />
-      </section>
-
-      <section id="pipeline" className="mx-auto max-w-7xl scroll-mt-20 px-5 pb-28 sm:px-8" aria-labelledby="pipeline-h">
-        <div className="mb-8 max-w-2xl">
-          <h2 id="pipeline-h" className="text-4xl font-extrabold tracking-[-0.03em] sm:text-6xl">On the way in</h2>
-          <p className="mt-3 text-muted">Every song members have liked that&rsquo;s still being fetched, imported, scanned or analysed. This board updates as it happens.</p>
-        </div>
-        <PipelineBoard initialTracks={active} initialStats={stats} />
-      </section>
-
-      <section id="how" className="mx-auto max-w-7xl scroll-mt-20 px-5 pb-28 sm:px-8" aria-labelledby="how-h">
-        <h2 id="how-h" className="max-w-3xl text-4xl font-extrabold tracking-[-0.03em] sm:text-6xl">How a like becomes a file</h2>
-        <ol className="mt-14">
-          {steps.map(([title, body], i) => (
-            <li key={title} className="grid gap-x-10 gap-y-3 border-t border-line py-8 sm:grid-cols-[6rem_minmax(0,1fr)_minmax(0,1.2fr)] sm:py-10">
-              <span className="text-5xl leading-none font-extrabold tracking-tight text-faint tabular sm:text-6xl" aria-hidden>
-                {String(i + 1).padStart(2, "0")}
-              </span>
-              <h3 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h3>
-              <p className="max-w-prose text-lg text-muted">{body}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
-
-      <section className="relative isolate overflow-hidden border-t border-line" aria-labelledby="invite-h">
-        <div className="mx-auto flex max-w-7xl flex-col items-start gap-8 px-5 py-24 sm:px-8 lg:flex-row lg:items-end lg:justify-between">
-          <div className="max-w-3xl">
-            <h2 id="invite-h" className="text-5xl leading-[0.95] font-extrabold tracking-[-0.04em] sm:text-7xl">Mint is invite-only.</h2>
-            <p className="mt-5 max-w-xl text-lg text-muted">Ask for a seat. Once the admin approves you, link YouTube Music and your likes start arriving.</p>
-          </div>
-          <Link
-            href="/request-access"
-            className="inline-flex shrink-0 items-center gap-2 rounded-full bg-mint px-8 py-4 text-lg font-semibold text-mint-ink transition duration-300 ease-out-expo hover:scale-[1.03] hover:bg-mint-strong"
-          >
-            Request access <ArrowRight className="size-5" aria-hidden />
-          </Link>
-        </div>
-      </section>
-    </>
-  );
+        <p className="mt-7 text-xs leading-relaxed text-muted">Private listening for approved members.<br />Everyone’s welcome to browse. No public audio.</p>
+      </div>
+      {wall.length > 0 && <div aria-label="Artwork from the Mint library" className="grid grid-cols-2 gap-4 lg:gap-5">
+        {wall.slice(0, 4).map((track) => <Artwork key={track.artworkUrl} track={track} eager className="w-full rounded-xl" />)}
+      </div>}
+    </section>
+    <section className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-20">
+      <div className="mb-8 flex items-end justify-between gap-5"><div><h2 className="text-3xl font-bold tracking-tight sm:text-4xl">New to the collection.</h2><p className="mt-3 text-sm text-muted">Fresh arrivals, ready for their next listen.</p></div><Link href="/browse" className="inline-flex min-h-11 shrink-0 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">View library<ArrowRight className="size-4" /></Link></div>
+      <FreshShelf initial={fresh} feature={false} />
+    </section>
+    <section className="mx-auto grid max-w-7xl gap-10 border-y border-line px-5 py-14 sm:px-8 lg:grid-cols-2 lg:gap-20">
+      <h2 className="max-w-xl text-3xl font-bold leading-tight tracking-tight sm:text-5xl">A wider world.<br />A personal collection.</h2>
+      <div><p className="max-w-lg text-base leading-relaxed text-muted">Explore country Top 50s, worldwide listening communities and independent music. See what’s already here and find something worth bringing home.</p><Link href="/charts" className="mt-5 inline-flex min-h-12 items-center gap-3 font-semibold">Explore the charts<ArrowRight className="size-4" /></Link></div>
+    </section>
+    <section id="how" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
+      <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Your music. Without the noise.</h2>
+      <div className="mt-9 grid gap-8 md:grid-cols-3">
+        {[
+          ["Bring your favorites", "Connect YouTube Music likes and playlists, import Spotify playlist metadata, or listen to music already in your Plex library."],
+          ["Make it your own", "Build playlists, follow a mix somewhere new, take a few albums offline, and pick up the queue on another device."],
+          ["Stay with the song", "Listen in Mint’s own player, with lyrics and sound controls close by. The files stay on your server; originals stay protected."],
+        ].map(([title, description]) => <div key={title}><h3 className="text-lg font-semibold">{title}</h3><p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">{description}</p></div>)}
+      </div>
+      <Link href={user ? "/app" : "/request-access"} className="mt-10 inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 font-semibold text-mint-ink">{user ? "Back to your music" : "Make yourself at home"}<ArrowRight className="size-4" /></Link>
+    </section>
+  </>;
 }

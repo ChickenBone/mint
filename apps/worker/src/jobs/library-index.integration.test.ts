@@ -131,11 +131,13 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   const [pending] = await db.insert(schema.tracks).values({ youtubeVideoId: "pending0001", title: lossless.title, artist: lossless.artist, durationSec: 200 }).returning();
   await db.insert(schema.userTracks).values({ userId: user!.id, trackId: pending!.id });
   await db.insert(schema.playlistTracks).values({ playlistId: playlist!.id, trackId: pending!.id, position: 7 });
+  await db.insert(schema.chartEntryLinks).values({ userId: user!.id, provider: "apple", entryId: "fixture-chart-entry", identity: "fixture", trackId: pending!.id });
   assert.equal(await reusePendingTrack(pending!), lossless.id);
   assert.equal(await db.$count(schema.tracks, eq(schema.tracks.id, pending!.id)), 0);
   assert.equal((await db.select().from(schema.userTracks))[0]!.trackId, lossless.id);
   assert.equal((await db.select().from(schema.playlistTracks))[0]!.position, 7);
   assert.equal((await db.select().from(schema.playlistTracks))[0]!.trackId, lossless.id);
+  assert.equal((await db.select().from(schema.chartEntryLinks))[0]!.trackId, lossless.id, "Explicit chart selections survive reuse of an indexed original");
   await requestExistingUpgrade(lossless, "unusedlossless");
   assert.equal(await queues.acquire.count(), 0);
 

@@ -48,10 +48,14 @@ export async function matchRecording(q: {
   artist: string;
   album?: string | null;
   durationSec?: number | null;
+  mbRecordingId?: string | null;
 }): Promise<MbMatch | null> {
   const primaryArtist = q.artist.split(/,|&| feat\.? | ft\.? /i)[0]!.trim();
   const query = `recording:"${esc(q.title)}" AND artist:"${esc(primaryArtist)}"`;
-  const data = await throttled(() =>
+  const data = q.mbRecordingId ? { recordings: [{ ...await throttled(() =>
+    httpJson<MbRecording>(`${API}/recording/${encodeURIComponent(q.mbRecordingId!)}`, {
+      headers: { "user-agent": UA }, query: { inc: "artists+releases+release-groups", fmt: "json" },
+    })), score: 100 }] } : await throttled(() =>
     httpJson<{ recordings: MbRecording[] }>(`${API}/recording`, {
       headers: { "user-agent": UA },
       query: { query, fmt: "json", limit: 15 },
@@ -62,10 +66,14 @@ export async function matchRecording(q: {
   const candidates: Candidate[] = [];
   for (const rec of data.recordings ?? []) {
     if (rec.score < 80 || !rec["artist-credit"]?.length) continue;
+    if (q.mbRecordingId && (rec.id !== q.mbRecordingId || norm(rec.title) !== norm(q.title) ||
+      norm(rec["artist-credit"].map((credit) => credit.name).join(" / ")) !== norm(q.artist))) continue;
+    if (q.mbRecordingId && q.durationSec && (!rec.length || Math.abs(rec.length / 1000 - q.durationSec) > 2.5)) continue;
     if (q.durationSec && rec.length && Math.abs(rec.length / 1000 - q.durationSec) > 12) continue;
     for (const rel of rec.releases ?? []) {
       const rg = rel["release-group"];
       if (!rg) continue;
+      if (q.mbRecordingId && q.album && norm(rel.title) !== norm(q.album)) continue;
       let score = rec.score;
       if (rel.status === "Official") score += 10;
       if (rg["primary-type"] === "Album") score += 8;
