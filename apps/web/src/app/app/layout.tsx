@@ -3,6 +3,7 @@ import { MobileNav, SidebarNav } from "@/components/app/sidebar-nav";
 import { MusicNavigation, MusicStage, PlayerBar, PlayerProvider } from "@/components/app/player";
 import { LiveDot } from "@/components/live-dot";
 import { Logo } from "@/components/logo";
+import { ToastProvider } from "@/components/ui/toast";
 import { requireUser } from "@/lib/auth";
 import { getPendingCount, getPlaylists, getUserSummary } from "@/lib/data";
 import Link from "next/link";
@@ -19,6 +20,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <PlayerProvider memberId={user.id}>
+    <ToastProvider>
     <div className="app-shell grid h-dvh grid-rows-[minmax(0,1fr)_auto_auto] bg-bg lg:grid-cols-[16rem_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)_auto]">
       <a href="#listening-content" className="skip-link">Skip to content</a>
       <aside className="hidden min-h-0 flex-col border-r border-line/60 lg:flex">
@@ -48,6 +50,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <PlayerBar />
       <MobileNav />
     </div>
+    </ToastProvider>
     </PlayerProvider>
   );
 }

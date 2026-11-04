@@ -17,14 +17,19 @@ const destinations = [
   { href: "/app/discover", label: "Discover", icon: Compass },
   { href: "/app/music?view=library&type=album", label: "Library", icon: Library },
 ];
+const mobileDestinations = [
+  ...destinations,
+  { href: "/app/collections", label: "Collection", icon: ListMusic },
+  { href: "/app/settings", label: "You", icon: CircleUserRound },
+];
 function active(path: string, href: string) {
   return href.startsWith("/app/music") ? path === "/app/music" || path === "/app/library" : path === href || href !== "/app" && path.startsWith(`${href}/`);
 }
 export function MobileNav() {
   const path = usePathname();
-  return <nav aria-label="Main navigation" className="mobile-navigation flex items-center justify-around border-t border-line bg-bg px-2 pb-[env(safe-area-inset-bottom)] lg:hidden">
-    {[...destinations, { href: "/app/settings", label: "You", icon: CircleUserRound }].map(({ href, label, icon: Icon }) =>
-      <Link key={href} href={href} aria-current={active(path, href) ? "page" : undefined} className={clsx("flex min-h-16 min-w-16 flex-col items-center justify-center gap-1 rounded-xl text-[11px] font-semibold", active(path, href) ? "text-fg" : "text-muted hover:text-fg")}>
+  return <nav aria-label="Main navigation" className="mobile-navigation flex items-center justify-around border-t border-line bg-background px-2 pb-[var(--safe-area-bottom)] lg:hidden">
+    {mobileDestinations.map(({ href, label, icon: Icon }) =>
+      <Link key={href} href={href} aria-label={label === "Collection" ? "Your collection" : undefined} aria-current={active(path, href) ? "page" : undefined} className={clsx("flex min-h-16 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold whitespace-nowrap", active(path, href) ? "text-fg" : "text-muted hover:text-fg")}>
         <Icon className="size-5" aria-hidden /><span>{label}</span>
       </Link>)}
   </nav>;

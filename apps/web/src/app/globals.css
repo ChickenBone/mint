@@ -2,22 +2,67 @@
 
 @theme {
   --font-sans: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --spacing: 0.25rem;
+  --text-title-sm: 2rem;
+  --text-title-md: 3rem;
+  --text-title-lg: 4rem;
+  --text-section-sm: 1.5rem;
+  --text-section-lg: 2rem;
+  --text-body-sm: 0.875rem;
+  --text-body-md: 1rem;
 
   --color-bg: #101311;
+  --color-background: var(--color-bg);
   --color-surface: #171b18;
   --color-elevated: #232924;
   --color-hover: #303932;
   --color-line: #364139;
   --color-fg: #f4f6f1;
+  --color-text: var(--color-fg);
   --color-muted: #b0bbb1;
   --color-faint: #9aa79d;
   --color-mint: #3fe0a0;
+  --color-action: var(--color-mint);
   --color-mint-strong: #5cf0b4;
+  --color-action-strong: var(--color-mint-strong);
   --color-mint-ink: #04140d;
+  --color-action-ink: var(--color-mint-ink);
+  --color-success: #9ac7a8;
   --color-danger: #ff7a6b;
   --color-warn: #f5c86b;
 
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 120ms;
+  --duration-standard: 180ms;
+  --duration-emphasis: 260ms;
+
+  --radius-control: 0.75rem;
+  --radius-surface: 1rem;
+  --radius-pill: 9999px;
+  --shadow-raised: 0 12px 32px rgb(0 0 0 / 28%);
+  --shadow-floating: 0 20px 56px rgb(0 0 0 / 38%);
+
+  --breakpoint-small: 40rem;
+  --breakpoint-tablet: 48rem;
+  --breakpoint-desktop: 64rem;
+  --breakpoint-wide: 90rem;
+}
+
+@layer base {
+  :root {
+    --space-page-gutter: clamp(1.25rem, 3.5vw, 3rem);
+    --space-section: clamp(2.5rem, 5vw, 4rem);
+    --z-sticky: 20;
+    --z-player: 30;
+    --z-navigation: 40;
+    --z-overlay: 60;
+    --z-toast: 80;
+    --safe-area-top: env(safe-area-inset-top, 0px);
+    --safe-area-right: env(safe-area-inset-right, 0px);
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-left: env(safe-area-inset-left, 0px);
+  }
 }
 
 @layer base {
@@ -47,6 +92,10 @@
   textarea {
     font: inherit;
   }
+  button,
+  select {
+    font: inherit;
+  }
 }
 
 @utility tabular {
@@ -59,7 +108,7 @@
 }
 
 .listening-content {
-  padding: 1.5rem clamp(1.25rem, 3.5vw, 3rem) 4rem;
+  padding: 1.5rem var(--space-page-gutter) 4rem;
   scroll-padding-top: 2rem;
 }
 .listening-content > * { max-width: 100rem; margin-inline: auto; }
@@ -243,6 +292,17 @@
 }
 .player-panel {
   animation: player-reveal 200ms var(--ease-out-expo);
+}
+@media (max-width: 639px) {
+  .ui-sheet {
+    inset: auto 0 0;
+    width: 100%;
+    max-width: none;
+    max-height: min(90dvh, 48rem);
+    margin: 0;
+    border-radius: var(--radius-surface) var(--radius-surface) 0 0;
+    padding-bottom: calc(1.5rem + var(--safe-area-bottom));
+  }
 }
 @media (min-width: 1280px) {
   .now-playing {

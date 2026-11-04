@@ -7,7 +7,7 @@ The approved redesign is a spacious listening service, not a pipeline dashboard.
 **Thesis:** music leads; the machinery stays available without competing for attention.
 **World:** broad charcoal fields, generous gutters, square sleeves, quiet rounded controls, readable secondary text, and mint reserved for action/focus.
 **Path:** Home → Discover → Library; personal collections sit alongside these. Settings is the doorway to integrations and management.
-**First viewport:** a quiet navigation rail, an artwork-led listening invitation, a single play action, and a persistent transport. On phones the same primary destinations move to a bottom bar.
+**First viewport:** a quiet navigation rail, an artwork-led listening invitation, a single play action, and a persistent transport. On phones Home, Discover, Library and Your collection share the bottom bar; the You destination remains the doorway to Settings.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
 
 **Discover:** Spotify-style playlist shelves, not a chart administration form. Original generated covers carry oversized typography, a confident color palette and small Mint/source credits. Daily blend, Fresh finds, rediscovery and artist radio open real library mixes; chart and genre covers open their actual ranked collections. Horizontal shelves remain swipeable on phones. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
