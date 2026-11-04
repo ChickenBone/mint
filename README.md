@@ -188,6 +188,7 @@ Use `docker compose ps` and `docker compose logs --tail=100 worker` for details.
 
 ## Advanced setup and development
 
+- [Public agent handbook](agents/README.md) — product decisions, architecture boundaries, design guidance, Playwright fixtures and validation.
 - [Full self-hosting and integration reference](docs/self-hosting.md)
 - [Spotify playlist setup and restrictions](docs/spotify.md)
 - [Chart providers, geographic/genre coverage, caching and explicit requests](docs/charts.md)
