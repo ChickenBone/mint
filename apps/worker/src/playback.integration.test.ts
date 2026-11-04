@@ -69,11 +69,11 @@ test("approved-member streaming, range seeking, session revocation and member-pr
     await assert.rejects(catalogItems({ userId: member!.id, collection: { kind: "album", id: "al_invalid" } }), /Invalid album/);
     assert.ok(!JSON.stringify(await catalogItems({ userId: member!.id })).includes(file));
     const album = (await catalogItems({ userId: member!.id, type: "album" })).items[0]!;
-    assert.equal(album.thumb, artwork, "album cards reuse the YouTube fallback when stored artwork is empty");
+    assert.equal(album.thumb, `/api/artwork/${song!.id}`, "album cards use the shared Plex-first artwork endpoint");
     const result = await catalogItems({ userId: member!.id, collection: { kind: "album", id: album.id } });
     assert.equal(result.items[0]!.id, song!.id);
     assert.equal(result.items[0]!.type, "track");
-    assert.equal(result.items[0]!.thumb, artwork);
+    assert.equal(result.items[0]!.thumb, `/api/artwork/${song!.id}`);
     assert.equal((await catalogItems({ userId: member!.id, type: "album", start: 100 })).total, 1, "empty grouped pages retain total");
     assert.equal((await catalogItems({ userId: member!.id, q: "%" })).total, 0, "search escapes wildcard characters");
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

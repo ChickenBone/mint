@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { artworkPath } from "@mint/core/artwork";
 import { BrowserDSP } from "./browser-dsp";
 import { itemCollection, loadCollection, shuffled } from "./browser-catalog";
 import { defaultDsp, dspSchema, playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "./player-protocol";
@@ -151,7 +152,8 @@ export class NativePlayer {
           snapshot.order.length !== ids.size || new Set(snapshot.order).size !== ids.size || snapshot.order.some((id) => !ids.has(id))) {
         throw new Error("The saved queue is inconsistent.");
       }
-      this.queue = snapshot.queue; this.index = snapshot.index; this.order = snapshot.order;
+      this.queue = snapshot.queue.map((track) => ({ ...track, thumb: artworkPath(track.id) }));
+      this.index = snapshot.index; this.order = snapshot.order;
       this.sequence = snapshot.queue.reduce((max, track) => Math.max(max, /^\d+$/.test(track.queueId) ? Number(track.queueId) : 0), 0);
       this.context = snapshot.context; this.contextRestored = Boolean(snapshot.context);
       this.shuffle = snapshot.shuffle; this.repeat = snapshot.repeat; this.restoredTime = snapshot.time;

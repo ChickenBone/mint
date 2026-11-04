@@ -101,7 +101,7 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   const lossy = tracks.find((track) => track.existingCodec === "mp3")!;
   const lossless = tracks.find((track) => track.existingCodec === "flac")!;
   assert.equal(toTrackView(lossless).youtubeVideoId, null);
-  assert.equal(toTrackView(lossless).artworkUrl, "");
+  assert.equal(toTrackView(lossless).artworkUrl, `/api/artwork/${lossless.id}`, "indexed Plex music has artwork even before public-cover backfill");
   assert.equal((await computeStats(db)).existingTracks, 20_000);
 
   // A rescan refreshes originals but must not undo a separately saved upgrade.

@@ -5,7 +5,7 @@ import clsx from "clsx";
 import { Music2 } from "lucide-react";
 import { useState } from "react";
 
-/** Square cover art from Cover Art Archive or YouTube; falls back to a quiet tile. */
+/** Plex-first library artwork (or an explicit playlist cover); unavailable art gets a quiet tile. */
 export function Artwork({ track, className, eager }: { track: Pick<TrackView, "artworkUrl">; className?: string; eager?: boolean }) {
   const [failed, setFailed] = useState<string | null>(null);
   const src = track.artworkUrl && failed !== track.artworkUrl ? track.artworkUrl : null;

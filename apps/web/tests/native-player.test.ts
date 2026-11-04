@@ -250,6 +250,7 @@ test("member-scoped queues restore paused with their position and cannot leak to
   const restored = setup(tracks(4), original.storage), other = setup(tracks(4), original.storage, "member-two");
   try {
     assert.equal(restored.engine.getState().track!.id, expected);
+    assert.equal(restored.engine.getState().track!.thumb, `/api/artwork/${expected}`, "saved queues move to Plex-first artwork without requiring reselection");
     assert.equal(restored.engine.getState().time, 14_000); assert.equal(restored.engine.getState().playing, false);
     assert.equal(other.engine.getState().track, null);
     await restored.engine.execute({ action: "toggle" });

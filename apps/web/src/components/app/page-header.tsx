@@ -42,7 +42,9 @@ export function PageHeader({
 /** Four real covers tiled into one, like a generated playlist cover. Falls back to `fallback`. */
 export function CoverMosaic({ tracks, fallback }: { tracks: TrackView[]; fallback: React.ReactNode }) {
   // One tile per distinct cover, so a liked album doesn't fill the whole mosaic.
-  const covers = [...new Map(tracks.filter((t) => t.artworkUrl).map((t) => [t.artworkUrl, t])).values()].slice(0, 4);
+  const covers = [...new Map(tracks.filter((t) => t.artworkUrl).map((t) => [
+    t.album ? JSON.stringify([t.artist, t.album]) : t.artworkUrl, t,
+  ])).values()].slice(0, 4);
   return (
     <div className="size-40 shrink-0 overflow-hidden rounded-lg shadow-[0_24px_60px_-18px_rgb(0_0_0/0.9)] sm:size-56">
       {covers.length === 4 ? (

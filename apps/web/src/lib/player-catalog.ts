@@ -3,7 +3,7 @@ import { PLAYABLE } from "@mint/core/playback";
 import { toTrackView } from "@mint/core/views";
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { albumPlayerId, artistPlayerId, collectionSchema, trackPlayerItem, type CatalogPage, type PlayerCollection } from "./player-protocol";
-import { trackArtwork } from "./artwork-query";
+import { albumArtwork } from "./artwork-query";
 import { collectionDetail } from "./music-store";
 import { MusicError } from "@mint/core/music";
 import { catalogSearch } from "./catalog-search";
@@ -138,7 +138,7 @@ export async function catalogItems(opts: {
     const album = sql<string>`coalesce(${t.album}, '')`;
     const group = opts.type === "album" ? [t.artist, album] : [t.artist];
     const selection = db.select({ artist: t.artist, album: opts.type === "album" ? album : sql<string>`''`,
-      thumb: sql<string | null>`min(${trackArtwork})` }).from(t).where(where).groupBy(...group);
+      thumb: albumArtwork }).from(t).where(where).groupBy(...group);
     const [rows, count] = await Promise.all([
       selection.orderBy(asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])).limit(size).offset(start),
       db.select({ n: opts.type === "album" ? sql<number>`count(distinct (${t.artist}, coalesce(${t.album}, '')))::int`

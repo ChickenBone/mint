@@ -27,6 +27,7 @@ import { servePlayback, serveSonic } from "./playback";
 import { startAnalysisScheduler } from "./analysis-jobs";
 import { serveAnalysisWorker } from "./analysis-http";
 import { startSpotifyScheduler } from "./spotify-jobs";
+import { serveArtwork } from "./artwork-http";
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL || "admin@mint.local";
@@ -98,6 +99,16 @@ async function main() {
   }
 
   const server = http.createServer(async (req, res) => {
+    const artwork = /^\/artwork\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
+    if (artwork && (req.method === "GET" || req.method === "HEAD")) {
+      try { await serveArtwork(req, res, artwork[1]!); }
+      catch (err) {
+        log.error({ err }, "artwork request failed");
+        if (!res.headersSent) res.writeHead(503, { "cache-control": "no-store" }).end();
+        else res.destroy();
+      }
+      return;
+    }
     if (req.url?.startsWith("/analysis/")) {
       try { await serveAnalysisWorker(req, res); }
       catch (err) {

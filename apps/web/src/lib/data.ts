@@ -1,5 +1,5 @@
 import "server-only";
-import { trackArtwork } from "./artwork-query";
+import { albumArtwork, trackArtwork } from "./artwork-query";
 import { catalogSearch } from "./catalog-search";
 import { computeStats, toTrackView, toWorkerView, type Stats, type TrackView } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
@@ -38,13 +38,13 @@ export async function getRecentlyReady(limit = 18): Promise<TrackView[]> {
   return rows.map(toTrackView);
 }
 
-/** Distinct real covers from the whole landed library, not just its newest songs. */
+/** One representative cover per album from the whole landed library. */
 export async function getLibraryArtwork(): Promise<Array<Pick<TrackView, "artworkUrl">>> {
   const artwork = trackArtwork;
-  return db().select({ artworkUrl: artwork }).from(t)
+  return db().select({ artworkUrl: albumArtwork }).from(t)
     .where(and(inArray(t.stage, [...LIBRARY_STAGES]), sql`${artwork} is not null`))
-    .groupBy(artwork)
-    .orderBy(desc(sql`max(coalesce(${t.readyAt}, ${t.updatedAt}))`), asc(artwork))
+    .groupBy(t.artist, sql`coalesce(nullif(${t.album}, ''), ${t.title})`)
+    .orderBy(desc(sql`max(coalesce(${t.readyAt}, ${t.updatedAt}))`), asc(t.artist), asc(sql`coalesce(nullif(${t.album}, ''), ${t.title})`))
     .limit(42);
 }
 

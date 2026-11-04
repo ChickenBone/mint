@@ -9,7 +9,7 @@ const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'" + (dev ? " 'unsafe-eval'" : ""),
   "style-src 'self' 'unsafe-inline'",
-  // Cover art is always remote: Cover Art Archive (redirects to archive.org) or YouTube thumbnails.
+  // Library covers use the same-origin Plex-first proxy; explicit playlist/provider images may be remote.
   "img-src 'self' data: blob: https://i.ytimg.com https://*.ggpht.com https://*.googleusercontent.com https://coverartarchive.org https://archive.org https://*.archive.org https://i.scdn.co https://mosaic.scdn.co",
   // Next client navigation retains the initial document policy, including after sign-in.
   "media-src 'self' blob:",

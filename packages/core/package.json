@@ -13,6 +13,7 @@
     "./crypto": "./src/crypto.ts",
     "./playback": "./src/playback.ts",
     "./analysis": "./src/analysis.ts",
+    "./artwork": "./src/artwork.ts",
     "./analysis-db": "./src/db/analysis.ts",
     "./music": "./src/music.ts",
     "./music-db": "./src/db/music.ts",

@@ -1,6 +1,7 @@
 import { WORKER_ONLINE_MS, type WorkerView } from "./agent-protocol";
 import type { TrackView } from "./events";
 import type { Track, Worker } from "./db/schema";
+import { trackArtworkUrl } from "./artwork";
 
 export function toTrackView(t: Track): TrackView {
   return {
@@ -15,7 +16,7 @@ export function toTrackView(t: Track): TrackView {
     detail: t.detail,
     source: t.source,
     sonicAnalyzed: t.sonicAnalyzed,
-    artworkUrl: t.artworkUrl || (t.youtubeVideoId ? `https://i.ytimg.com/vi/${t.youtubeVideoId}/mqdefault.jpg` : ""),
+    artworkUrl: trackArtworkUrl(t),
     youtubeVideoId: t.youtubeVideoId,
     updatedAt: t.updatedAt.toISOString(),
   };
