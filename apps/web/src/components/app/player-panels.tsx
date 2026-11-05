@@ -98,7 +98,7 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
       {current.normalize && <label className="block text-sm">Target loudness <span className="float-right text-muted tabular">{current.targetLufs} LUFS</span>
         <input aria-label="Target loudness" type="range" min="-23" max="-9" step="1" value={current.targetLufs} onChange={(event) => update({ targetLufs: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
       </label>}
-      <p className="text-xs leading-relaxed text-muted">Mint Smart Fades use measured silence and boundary energy, not Plexamp&apos;s proprietary engine. Missing analysis uses a short fixed fade; missing loudness data applies no normalization. EQ and overlap reserve headroom. Repeat-one never fades.</p>
+      <p className="max-w-prose text-xs leading-relaxed text-muted">Mint Smart Fades use measured silence and boundary energy. Missing analysis uses a short fixed fade; missing loudness data applies no normalization. EQ and overlap reserve headroom. Repeat-one never fades.</p>
       <p role="status" className="text-xs text-muted">{state.transitionDetail ?? "Transitions off"}{current.normalize ? ` · gain ${(state.normalizationDb ?? 0).toFixed(1)} dB` : ""}</p>
       <div className="flex flex-wrap gap-2">
         <button disabled={!dirty} className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"

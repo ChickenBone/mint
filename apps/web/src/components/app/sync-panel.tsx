@@ -31,13 +31,13 @@ export function SyncPanel({ initial }: { initial: SyncState }) {
             setError(null);
             const res = await syncNow();
             if (res.error) setError(res.error);
-            else setState((s) => ({ ...s, status: "syncing", message: "Queued" }));
+            else setState((s) => ({ ...s, status: "syncing", message: "Bringing in your music" }));
           })
         }
-        className="inline-flex h-10 items-center gap-2 rounded-full bg-fg px-5 text-sm font-bold text-bg transition hover:scale-[1.03] disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100"
+        className="inline-flex min-h-11 items-center gap-2 rounded-full bg-fg px-5 text-sm font-bold text-bg transition hover:bg-fg/90 disabled:cursor-wait disabled:opacity-70"
       >
         {syncing || pending ? <Loader2 className="size-4 animate-spin" aria-hidden /> : <RefreshCw className="size-4" aria-hidden />}
-        {syncing ? "Syncing" : "Sync now"}
+        {syncing ? "Bringing in your music…" : "Sync now"}
       </button>
       <p className="text-sm text-muted" role="status">
         {error ? (
@@ -45,9 +45,15 @@ export function SyncPanel({ initial }: { initial: SyncState }) {
         ) : state.status === "error" ? (
           <span className="text-danger">Last sync failed: {state.message ?? "unknown error"}</span>
         ) : syncing ? (
-          <>{state.message ?? "Reading your likes"}{state.found != null && <> · {state.found} found</>}</>
+          <>
+            Bringing in your music{state.message ? ` · ${state.message}` : ""}
+            {state.found != null && <> · {state.found} found</>}
+          </>
         ) : (
-          <>Last synced {timeAgo(state.lastSyncedAt)}{state.added ? <> · {state.added} new</> : null}</>
+          <>
+            Last synced {timeAgo(state.lastSyncedAt)}
+            {state.added ? <> · {state.added} new</> : null}
+          </>
         )}
       </p>
     </div>

@@ -40,7 +40,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <span className="md:hidden"><Logo /></span>
           <MusicNavigation />
           <div className="flex shrink-0 items-center gap-3">
-          <SettingsLink name={user.name} />
+          <SettingsLink name={user.name} pendingRequests={pending} />
           <span className="hidden xl:block"><SignOut /></span>
           </div>
         </div>

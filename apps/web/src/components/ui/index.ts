@@ -1,3 +1,4 @@
+export * from "./confirm-dialog";
 export * from "./interactive";
 export * from "./layout";
 export * from "./primitives";

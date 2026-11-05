@@ -2,6 +2,7 @@
 
 import { DEFAULT_ANALYSIS_CONTROLS, type AnalysisControls } from "@mint/core/analysis";
 import { useCallback, useEffect, useState } from "react";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCount } from "@/lib/format";
 
 interface Diagnostics {
@@ -25,6 +26,7 @@ export function AnalysisPanel() {
   const [controls, setControls] = useState<AnalysisControls>(DEFAULT_ANALYSIS_CONTROLS);
   const [dirty, setDirty] = useState(false), [busy, setBusy] = useState(false);
   const [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [confirmAction, setConfirmAction] = useState<"reprocess-all" | "cancel-all" | null>(null);
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await fetch("/api/player/analysis", { cache: "no-store", signal });
@@ -75,10 +77,36 @@ export function AnalysisPanel() {
         {data.workers.map((worker) => worker.error && <p key={worker.id} className="mt-2 text-sm text-warn">{worker.mode} worker: {worker.error}</p>)}
         <div className="mt-5 flex flex-wrap gap-2">
           <button type="button" className={`${button} bg-mint text-mint-ink hover:bg-mint-strong`} disabled={busy || data.backfill?.status === "queuing"} onClick={() => void change({ action: "process-all" })}>Analyze all missing files</button>
-          <button type="button" className={button} disabled={busy || data.backfill?.status === "queuing"} onClick={() => { if (window.confirm(`Reprocess the entire playable library (${formatCount(data.total)} tracks), including completed, failed and cancelled files? Active and already pending jobs are kept. Originals are unchanged; saved resource limits still apply.`)) void change({ action: "reprocess-all" }); }}>Reprocess entire library</button>
+          <button type="button" className={button} disabled={busy || data.backfill?.status === "queuing"} onClick={() => setConfirmAction("reprocess-all")}>Reprocess entire library</button>
           <button type="button" className={button} disabled={busy} onClick={() => void change({ action: "retry-failed" })}>Retry failed</button>
-          <button type="button" className={`${button} text-danger`} disabled={busy} onClick={() => { if (window.confirm("Cancel all pending and running audio analysis? Originals and completed measurements are kept.")) void change({ action: "cancel-all" }); }}>Cancel pending and running</button>
+          <button type="button" className={`${button} text-danger`} disabled={busy} onClick={() => setConfirmAction("cancel-all")}>Cancel pending and running</button>
         </div>
+        <ConfirmDialog
+          open={confirmAction === "reprocess-all"}
+          onClose={() => setConfirmAction(null)}
+          title="Reprocess entire library?"
+          description={`Reprocess the entire playable library (${formatCount(data.total)} tracks), including completed, failed and cancelled files? Active and already pending jobs are kept. Originals are unchanged; saved resource limits still apply.`}
+          confirmLabel="Reprocess library"
+          tone="primary"
+          busy={busy}
+          onConfirm={async () => {
+            setConfirmAction(null);
+            await change({ action: "reprocess-all" });
+          }}
+        />
+        <ConfirmDialog
+          open={confirmAction === "cancel-all"}
+          onClose={() => setConfirmAction(null)}
+          title="Cancel pending and running analysis?"
+          description="Cancel all pending and running audio analysis? Originals and completed measurements are kept."
+          confirmLabel="Cancel analysis"
+          tone="danger"
+          busy={busy}
+          onConfirm={async () => {
+            setConfirmAction(null);
+            await change({ action: "cancel-all" });
+          }}
+        />
         {data.backfill && <div className="mt-5 max-w-prose space-y-2 text-sm" role="status" aria-live="polite">
           <p className="font-semibold">{data.backfill.status === "queuing" ? "Building the persistent queue" : data.backfill.status === "cancelled" ? "Library scan cancelled" : "Library scan finished"}</p>
           <p className="text-muted">{formatCount(data.backfill.scanned)} of {formatCount(data.backfill.total)} tracks checked; {formatCount(data.backfill.queued)} jobs added. {data.backfill.status === "queued" ? "Queueing is complete, not necessarily processing. Follow job totals above." : "Active and already pending jobs are not duplicated."}</p>
