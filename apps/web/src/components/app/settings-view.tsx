@@ -181,7 +181,7 @@ export function SettingsView({
   const spError = searchParams.get("spotify_error");
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="settings-frame mx-auto max-w-6xl">
       <PageHeader
         title="Settings"
         sub="Make Mint feel like yours. Your account, your sound, your devices."

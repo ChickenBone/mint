@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ListMusic } from "lucide-react";
+import { Artwork } from "@/components/artwork";
 import { getDb } from "@mint/core/db";
 import { MusicError } from "@mint/core/music";
 import { UUID } from "@mint/core/playback";
@@ -61,7 +62,7 @@ export default async function CollectionDetailPage({
           art={
             <div className="relative size-40 shrink-0 overflow-hidden rounded-lg bg-elevated sm:size-52">
               {playlist.artworkUrl ? (
-                <img src={playlist.artworkUrl} alt="" referrerPolicy="no-referrer" className="size-full object-cover" />
+                <Artwork track={{ artworkUrl: playlist.artworkUrl }} eager className="size-full rounded-none" />
               ) : (
                 <ListMusic className="absolute inset-0 m-auto size-16 text-faint" aria-hidden />
               )}

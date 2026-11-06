@@ -35,7 +35,7 @@ export function Shelf({
       onKeyDown={onKeyDown}
       className={clsx(
         "flex snap-x snap-proximity gap-4 overflow-x-auto overscroll-x-contain px-1 pb-3 scrollbar-thin focus-visible:outline-action",
-        "[&>*]:w-[min(44vw,14rem)] [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-[min(30vw,15rem)] lg:[&>*]:w-[min(20vw,16rem)]",
+        "[&>*]:w-[min(44vw,12rem)] [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-[min(30vw,12rem)]",
         className,
       )}
     >

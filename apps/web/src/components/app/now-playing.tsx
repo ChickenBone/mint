@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Settings2, Volume2 } from "lucide-react";
-import { Artwork } from "../artwork";
+import { Artwork, ArtworkAtmosphere } from "../artwork";
 import type { PlayerCommand, PlayerItem, PlayerState } from "@/lib/player-protocol";
 import { LyricsPanel, QueueContents } from "./player-panels";
 import { AlbumLink, ArtistLink } from "./music-links";
@@ -32,7 +32,8 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
   };
   const track = state.track;
   useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
-  return <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing absolute inset-0 flex flex-col overflow-hidden">
+  return <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing music-atmosphere absolute inset-0 flex flex-col overflow-hidden">
+    <ArtworkAtmosphere src={track?.thumb} />
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-base font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-mint">Now Playing</h1>
       <div className="flex items-center gap-1">

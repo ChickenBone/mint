@@ -43,7 +43,7 @@ export interface HistoryInitialData {
   excluded: TrackView[];
 }
 
-const inputClass = "min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm ring-1 ring-line focus:ring-mint";
+const inputClass = "ui-field min-h-11 w-full rounded-control bg-elevated px-4 py-2 text-sm ring-1 ring-line focus:ring-mint";
 const pillButton = "inline-flex min-h-11 items-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
 
 export function YourMusic({
@@ -286,7 +286,7 @@ export function YourMusic({
       ) : (
         <ul className="divide-y divide-line/60" aria-label="Playlists">
           {playlists.map((p) => (
-            <MusicItem as="li" item={{ id: p.id, type: "playlist", title: p.title, thumb: p.artworkUrl ?? undefined }} key={p.id} className="flex flex-wrap items-center gap-3 py-4">
+            <MusicItem as="li" item={{ id: p.id, type: "playlist", title: p.title, thumb: p.artworkUrl ?? undefined }} key={p.id} className="playlist-row flex flex-wrap items-center gap-3 py-4">
               <Link className="flex min-w-0 flex-1 items-center gap-4" href={`/app/collection/${p.id}`}>
                 {p.artworkUrl ? (
                   <Artwork track={{ artworkUrl: p.artworkUrl }} className="size-16 shrink-0 rounded" />

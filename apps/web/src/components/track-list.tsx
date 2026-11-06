@@ -123,7 +123,7 @@ export function TrackList({
 export function TrackCard({ track, feature = false, landing = false }: { track: TrackView; feature?: boolean; landing?: boolean }) {
   const player = usePlayer();
   const playable = player && (track.stage === "ready" || track.stage === "analyzing");
-  if (playable) return <MusicItem item={trackPlayerItem(track)} className={clsx("group relative", feature && "col-span-2 row-span-2")}>
+  if (playable) return <MusicItem item={trackPlayerItem(track)} className={clsx("music-card group relative", feature && "col-span-2 row-span-2")}>
     <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={() => player.command({ action: "play", item: trackPlayerItem(track) })}
       className="block w-full rounded-md text-left disabled:opacity-50">
       <div className="relative overflow-hidden rounded-md"><Artwork track={track} eager={feature} className="w-full" />
