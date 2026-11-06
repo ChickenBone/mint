@@ -50,6 +50,15 @@ function Row({
             className="block max-w-full truncate text-left font-medium text-fg hover:underline disabled:opacity-40">{track.title}</button>
             : <p className="truncate font-medium text-fg">{track.title}</p>}
           <p className="truncate text-sm text-muted">{player ? <ArtistLink item={item} /> : track.artist}</p>
+          {(showStage || inFlight || track.stage === "failed") && (
+            <div className="mt-1 flex flex-col gap-1 sm:hidden">
+              <StageBadge stage={track.stage} progress={track.progress} />
+              {inFlight && track.stage === "downloading" && <ProgressBar value={track.progress} />}
+              {track.stage === "failed" && track.detail && (
+                <p className="break-words text-xs text-faint">{track.detail}</p>
+              )}
+            </div>
+          )}
         </div>
       </div>
       <p className="hidden truncate text-sm text-muted sm:block">{player ? <AlbumLink item={item} /> : track.album ?? "Single"}</p>

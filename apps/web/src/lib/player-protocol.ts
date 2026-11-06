@@ -9,6 +9,7 @@ export const playerItemSchema = z.object({
   thumb: z.string().max(2048).optional(),
   albumId: z.string().max(20_000).optional(),
   artistId: z.string().max(20_000).optional(),
+  playlistSource: z.literal("spotify").optional(),
   duration: z.number().finite().nonnegative().optional(),
   occurrenceId: z.uuid().optional(),
   queueId: z.union([z.string().regex(/^\d+$/), z.uuid()]).optional(),
@@ -21,14 +22,35 @@ export const dspSchema = z.object({
   fadeMode: z.enum(["fixed", "smart", "off"]).default("fixed"),
   normalize: z.boolean().default(false), albumSafe: z.boolean().default(true),
   targetLufs: z.number().min(-23).max(-9).default(-16),
+  normalizeMode: z.enum(["track", "album", "auto"]).default("auto"),
+  limiter: z.boolean().default(true),
+  loudnessContour: z.boolean().default(false),
+  stereoMode: z.enum(["normal", "crossfeed", "wide"]).default("normal"),
 });
 export type DspSettings = z.infer<typeof dspSchema>;
-export const defaultDsp: DspSettings = { enabled: false, preamp: -6, bands: Array(10).fill(0), compressor: false, crossfade: 0,
-  fadeMode: "fixed", normalize: false, albumSafe: true, targetLufs: -16 };
+export const defaultDsp: DspSettings = {
+  enabled: false, preamp: -6, bands: Array(10).fill(0), compressor: false, crossfade: 0,
+  fadeMode: "fixed", normalize: false, albumSafe: true, targetLufs: -16,
+  normalizeMode: "auto", limiter: true, loudnessContour: false, stereoMode: "normal",
+};
 export const collectionSchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("library"), query: z.string().max(100).optional(),
-    filters: z.object({ artist: z.string().max(200).optional(), album: z.string().max(200).optional(), codec: z.string().max(100).optional(),
-      minYear: z.number().int().min(1000).max(3000).optional(), maxYear: z.number().int().min(1000).max(3000).optional() }).optional() }),
+  z.object({
+    kind: z.literal("library"),
+    query: z.string().max(100).optional(),
+    filters: z.object({
+      artist: z.string().max(200).optional(),
+      album: z.string().max(200).optional(),
+      codec: z.string().max(100).optional(),
+      minYear: z.number().int().min(1000).max(3000).optional(),
+      maxYear: z.number().int().min(1000).max(3000).optional(),
+      genre: z.string().max(100).optional(),
+      mood: z.string().max(100).optional(),
+      minBpm: z.number().min(40).max(240).optional(),
+      maxBpm: z.number().min(40).max(240).optional(),
+      camelotKey: z.string().max(10).optional(),
+      vocalType: z.enum(["vocal", "instrumental", "spoken-word"]).optional(),
+    }).optional(),
+  }),
   z.object({ kind: z.literal("liked") }),
   z.object({ kind: z.literal("playlist"), id: z.uuid() }),
   z.object({ kind: z.literal("spotify"), id: z.uuid() }),

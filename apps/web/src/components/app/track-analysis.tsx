@@ -30,18 +30,84 @@ function AnalysisDetail({ id, state, command }: { id: string; state: PlayerState
     {metadata && <p className="text-xs text-muted">{[metadata.codec ?? metadata.existingCodec, metadata.year, metadata.source].filter(Boolean).join(" · ")}</p>}
     {status && <p role="status" className="text-xs leading-relaxed text-muted">{status}</p>}
     {analysis && <>
+      {analysis.version === 2 && (analysis.classification.genres.length > 0 || analysis.classification.moods.length > 0) && (
+        <div className="space-y-2">
+          {analysis.classification.genres.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5" aria-label="Detected genres">
+              {analysis.classification.genres.map((genre) => (
+                <span key={`${genre.name}-${genre.subgenre ?? ""}`} className="rounded-full border border-line bg-elevated px-2.5 py-0.5 text-xs font-semibold text-fg">
+                  {genre.name}{genre.subgenre ? ` · ${genre.subgenre}` : ""}
+                </span>
+              ))}
+              <span className="rounded-full bg-elevated px-2.5 py-0.5 text-xs text-muted capitalize">
+                {analysis.classification.voiceInstrumental.label.replace("-", " ")}
+              </span>
+            </div>
+          )}
+          {analysis.classification.moods.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5" aria-label="Detected moods">
+              {analysis.classification.moods.map((mood) => (
+                <span key={mood.name} className="rounded-full bg-surface px-2.5 py-0.5 text-xs capitalize text-muted">
+                  {mood.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       <div className="relative flex h-16 items-end gap-px rounded focus-within:ring-2 focus-within:ring-mint" aria-label="Measured audio waveform">
         {analysis.waveform.map((value, index) => <span aria-hidden key={index} className={`min-w-0 flex-1 rounded-t-sm ${index / analysis.waveform.length <= state.time / (analysis.durationSec * 1000) ? "bg-mint" : "bg-faint"}`} style={{ height: `${Math.max(4, value * 100)}%` }} />)}
+        {analysis.version === 2 && analysis.structure.introEndSec > 0.2 && analysis.durationSec > 0 && (
+          <span
+            aria-hidden
+            title={`Intro ends at ${analysis.structure.introEndSec.toFixed(1)}s`}
+            className="pointer-events-none absolute inset-y-0 w-px bg-mint/60"
+            style={{ left: `${Math.min(98, Math.max(1, (analysis.structure.introEndSec / analysis.durationSec) * 100))}%` }}
+          />
+        )}
+        {analysis.version === 2 && analysis.structure.outroStartSec < analysis.durationSec - 0.2 && analysis.durationSec > 0 && (
+          <span
+            aria-hidden
+            title={`Outro starts at ${analysis.structure.outroStartSec.toFixed(1)}s`}
+            className="pointer-events-none absolute inset-y-0 w-px bg-mint/60"
+            style={{ left: `${Math.min(99, Math.max(2, (analysis.structure.outroStartSec / analysis.durationSec) * 100))}%` }}
+          />
+        )}
         <input aria-label="Waveform seek" type="range" min="0" max={Math.round(analysis.durationSec * 1000)} value={Math.min(state.time, Math.round(analysis.durationSec * 1000))}
           onChange={(event) => command({ action: "seek", value: Number(event.target.value) })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
       </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-xs tabular">
         <div><dt className="text-muted">Loudness</dt><dd className="mt-1">{analysis.integratedLufs?.toFixed(1) ?? "Unavailable"} LUFS</dd></div>
         <div><dt className="text-muted">True peak</dt><dd className="mt-1">{analysis.truePeakDbtp?.toFixed(1) ?? "Unavailable"} dBTP</dd></div>
-        <div><dt className="text-muted">Tempo estimate</dt><dd className="mt-1">{analysis.tempo.bpm?.toFixed(0) ?? "Uncertain"} BPM · {Math.round(analysis.tempo.confidence * 100)}%</dd></div>
-        <div><dt className="text-muted">Key estimate</dt><dd className="mt-1">{analysis.key.name ?? "Uncertain"} · {Math.round(analysis.key.confidence * 100)}%</dd></div>
+        {analysis.version === 2 && (
+          <>
+            <div><dt className="text-muted">Loudness range</dt><dd className="mt-1">{analysis.lraLu !== null ? `${analysis.lraLu.toFixed(1)} LU` : "Unavailable"}</dd></div>
+            <div><dt className="text-muted">Crest factor</dt><dd className="mt-1">{analysis.crestFactorDb !== null ? `${analysis.crestFactorDb.toFixed(1)} dB` : "Unavailable"}</dd></div>
+          </>
+        )}
+        <div>
+          <dt className="text-muted">Tempo estimate</dt>
+          <dd className="mt-1">
+            {analysis.tempo.bpm?.toFixed(0) ?? "Uncertain"} BPM · {Math.round(analysis.tempo.confidence * 100)}%
+            {analysis.version === 2 && analysis.tempo.bpm ? ` · ${Math.round(analysis.tempo.tempoStability * 100)}% steady` : ""}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-muted">Key estimate</dt>
+          <dd className="mt-1">
+            {analysis.key.name ?? "Uncertain"}
+            {analysis.version === 2 && analysis.key.camelot ? ` · ${analysis.key.camelot}` : ""}
+            {" · "}{Math.round(analysis.key.confidence * 100)}%
+          </dd>
+        </div>
+        {analysis.version === 2 && (
+          <>
+            <div><dt className="text-muted">Danceability</dt><dd className="mt-1">{Math.round(analysis.classification.danceability * 100)}%</dd></div>
+            <div><dt className="text-muted">Vocal presence</dt><dd className="mt-1 capitalize">{analysis.classification.voiceInstrumental.label.replace("-", " ")} · {Math.round(analysis.classification.voiceInstrumental.vocalPresence * 100)}%</dd></div>
+          </>
+        )}
       </dl>
-      <p className="text-xs leading-relaxed text-muted">Measured by {analysis.algorithm}. Tempo and key are estimates, not DJ beat-grid guarantees. Analysis v{analysis.version} · {new Date(analysis.measuredAt).toLocaleDateString()}.</p>
+      <p className="text-xs leading-relaxed text-muted">Measured by {analysis.algorithm}. Tempo, key, and sonic tags are acoustic estimates. Analysis v{analysis.version} · {new Date(analysis.measuredAt).toLocaleDateString()}.</p>
     </>}
   </section>;
 }

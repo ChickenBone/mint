@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createHoldGesture } from "../src/lib/music-gestures";
+import { itemCollection } from "../src/lib/browser-catalog";
+import { playerItemSchema } from "../src/lib/player-protocol";
+
+test("shared playlist actions retain the source and only address local matched Spotify music", () => {
+  const playlist = { id: "00000000-0000-4000-8000-000000000001", type: "playlist", title: "Test mix" };
+  assert.deepEqual(itemCollection(playerItemSchema.parse(playlist)), { kind: "playlist", id: playlist.id });
+  assert.deepEqual(itemCollection(playerItemSchema.parse({ ...playlist, playlistSource: "spotify" })), { kind: "spotify", id: playlist.id });
+});
 
 test("holding opens once after 550ms and suppresses only the release click", (context) => {
   context.mock.timers.enable({ apis: ["setTimeout"] });

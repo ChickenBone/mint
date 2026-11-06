@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
 import { index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 import { ANALYSIS_VERSION, analysisDistance, analysisSchema, type AnalysisControls, type TrackAnalysis } from "../analysis";
 import type { Db } from "./index";
@@ -16,7 +16,10 @@ export const trackAnalysis = pgTable("track_analysis", {
   leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
   requestedBy: uuid("requested_by").references(() => users.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (t) => [index("track_analysis_status_idx").on(t.status, t.updatedAt)]);
+}, (t) => [
+  index("track_analysis_status_idx").on(t.status, t.updatedAt),
+  index("track_analysis_version_status_idx").on(t.version, t.status),
+]);
 
 export const analysisSettings = pgTable("analysis_settings", {
   id: text("id").primaryKey().default("global"),
@@ -30,11 +33,20 @@ export const analysisWorkers = pgTable("analysis_workers", {
   mode: text("mode", { enum: ["local", "remote", "coordinator"] }).notNull(),
   seenAt: timestamp("seen_at", { withTimezone: true }).notNull().defaultNow(),
   error: text("error"),
+  completedCount: integer("completed_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  avgDurationMs: integer("avg_duration_ms").notNull().default(0),
+  activeTrackId: uuid("active_track_id").references(() => tracks.id, { onDelete: "set null" }),
+  engineVersion: text("engine_version").notNull().default("mint-dsp-v2"),
+  capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
+  lastError: text("last_error"),
 });
+
+export type AnalysisBackfillMode = "missing" | "upgrade-v1" | "all";
 
 export const analysisBackfills = pgTable("analysis_backfills", {
   id: text("id").primaryKey().default("global"),
-  mode: text("mode", { enum: ["missing", "all"] }).notNull(),
+  mode: text("mode", { enum: ["missing", "upgrade-v1", "all"] }).notNull(),
   status: text("status", { enum: ["queuing", "queued", "cancelled"] }).notNull(),
   cursor: uuid("cursor"),
   upperBound: uuid("upper_bound"),
@@ -46,7 +58,7 @@ export const analysisBackfills = pgTable("analysis_backfills", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export async function startAnalysisBackfill(db: Db, mode: "missing" | "all", requestedBy?: string) {
+export async function startAnalysisBackfill(db: Db, mode: AnalysisBackfillMode, requestedBy?: string) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(35051002)`);
     const [active] = await tx.select().from(analysisBackfills).where(eq(analysisBackfills.id, "global"));
@@ -80,17 +92,30 @@ export async function advanceAnalysisBackfill(db: Db) {
     const ids = batch.rows.map((row) => row.id);
     let queued = 0;
     if (ids.length) {
-      const result = await tx.execute(sql`
-        insert into track_analysis (track_id,version,status,requested_by,updated_at)
-        select ${tracks.id},${ANALYSIS_VERSION},'pending',${run.requestedBy}::uuid,now() from ${tracks}
-        where ${inArray(tracks.id, ids)}
-        on conflict (track_id) do update set version=excluded.version,status='pending',error=null,
-          attempts=0,lease_id=null,lease_expires_at=null,updated_at=now(),requested_by=excluded.requested_by
-        where track_analysis.status <> 'running'
-          and (track_analysis.status <> 'pending' or track_analysis.version <> ${ANALYSIS_VERSION})
-          and (${run.mode === "all"} or track_analysis.version <> ${ANALYSIS_VERSION})
-        returning track_id`);
-      queued = result.rowCount ?? 0;
+      if (run.mode === "upgrade-v1") {
+        const result = await tx.execute(sql`
+          update track_analysis
+          set version = ${ANALYSIS_VERSION}, status = 'pending', error = null,
+              attempts = 0, lease_id = null, lease_expires_at = null, updated_at = now(),
+              requested_by = ${run.requestedBy}::uuid
+          where ${inArray(trackAnalysis.trackId, ids)}
+            and track_analysis.status <> 'running'
+            and track_analysis.version < ${ANALYSIS_VERSION}
+          returning track_id`);
+        queued = result.rowCount ?? 0;
+      } else {
+        const result = await tx.execute(sql`
+          insert into track_analysis (track_id,version,status,requested_by,updated_at)
+          select ${tracks.id},${ANALYSIS_VERSION},'pending',${run.requestedBy}::uuid,now() from ${tracks}
+          where ${inArray(tracks.id, ids)}
+          on conflict (track_id) do update set version=excluded.version,status='pending',error=null,
+            attempts=0,lease_id=null,lease_expires_at=null,updated_at=now(),requested_by=excluded.requested_by
+          where track_analysis.status <> 'running'
+            and (track_analysis.status <> 'pending' or track_analysis.version <> ${ANALYSIS_VERSION})
+            and (${run.mode === "all"} or track_analysis.version < 1)
+          returning track_id`);
+        queued = result.rowCount ?? 0;
+      }
     }
     const [updated] = await tx.update(analysisBackfills).set({
       cursor: ids.at(-1) ?? run.cursor, status: ids.length < 500 ? "queued" : "queuing",
@@ -100,16 +125,23 @@ export async function advanceAnalysisBackfill(db: Db) {
   });
 }
 
-export async function enqueueAnalysis(db: Db, options: { trackId?: string; requestedBy?: string; retryFailed?: boolean; refresh?: boolean } = {}) {
+export async function enqueueAnalysis(db: Db, options: {
+  trackId?: string;
+  requestedBy?: string;
+  retryFailed?: boolean;
+  refresh?: boolean;
+  upgradeV1?: boolean;
+} = {}) {
   const rows = await db.execute(sql`
     insert into track_analysis (track_id, version, status, requested_by, updated_at)
     select t.id, ${ANALYSIS_VERSION}, 'pending', ${options.requestedBy ?? null}::uuid, now()
     from tracks t left join track_analysis a on a.track_id = t.id
     where t.stage in ('ready','analyzing') and (t.file_path is not null or t.existing_file_path is not null)
       ${options.trackId ? sql`and t.id = ${options.trackId}::uuid` : sql``}
-      and (a.track_id is null or a.version <> ${ANALYSIS_VERSION}
+      and (a.track_id is null or a.version < 1
+        ${options.upgradeV1 ? sql`or a.version < ${ANALYSIS_VERSION}` : sql``}
         ${options.retryFailed ? sql`or a.status = 'failed'` : sql``}
-        ${options.refresh ? sql`or a.status in ('complete','cancelled')` : sql``})
+        ${options.refresh ? sql`or a.status in ('complete','cancelled') or a.version < ${ANALYSIS_VERSION}` : sql``})
     and (a.status is null or a.status <> 'running')
     order by t.id limit 500
     on conflict (track_id) do update set version = excluded.version, status = 'pending', error = null,
@@ -136,7 +168,11 @@ export async function similarAnalyzedTracks(db: Db, seedTrackIds: string[], limi
   const ids = [...new Set(seedTrackIds)].slice(0, 20);
   if (!ids.length) return [];
   const seedRows = await db.select({ result: trackAnalysis.result }).from(trackAnalysis)
-    .where(and(inArray(trackAnalysis.trackId, ids), eq(trackAnalysis.status, "complete"), eq(trackAnalysis.version, ANALYSIS_VERSION)));
+    .where(and(
+      inArray(trackAnalysis.trackId, ids),
+      notInArray(trackAnalysis.status, ["failed", "cancelled"]),
+      isNotNull(trackAnalysis.result),
+    ));
   const seeds = seedRows.map((row) => analysisSchema.safeParse(row.result))
     .flatMap((parsed) => parsed.success && parsed.data.similarity.confidence >= 0.1 ? [parsed.data] : []);
   if (!seeds.length) return [];
@@ -144,7 +180,11 @@ export async function similarAnalyzedTracks(db: Db, seedTrackIds: string[], limi
   // through the catalog is preferable to silently loading every waveform into web memory.
   const rows = await db.select({ trackId: trackAnalysis.trackId, result: trackAnalysis.result }).from(trackAnalysis)
     .innerJoin(tracks, eq(tracks.id, trackAnalysis.trackId))
-    .where(and(eq(trackAnalysis.status, "complete"), eq(trackAnalysis.version, ANALYSIS_VERSION), PLAYABLE))
+    .where(and(
+      notInArray(trackAnalysis.status, ["failed", "cancelled"]),
+      isNotNull(trackAnalysis.result),
+      PLAYABLE,
+    ))
     .orderBy(sql`md5(${trackAnalysis.trackId}::text || ${ids.join(",")})`).limit(2000);
   return rows.flatMap((row) => {
     if (ids.includes(row.trackId)) return [];

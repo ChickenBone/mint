@@ -7,10 +7,17 @@ import { pipeline } from "node:stream/promises";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
-import { analysisControlsSchema } from "@mint/core/analysis";
+import { ANALYSIS_ALGORITHM, analysisControlsSchema } from "@mint/core/analysis";
 import { analyzeAudio } from "./analysis-engine";
 
 const leaseSchema = z.object({ lease: z.object({ trackId: z.uuid(), leaseId: z.uuid(), controls: analysisControlsSchema }).nullable() });
+const WORKER_CAPABILITIES = "dsp-v2,ebur128,bark12,mfcc13,hpcp-key,genre-mood";
+
+class AnalysisHttpError extends Error {
+  constructor(public readonly status: number, public readonly code?: string, detail?: string) {
+    super(`Analysis server returned HTTP ${status}${code ? ` (${code})` : ""}${detail ? `: ${detail}` : ""}`);
+  }
+}
 
 export async function runRemoteAnalysis(options: { server: string; token: string; cacheDir: string; signal: AbortSignal; once?: boolean; workerId?: string }) {
   const base = new URL(options.server);
@@ -21,9 +28,50 @@ export async function runRemoteAnalysis(options: { server: string; token: string
   const request = async (endpoint: string, init: RequestInit = {}) => {
     const response = await fetch(new URL(endpoint, base), { ...init, redirect: "error",
       signal: init.signal ?? AbortSignal.any([options.signal, AbortSignal.timeout(30_000)]),
-      headers: { authorization: `Bearer ${options.token}`, "x-mint-worker-id": workerId, ...init.headers } });
-    if (!response.ok) { await response.body?.cancel(); throw new Error(`Analysis server returned HTTP ${response.status}`); }
+      headers: {
+        authorization: `Bearer ${options.token}`,
+        "x-mint-worker-id": workerId,
+        "x-mint-engine-version": ANALYSIS_ALGORITHM,
+        "x-mint-capabilities": WORKER_CAPABILITIES,
+        ...init.headers,
+      } });
+    if (!response.ok) {
+      let code: string | undefined, detail: string | undefined;
+      try {
+        const payload = await response.json() as { error?: string; code?: string };
+        code = payload.code;
+        detail = payload.error;
+      } catch {
+        await response.body?.cancel().catch(() => undefined);
+      }
+      throw new AnalysisHttpError(response.status, code, detail);
+    }
     return response;
+  };
+  const submitResultWithRetry = async (leaseId: string, bodyPayload: string, durationMs: number) => {
+    const maxAttempts = 4;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (options.signal.aborted) return;
+      try {
+        const reply = await request(`/analysis/result/${leaseId}`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-mint-analysis-duration-ms": String(durationMs) },
+          body: bodyPayload,
+        });
+        await reply.body?.cancel();
+        return;
+      } catch (error) {
+        const isRetryableHttp = error instanceof AnalysisHttpError && (error.status >= 500 || error.status === 429);
+        const isNetworkError = !(error instanceof AnalysisHttpError);
+        if ((isRetryableHttp || isNetworkError) && attempt < maxAttempts - 1 && !options.signal.aborted) {
+          const delayMs = 250 * 2 ** attempt;
+          await sleep(delayMs, undefined, { signal: options.signal }).catch(() => undefined);
+          continue;
+        }
+        console.error("Analysis result not accepted", error instanceof Error ? error.message : "Unknown failure");
+        return;
+      }
+    }
   };
   while (!options.signal.aborted) {
     const response = await request("/analysis/lease", { method: "POST" });
@@ -40,6 +88,7 @@ export async function runRemoteAnalysis(options: { server: string; token: string
       }).catch(() => controller.abort());
     }, 2000);
     let result: Awaited<ReturnType<typeof analyzeAudio>> | null = null, failure: "resource-limit" | "decode-failed" | "cancelled" = "decode-failed";
+    const startedAt = Date.now();
     try {
       const media = await request(`/analysis/input/${lease.leaseId}`, { signal });
       if (!media.body) throw new Error("Analysis media unavailable");
@@ -58,12 +107,13 @@ export async function runRemoteAnalysis(options: { server: string; token: string
       failure = signal.aborted ? "cancelled" : /limit|exceeds|exceeded/.test(message) ? "resource-limit" : "decode-failed";
       console.error("Remote analysis failed", lease.trackId, message);
     } finally { clearInterval(poll); await rm(file, { force: true }); }
-    // Cancelled leases reject late results. The persistent lease expiry handles a dead network.
+    // Cancelled leases reject late results. Bounded exponential backoff protects completed measurements from transient network blips.
     if (!options.signal.aborted) {
-      await request(`/analysis/result/${lease.leaseId}`, {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify(result ? { analysis: result } : { error: failure }),
-      }).then((reply) => reply.body?.cancel()).catch((error) => console.error("Analysis result not accepted", error instanceof Error ? error.message : "Unknown failure"));
+      await submitResultWithRetry(
+        lease.leaseId,
+        JSON.stringify(result ? { analysis: result } : { error: failure }),
+        Date.now() - startedAt,
+      );
     }
     if (options.once) return;
     await sleep(Math.max(5, lease.controls.intervalSec) * 1000, undefined, { signal: options.signal });

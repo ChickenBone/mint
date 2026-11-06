@@ -11,9 +11,54 @@ const libraryTabs: Record<string, string> = {
   playlists: "playlist",
 };
 
+export type CollectionTab = "playlists" | "likes" | "downloads" | "history";
+export type PlaylistSourceFilter = "all" | "mint" | "youtube" | "spotify" | "smart";
+export type SettingsSectionId = "account" | "services" | "playback" | "devices" | "storage";
+export type ManageTab = "requests" | "jobs" | "workers" | "analysis";
+export type ManageTabId = ManageTab;
+
+const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "downloads", "history"]);
+const validPlaylistSources = new Set<PlaylistSourceFilter>(["all", "mint", "youtube", "spotify", "smart"]);
+const validSettingsSections = new Set<SettingsSectionId>(["account", "services", "playback", "devices", "storage"]);
+const validManageTabs = new Set<ManageTab>(["requests", "jobs", "workers", "analysis"]);
+
 function withQuery(path: string, params: URLSearchParams) {
   const query = params.toString();
   return query ? `${path}?${query}` : path;
+}
+
+export function resolveCollectionTab(params?: URLSearchParams | string | null): CollectionTab {
+  if (typeof params === "string") {
+    const normalized = params.toLowerCase() as CollectionTab;
+    return validCollectionTabs.has(normalized) ? normalized : "playlists";
+  }
+  if (!params) return "playlists";
+  const tab = params.get("tab")?.toLowerCase() as CollectionTab | undefined;
+  if (tab && validCollectionTabs.has(tab)) return tab;
+  if (params.has("kind") || params.has("track")) return "downloads";
+  return "playlists";
+}
+
+export function resolvePlaylistSource(params?: URLSearchParams | string | null): PlaylistSourceFilter {
+  if (typeof params === "string") {
+    const normalized = params.toLowerCase() as PlaylistSourceFilter;
+    return validPlaylistSources.has(normalized) ? normalized : "all";
+  }
+  if (!params) return "all";
+  const source = params.get("source")?.toLowerCase() as PlaylistSourceFilter | undefined;
+  return source && validPlaylistSources.has(source) ? source : "all";
+}
+
+export function resolveSettingsSection(section?: string | null): SettingsSectionId {
+  const raw = section?.toLowerCase();
+  if (raw === "offline") return "storage";
+  const normalized = raw as SettingsSectionId | undefined;
+  return normalized && validSettingsSections.has(normalized) ? normalized : "account";
+}
+
+export function resolveManageTab(tab?: string | null): ManageTab {
+  const normalized = tab?.toLowerCase() as ManageTab | undefined;
+  return normalized && validManageTabs.has(normalized) ? normalized : "requests";
 }
 
 export function legacyMusicHref(params: URLSearchParams) {
@@ -74,10 +119,89 @@ export function legacyDiscoverHref(params: URLSearchParams) {
   return null;
 }
 
+export function legacyCollectionsHref(params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  return withQuery("/app/collection", next);
+}
+
+export function legacyCollectionDetailHref(id: string, params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  return withQuery(`/app/collection/${encodeURIComponent(id)}`, next);
+}
+
+export function legacyLikedHref(params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  next.set("tab", "likes");
+  return withQuery("/app/collection", next);
+}
+
+export function legacyDownloadsHref(params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  next.set("tab", "downloads");
+  return withQuery("/app/collection", next);
+}
+
+export function legacyHistoryHref(params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  next.set("tab", "history");
+  return withQuery("/app/collection", next);
+}
+
+export function legacySpotifyHref(params: URLSearchParams = new URLSearchParams()) {
+  if (params.has("error") || params.has("linked")) {
+    const next = new URLSearchParams();
+    next.set("section", "services");
+    if (params.get("error")) next.set("spotify_error", params.get("error")!);
+    if (params.get("linked")) next.set("spotify_linked", params.get("linked")!);
+    return withQuery("/app/settings", next);
+  }
+  const next = new URLSearchParams(params);
+  next.set("tab", "playlists");
+  next.set("source", "spotify");
+  return withQuery("/app/collection", next);
+}
+
+export function legacyDevicesHref(params: URLSearchParams = new URLSearchParams()) {
+  const next = new URLSearchParams(params);
+  next.set("section", "devices");
+  return withQuery("/app/settings", next);
+}
+
+export function legacyManageHref(
+  tab: ManageTab | "admin",
+  isAdmin: boolean,
+  params: URLSearchParams = new URLSearchParams(),
+) {
+  if (!isAdmin) {
+    if (tab === "jobs") return "/app/collection?tab=likes";
+    if (tab === "workers") return "/app/settings?section=services";
+    return "/app";
+  }
+  const next = new URLSearchParams(params);
+  if (tab !== "requests" && tab !== "admin") next.set("tab", tab);
+  else next.delete("tab");
+  return withQuery("/app/manage", next);
+}
+
 export function isAppDestinationActive(pathname: string, href: string) {
-  if (href === "/app/collections") {
-    return ["/app/collections", "/app/liked", "/app/spotify", "/app/downloads", "/app/history", "/app/playlists"]
-      .some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  if (href === "/app/collection" || href === "/app/collections") {
+    return [
+      "/app/collection",
+      "/app/collections",
+      "/app/liked",
+      "/app/spotify",
+      "/app/downloads",
+      "/app/history",
+      "/app/playlists",
+    ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  }
+  if (href === "/app/settings") {
+    return pathname === "/app/settings" || pathname.startsWith("/app/settings/") || pathname === "/app/devices";
+  }
+  if (href === "/app/manage") {
+    return ["/app/manage", "/app/admin", "/app/jobs", "/app/workers"].some(
+      (route) => pathname === route || pathname.startsWith(`${route}/`),
+    );
   }
   if (href === "/app") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);

@@ -34,6 +34,7 @@ Import from `@/components/ui` or a direct module when preserving a server/client
 | `Checkbox` / `Switch` | Native checkbox or labeled controlled `role="switch"` | Pair state with explicit text | State shown only by color |
 | `Tabs` | Controlled tab set with Left/Right/Up/Down and Home/End navigation | Give the set a concise label | Hiding tab state from assistive technology |
 | `Dialog` / `Sheet` | Native modal dialog; `variant="sheet"` docks to the phone bottom and becomes a dialog on larger screens | Supply a specific title and close action; native dialog traps focus and restores it | Interrupting a task that does not need protected focus |
+| `ConfirmDialog` | Modal confirmation dialog built on `Dialog` for destructive or high-impact actions | Explain the consequence and provide explicit confirm/cancel labels | Using browser `window.confirm` |
 | `Menu` | Button-triggered action menu with arrow/Home/End/Escape keys and focus return | Use for a short set of related actions | Hover-only menus |
 | `Popover` | Native disclosure-style content panel | Keep its trigger and content keyboard reachable | Treating a disclosure as a modal |
 | `Tooltip` | Descriptive tooltip associated with its single focusable child | Keep the label supplementary | Putting required instructions only in a tooltip |
@@ -161,11 +162,11 @@ The route handlers under `/api` are non-visual contracts, not redesign targets: 
 
 ## Migration order and status
 
-1. **Tokens and primitive library** — implemented in `globals.css` and `components/ui/`.
-2. **Forms and app shell** — form field/submit wrappers now compose the shared primitives; the optional toast provider is mounted inside the existing member player shell. Mobile navigation now exposes Your collection alongside the desktop primary destinations; nav styling migration remains pending.
-3. **Player and Now Playing** — deferred; the `PlayerProvider` placement is deliberately unchanged.
-4. **Shared data components** — stage labels/progress now compose `Badge`/`ProgressBar`; next: track rows, library browser, artwork and shelves. Artwork remains on its existing shared implementation.
-5. **Feature pages** — migrate Home, Discover, Library, collection, Downloads, Settings, then public/listen surfaces. Management, public authorization, source ownership, pagination and virtualization must remain intact.
+1. **Tokens and primitive library** — implemented in `globals.css` and `components/ui/` (including `ConfirmDialog`).
+2. **Forms and app shell** — form field/submit wrappers compose the shared primitives; `ToastProvider` is mounted inside the member player shell; mobile navigation exposes Home, Discover, Library and Your music (`/app/collection`) with topbar Settings access and admin pending badge.
+3. **Player and Now Playing** — `NowPlaying` workspace at `/app/now-playing` with Queue, Lyrics and Sound tabs; `PlayerProvider` placement above routed content is preserved.
+4. **Shared data components** — stage labels/progress compose `Badge`/`ProgressBar`; track rows share `TrackMenuButton` with 2-tap playlist addition and Undo toast.
+5. **Feature pages (Part 1 & Part 2 completed)** — Home (`/app` with `SetupNudge` first-run welcome and playable progress), Discover (`/app/discover`, `/app/discover/mixes`, `/app/discover/charts`), Library (`/app/library`, albums, artists), Your music (`/app/collection` and `/app/collection/[id]` unifying Mint, Smart, YouTube and Spotify playlists plus Likes, Downloads and History), Settings (`/app/settings` list-to-detail on phone and two-pane on desktop across Account, Connected services, Playback and sound, Devices and Offline storage), Management (`/app/manage` consolidating Requests, Jobs and queue, Workers and Analysis for admins), and Public pages (`/`, `/browse`, `/charts`, `/activity`, `/login`, `/request-access`) are all migrated with legacy redirects in place.
 
 This inventory records the planned targets; a listed target is not a claim that the component has already migrated. Update the status and route/component rows as each shippable slice lands.
 

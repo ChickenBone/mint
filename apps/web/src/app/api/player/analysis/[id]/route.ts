@@ -21,10 +21,14 @@ export async function GET(_request: Request, context: Context) {
     if (!track) return json({ error: "Track unavailable" }, 404);
     const [row] = await db.select().from(trackAnalysis).where(eq(trackAnalysis.trackId, id));
     const parsed = analysisSchema.safeParse(row?.result);
-    const current = row?.version === ANALYSIS_VERSION;
-    const result = current && row.status === "complete" && parsed.success ? parsed.data : null;
+    const validVersion = (row?.version ?? 0) >= 1;
+    const result = validVersion && parsed.success && (row?.status === "complete" || row?.status === "pending" || row?.status === "running")
+      ? parsed.data
+      : null;
     return json({
-      status: current ? row.status : "missing",
+      status: validVersion && row ? row.status : "missing",
+      version: result?.version ?? (validVersion ? row?.version : null),
+      upgrading: Boolean(result && result.version < ANALYSIS_VERSION && (row?.status === "pending" || row?.status === "running")),
       result, analysis: result,
       attempts: row?.attempts ?? 0,
       ...(row?.error ? { error: user.role === "admin" ? row.error : "Audio analysis is unavailable. An administrator can inspect diagnostics and retry." } : {}),

@@ -231,7 +231,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
   const browse = (item: PlayerItem) => {
     if (item.type === "playlist") {
-      router.push(`/app/library?${new URLSearchParams({ kind: "playlist", id: item.id, type: "track" })}`);
+      router.push(`/app/collection/${encodeURIComponent(item.id)}`);
       return;
     }
     const query = new URLSearchParams({ type: item.type === "artist" ? "album" : "track" });
@@ -363,9 +363,10 @@ function TrackMenu({ selection, close, command, browse }: {
     <button role="menuitem" className={menuClass} onClick={() => {
       close();
       const params = collectionParams(itemCollection(item));
+      params.set("tab", "downloads");
       if (item.type === "track") params.set("track", item.id);
       params.set("title", item.title);
-      router.push(`/app/downloads?${params}`);
+      router.push(`/app/collection?${params}`);
     }}>Download {item.type === "track" ? "song" : item.type}</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => { close(); browse(item); }}>Open {item.type}</button>}
     {item.albumId && <button role="menuitem" className={menuClass} onClick={() => {

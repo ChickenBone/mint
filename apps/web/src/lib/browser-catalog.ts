@@ -1,10 +1,14 @@
 import { catalogPageSchema, collectionSchema, type PlayerCollection, type PlayerItem } from "./player-protocol";
 
-export const metadataFilterKeys = ["artist", "album", "codec", "minYear", "maxYear"] as const;
+export const metadataFilterKeys = [
+  "artist", "album", "codec", "minYear", "maxYear",
+  "genre", "mood", "minBpm", "maxBpm", "camelotKey", "vocalType",
+] as const;
+const numericFilterKeys = new Set<string>(["minYear", "maxYear", "minBpm", "maxBpm"]);
 export function collectionFromParams(params: Pick<URLSearchParams, "get">) {
   const filters = Object.fromEntries(metadataFilterKeys.flatMap((key) => {
     const value = params.get(key);
-    return value ? [[key, key === "minYear" || key === "maxYear" ? Number(value) : value]] : [];
+    return value ? [[key, numericFilterKeys.has(key) ? Number(value) : value]] : [];
   }));
   return collectionSchema.safeParse({ kind: params.get("kind") ?? "library", id: params.get("id"),
     query: params.get("q") || undefined, filters });
@@ -57,7 +61,7 @@ export async function loadCollection(collection: PlayerCollection, signal: Abort
 
 export function itemCollection(item: PlayerItem): PlayerCollection {
   if (item.type === "artist" || item.type === "album") return { kind: item.type, id: item.id };
-  if (item.type === "playlist") return item.id === "liked" ? { kind: "liked" } : { kind: "playlist", id: item.id };
+  if (item.type === "playlist") return item.id === "liked" ? { kind: "liked" } : { kind: item.playlistSource === "spotify" ? "spotify" : "playlist", id: item.id };
   if (item.albumId) return { kind: "album", id: item.albumId };
   throw new Error("This track has no album selection. Play it from its library collection.");
 }

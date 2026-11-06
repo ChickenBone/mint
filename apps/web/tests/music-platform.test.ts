@@ -16,15 +16,25 @@ import { collectionFromParams, collectionParams, loadCollection } from "../src/l
 
 test("music contracts validate safe rules, revisions and bounded history", () => {
   assert.equal(smartRulesSchema.safeParse({ minYear: 2020, maxYear: 2000 }).success, false);
+  assert.equal(smartRulesSchema.safeParse({ minBpm: 140, maxBpm: 100 }).success, false);
+  assert.equal(smartRulesSchema.safeParse({ genre: "Electronic", mood: "energetic", minBpm: 118, maxBpm: 128, camelotKey: "8A", vocalType: "instrumental" }).success, true);
   assert.equal(collectionMutationSchema.safeParse({ action: "append", revision: 0, trackIds: [randomUUID()] }).success, false);
   assert.equal(collectionMutationSchema.safeParse({ action: "update", revision: 1, artworkUrl: "javascript:alert(1)" }).success, false);
   assert.equal(historyEventSchema.safeParse({ trackId: randomUUID(), eventId: randomUUID(), listenedMs: -1 }).success, false);
   assert.equal(historyEventSchema.safeParse({ trackId: randomUUID(), eventId: randomUUID(), listenedMs: 2000 }).success, true);
-  const collection = { kind: "library" as const, query: "First", filters: { artist: "The Originals", album: "Record one", codec: "FLAC", minYear: 2000, maxYear: 2005 } };
+  const collection = {
+    kind: "library" as const,
+    query: "First",
+    filters: {
+      artist: "The Originals", album: "Record one", codec: "FLAC", minYear: 2000, maxYear: 2005,
+      genre: "Electronic", mood: "chill", minBpm: 90, maxBpm: 128, camelotKey: "8A", vocalType: "instrumental" as const,
+    },
+  };
   const parsed = collectionFromParams(collectionParams(collection));
   assert.ok(parsed.success); assert.deepEqual(parsed.data, collection);
   assert.equal(collectionFromParams(new URLSearchParams({ kind: "library", minYear: "invalid" })).success, false);
   assert.equal(collectionFromParams(new URLSearchParams({ kind: "library", maxYear: "3001" })).success, false);
+  assert.equal(collectionFromParams(new URLSearchParams({ kind: "library", minBpm: "10" })).success, false);
 });
 
 const url = process.env.MUSIC_TEST_DATABASE_URL;

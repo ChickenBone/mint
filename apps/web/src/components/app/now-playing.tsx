@@ -38,8 +38,8 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-lg font-bold focus-visible:outline-none">Now playing</h1>
       <div className="flex items-center gap-1">
-        <Link href="/app/settings#playback" aria-label="Playback and sound settings" className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><Settings2 className="size-5" /></Link>
-        <Link href="/app/devices" aria-label="Devices" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
+        <Link href="/app/settings?section=playback" aria-label="Playback and sound settings" className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><Settings2 className="size-5" /></Link>
+        <Link href="/app/settings?section=devices" aria-label="Devices" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
           <MonitorSpeaker className="size-4" /><span className="hidden sm:inline">Devices</span>
         </Link>
         <Link href={returnTo} aria-label="Close now playing" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">

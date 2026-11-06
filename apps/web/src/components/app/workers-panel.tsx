@@ -14,18 +14,22 @@ import { CopyButton } from "./copy-button";
 const ONLINE_MS = 90_000;
 type Row = WorkerView & { tokenHint: string; createdAt: string };
 
-/** Re-renders every `ms` so "online" decays without a server event. */
+/** Client-only clock so SSR and hydration never mismatch on relative timestamps. */
 function useNow(ms: number) {
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    const initial = setTimeout(() => setNow(Date.now()), 0);
     const id = setInterval(() => setNow(Date.now()), ms);
-    return () => clearInterval(id);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(id);
+    };
   }, [ms]);
   return now;
 }
 
-export function WorkerStatus({ w, now }: { w: Pick<WorkerView, "status" | "lastSeenAt">; now: number }) {
-  const online = w.lastSeenAt != null && now - new Date(w.lastSeenAt).getTime() < ONLINE_MS;
+export function WorkerStatus({ w, now }: { w: Pick<WorkerView, "status" | "lastSeenAt">; now: number | null }) {
+  const online = now !== null && w.lastSeenAt != null && now - new Date(w.lastSeenAt).getTime() < ONLINE_MS;
   const [label, tone] =
     w.status === "disabled"
       ? ["Disabled", "text-danger"]
@@ -67,13 +71,28 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
     : "";
 
   return (
-    <div className="grid min-w-0 grid-cols-1 gap-12">
+    <div className="grid min-w-0 grid-cols-1 gap-10">
       <section aria-labelledby="new-worker">
-        <h2 id="new-worker" className="text-xl font-bold">Add a volunteer</h2>
-        <p className="mt-1 max-w-2xl text-sm text-muted">These workers download through Cobalt; they do not analyze audio. Each machine gets its own token so you can revoke one without touching the others. Admins configure separate private-network analysis workers in Audio analysis.</p>
+        <h3 id="new-worker" className="text-xl font-bold">
+          Add a volunteer worker
+        </h3>
+        <p className="mt-1 max-w-prose text-sm text-muted">
+          Volunteer workers download through Cobalt; they do not analyze audio. Each machine gets its own token so you can revoke one without touching the others.
+        </p>
         <form action={action} className="mt-5 flex max-w-xl flex-col gap-3 sm:flex-row sm:items-end">
-          <Field label="Name" name="name" placeholder="living-room-nas" required maxLength={40} error={state?.error} className="flex-1" autoComplete="off" />
-          <SubmitButton pendingLabel="Creating…" className="sm:mb-0">Create token</SubmitButton>
+          <Field
+            label="Name"
+            name="name"
+            placeholder="living-room-nas"
+            required
+            maxLength={40}
+            error={state?.error}
+            className="flex-1"
+            autoComplete="off"
+          />
+          <SubmitButton pendingLabel="Creating…" className="sm:mb-0">
+            Create token
+          </SubmitButton>
         </form>
 
         {state?.token && (
@@ -93,15 +112,22 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
               <CopyButton text={setup} />
             </div>
             {state.status === "pending" && (
-              <p className="mt-4 text-sm text-warn">An admin needs to approve this worker before it receives jobs. It can connect in the meantime.</p>
+              <p className="mt-4 text-sm text-warn">
+                An admin needs to approve this worker before it receives jobs. It can connect in the meantime.
+              </p>
             )}
           </div>
         )}
       </section>
 
       <section aria-labelledby="your-workers">
-        <h2 id="your-workers" className="text-xl font-bold">Your volunteer workers</h2>
-        <p className="mt-2 max-w-prose text-sm text-muted">Never connected? Check that Compose passes MINT_URL with your public Mint HTTPS address, not localhost. Confirm the token hint below matches your .env token, then run <code className="font-mono">docker compose up -d --force-recreate agent</code>. Never share the full token.</p>
+        <h3 id="your-workers" className="text-xl font-bold">
+          Your volunteer workers
+        </h3>
+        <p className="mt-2 max-w-prose text-sm text-muted">
+          Never connected? Check that Compose passes MINT_URL with your public Mint HTTPS address, not localhost. Confirm the token hint below matches your .env token, then run{" "}
+          <code className="font-mono">docker compose up -d --force-recreate agent</code>.
+        </p>
         {workers.length === 0 ? (
           <div className="mt-4 flex max-w-xl items-center gap-4 rounded-xl bg-elevated p-5 text-muted">
             <Server className="size-8 shrink-0 text-faint" aria-hidden />
@@ -118,11 +144,16 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
                   </p>
                   <p className="mt-1 text-xs text-faint">
                     <code className="font-mono">{w.tokenHint}…</code>
-                    {w.version && <> · v{w.version}</>} · seen {w.lastSeenAt ? timeAgo(w.lastSeenAt) : "never"}
-                    {w.activeJobs > 0 && <> · <span className="text-mint">{w.activeJobs} working</span></>}
+                    {w.version && <> · v{w.version}</>} · seen {now !== null && w.lastSeenAt ? timeAgo(w.lastSeenAt) : w.lastSeenAt ? "recently" : "never"}
+                    {w.activeJobs > 0 && (
+                      <>
+                        {" "}
+                        · <span className="text-mint">{w.activeJobs} working</span>
+                      </>
+                    )}
                   </p>
                 </div>
-                <dl className="flex gap-6 text-sm tabular">
+                <dl className="flex flex-wrap gap-6 text-sm tabular">
                   <div>
                     <dt className="text-faint">Delivered</dt>
                     <dd className="font-semibold">{formatCount(w.completed)}</dd>
@@ -136,7 +167,12 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
                     <dd className="font-semibold">{formatBytes(w.bytes)}</dd>
                   </div>
                 </dl>
-                <ActionButton action={revokeWorker.bind(null, w.id)} tone="danger" confirm={`Revoke ${w.name}? The container stops getting jobs immediately.`}>
+                <ActionButton
+                  action={revokeWorker.bind(null, w.id)}
+                  tone="danger"
+                  confirmTitle={`Revoke ${w.name}?`}
+                  confirm={`Revoke ${w.name}? The container stops getting jobs immediately.`}
+                >
                   Revoke
                 </ActionButton>
               </li>
@@ -150,7 +186,16 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
 
 type AdminRow = WorkerView & { owner: string; lastIp: string | null; createdAt: string };
 
-export function AdminWorkers({ initial, actions }: { initial: AdminRow[]; actions: { setStatus: (id: string, s: "active" | "disabled") => Promise<unknown>; revoke: (id: string) => Promise<unknown> } }) {
+export function AdminWorkers({
+  initial,
+  actions,
+}: {
+  initial: AdminRow[];
+  actions: {
+    setStatus: (id: string, s: "active" | "disabled") => Promise<unknown>;
+    revoke: (id: string) => Promise<unknown>;
+  };
+}) {
   const [workers, setWorkers] = useState(initial);
   const [source, setSource] = useState(initial);
   if (source !== initial) {
@@ -163,56 +208,139 @@ export function AdminWorkers({ initial, actions }: { initial: AdminRow[]; action
     setWorkers((prev) => prev.map((w) => (w.id === e.data.id ? { ...w, ...e.data } : w)));
   });
 
-  if (workers.length === 0) return <p className="text-muted">No one has registered a worker yet.</p>;
+  if (workers.length === 0) return <p className="text-muted">No one has registered a volunteer worker yet.</p>;
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[44rem] text-sm">
-        <thead className="text-left text-faint">
-          <tr>
-            <th className="pb-2 font-medium">Worker</th>
-            <th className="pb-2 font-medium">Status</th>
-            <th className="pb-2 text-right font-medium">Delivered</th>
-            <th className="pb-2 text-right font-medium">Failed</th>
-            <th className="pb-2 font-medium" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-line">
-          {workers.map((w) => (
-            <tr key={w.id}>
-              <td className="py-3">
-                <p className="font-semibold">{w.name}</p>
-                <p className="text-muted">
+    <>
+      {/* Stacked cards on phone (< 768px) */}
+      <ul className="space-y-3 md:hidden" aria-label="Registered volunteer workers">
+        {workers.map((w) => (
+          <li key={w.id} className="rounded-surface border border-line bg-elevated p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-semibold">{w.name}</p>
+                <p className="text-xs text-muted">
                   {w.owner}
-                  {w.lastIp && <> · <span className="font-mono text-xs">{w.lastIp}</span></>}
+                  {w.lastIp && (
+                    <>
+                      {" "}
+                      · <span className="font-mono">{w.lastIp}</span>
+                    </>
+                  )}
                   {w.version && <> · v{w.version}</>}
                 </p>
-              </td>
-              <td className="py-3">
-                <WorkerStatus w={w} now={now} />
-                <p className="text-xs text-faint">seen {w.lastSeenAt ? timeAgo(w.lastSeenAt) : "never"}</p>
-              </td>
-              <td className="py-3 text-right tabular">{formatCount(w.completed)}</td>
-              <td className={clsx("py-3 text-right tabular", w.failed > 0 && "text-danger")}>{formatCount(w.failed)}</td>
-              <td className="py-3">
-                <div className="flex justify-end gap-2">
-                  {w.status !== "active" ? (
-                    <ActionButton action={() => actions.setStatus(w.id, "active")} tone="primary">
-                      {w.status === "pending" ? "Approve" : "Enable"}
-                    </ActionButton>
-                  ) : (
-                    <ActionButton action={() => actions.setStatus(w.id, "disabled")} confirm={`Disable ${w.name}? Its current jobs go back to the pool.`}>
-                      Disable
-                    </ActionButton>
-                  )}
-                  <ActionButton action={() => actions.revoke(w.id)} tone="danger" confirm={`Revoke ${w.name} for good? ${w.owner} will need a new token.`}>
-                    Revoke
-                  </ActionButton>
-                </div>
-              </td>
+              </div>
+              <WorkerStatus w={w} now={now} />
+            </div>
+            <dl className="mt-3 flex flex-wrap gap-4 text-xs text-muted tabular">
+              <div>
+                <dt className="inline text-faint">Delivered: </dt>
+                <dd className="inline font-semibold text-fg">{formatCount(w.completed)}</dd>
+              </div>
+              <div>
+                <dt className="inline text-faint">Failed: </dt>
+                <dd className={clsx("inline font-semibold", w.failed > 0 ? "text-danger" : "text-fg")}>
+                  {formatCount(w.failed)}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline text-faint">Seen: </dt>
+                <dd className="inline">{now !== null && w.lastSeenAt ? timeAgo(w.lastSeenAt) : w.lastSeenAt ? "recently" : "never"}</dd>
+              </div>
+            </dl>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {w.status !== "active" ? (
+                <ActionButton action={() => actions.setStatus(w.id, "active")} tone="primary">
+                  {w.status === "pending" ? "Approve" : "Enable"}
+                </ActionButton>
+              ) : (
+                <ActionButton
+                  action={() => actions.setStatus(w.id, "disabled")}
+                  confirmTitle={`Disable ${w.name}?`}
+                  confirm={`Disable ${w.name}? Its current jobs go back to the pool.`}
+                >
+                  Disable
+                </ActionButton>
+              )}
+              <ActionButton
+                action={() => actions.revoke(w.id)}
+                tone="danger"
+                confirmTitle={`Revoke ${w.name}?`}
+                confirm={`Revoke ${w.name} for good? ${w.owner} will need a new token.`}
+              >
+                Revoke
+              </ActionButton>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      {/* Table on desktop (>= 768px) */}
+      <div className="hidden overflow-x-auto md:block">
+        <table className="w-full text-sm">
+          <thead className="text-left text-faint">
+            <tr>
+              <th className="pb-2 font-medium">Worker</th>
+              <th className="pb-2 font-medium">Status</th>
+              <th className="pb-2 text-right font-medium">Delivered</th>
+              <th className="pb-2 text-right font-medium">Failed</th>
+              <th className="pb-2 font-medium" />
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {workers.map((w) => (
+              <tr key={w.id}>
+                <td className="py-3">
+                  <p className="font-semibold">{w.name}</p>
+                  <p className="text-muted">
+                    {w.owner}
+                    {w.lastIp && (
+                      <>
+                        {" "}
+                        · <span className="font-mono text-xs">{w.lastIp}</span>
+                      </>
+                    )}
+                    {w.version && <> · v{w.version}</>}
+                  </p>
+                </td>
+                <td className="py-3">
+                  <WorkerStatus w={w} now={now} />
+                  <p className="text-xs text-faint">
+                    seen {now !== null && w.lastSeenAt ? timeAgo(w.lastSeenAt) : w.lastSeenAt ? "recently" : "never"}
+                  </p>
+                </td>
+                <td className="py-3 text-right tabular">{formatCount(w.completed)}</td>
+                <td className={clsx("py-3 text-right tabular", w.failed > 0 && "text-danger")}>{formatCount(w.failed)}</td>
+                <td className="py-3">
+                  <div className="flex justify-end gap-2">
+                    {w.status !== "active" ? (
+                      <ActionButton action={() => actions.setStatus(w.id, "active")} tone="primary">
+                        {w.status === "pending" ? "Approve" : "Enable"}
+                      </ActionButton>
+                    ) : (
+                      <ActionButton
+                        action={() => actions.setStatus(w.id, "disabled")}
+                        confirmTitle={`Disable ${w.name}?`}
+                        confirm={`Disable ${w.name}? Its current jobs go back to the pool.`}
+                      >
+                        Disable
+                      </ActionButton>
+                    )}
+                    <ActionButton
+                      action={() => actions.revoke(w.id)}
+                      tone="danger"
+                      confirmTitle={`Revoke ${w.name}?`}
+                      confirm={`Revoke ${w.name} for good? ${w.owner} will need a new token.`}
+                    >
+                      Revoke
+                    </ActionButton>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
