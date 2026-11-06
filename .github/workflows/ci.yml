@@ -40,6 +40,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: npm run agents:check
+      - run: npm run test:agents
       - run: npm run typecheck
       - run: npm run lint
       - name: Install audio integration test tools

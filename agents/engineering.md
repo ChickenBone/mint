@@ -54,4 +54,4 @@ Do not commit filled Compose settings, `.env`, exported cookies, credentials, pr
 
 ## Maintaining this folder
 
-Update only the guides directly affected by a new durable decision. Mark superseded decisions and unresolved observations honestly. Keep `PRODUCT.md`, `DESIGN.md` and operational references aligned; avoid copying implementation constants into multiple sources without a reason.
+Update only the guides directly affected by a new durable decision. Durable per-area invariants belong in the owning [domain card](domains/README.md). After adding, moving or deleting files, run `npm run agents:sync`; `npm run agents:check` must pass. Mark superseded decisions and unresolved observations honestly. Keep `PRODUCT.md`, `DESIGN.md` and operational references aligned; avoid copying implementation constants into multiple sources without a reason.

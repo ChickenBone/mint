@@ -21,6 +21,10 @@
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "db:generate": "npm run db:generate -w @mint/core",
-    "db:migrate": "npm run db:migrate -w @mint/core"
+    "db:migrate": "npm run db:migrate -w @mint/core",
+    "agents": "node scripts/agents/cli.mjs",
+    "agents:sync": "node scripts/agents/cli.mjs sync",
+    "agents:check": "node scripts/agents/cli.mjs check",
+    "test:agents": "node --test scripts/agents/lib.test.mjs"
   }
 }

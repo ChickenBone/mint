@@ -4,6 +4,8 @@ This folder captures the durable requirements, design decisions and engineering 
 
 ## Reading map
 
+Agents route each task to one or more **domains** first. See the [domain index](domains/README.md) and [working at scale](working-at-scale.md). Each domain card lists which of the guides below to read.
+
 | Guide | Read when |
 | --- | --- |
 | [Product decisions](product-decisions.md) | Starting any task; understanding priorities, history and deferred scope |
@@ -15,10 +17,11 @@ This folder captures the durable requirements, design decisions and engineering 
 | [Engineering](engineering.md) | Implementing, validating, documenting or publishing a change |
 | [Browser testing and mocks](browser-testing-and-mocks.md) | Running Playwright, seeding isolated demos, testing real boundaries and capturing screenshots |
 | [Sleeves, shelves and assets](sleeves-and-shelves.md) | Designing virtual playlist covers, album art, discovery rails and public-safe demo assets |
+| [Working at scale](working-at-scale.md) | Routing tasks to domains, decomposing large tasks, adding or splitting domains |
 
 ## How to use this guidance
 
-1. Read the relevant guide and its linked source documents.
+1. Route to the relevant domain cards, then read the guides they list and their linked source documents.
 2. Inspect the current implementation and tests before choosing a solution.
 3. Keep the current user request bounded; this handbook is not a request to implement every historical idea.
 4. Preserve authorization, read-only originals, persistent playback and large-library behavior.
