@@ -24,6 +24,10 @@ Keep same-origin/blob media allowed by the initial document CSP so navigating fr
 
 Library artwork goes through `/api/artwork/{trackId}`. Plex album artwork is primary, preferring album/parent thumbs; saved public artwork, Cover Art Archive and available YouTube thumbnails are backups.
 
+Artist portraits use Plex `grandparentThumb` only, through `/api/artwork/{trackId}?variant=artist`. They share the signed track-specific artwork proxy, validated Plex paths, private token handling, bounded image cache, and coalescing. Do not substitute album covers or public album-art sources for portraits; absent Plex portraits use the shared neutral tile.
+
+Artist detail metadata is fetched by the pipeline worker's bounded background queue. Resolve MusicBrainz identities only on exact normalized names or existing track MBIDs; ambiguous names stay unresolved. Profiles may include MusicBrainz artist type/relations, attributed Wikipedia lead summaries, and ListenBrainz community listen/listener counts and similar artists. Keep each source explicit; these counts are not global popularity, and failures must remain retryable/visible. The queue reads metadata only and never opens audio files or changes Plex.
+
 Stored public artwork URLs remain fallback metadata; do not overwrite them with a track proxy path. Shared views project the public endpoint. Album cards/hero mosaics must group by album identity, not produce duplicates for every per-track artwork URL.
 
 Preserve bounded caches, concurrent request coalescing, short failure cooldowns, stale-cover recovery and later Plex retry. Fetches need bounded bytes/time, validated redirects and safe raster content. Keep Plex tokens and URLs private.

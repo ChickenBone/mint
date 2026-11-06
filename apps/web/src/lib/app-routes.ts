@@ -11,13 +11,13 @@ const libraryTabs: Record<string, string> = {
   playlists: "playlist",
 };
 
-export type CollectionTab = "playlists" | "likes" | "downloads" | "history";
+export type CollectionTab = "playlists" | "likes" | "requests" | "downloads" | "history";
 export type PlaylistSourceFilter = "all" | "mint" | "youtube" | "spotify" | "smart";
 export type SettingsSectionId = "account" | "services" | "playback" | "devices" | "storage";
 export type ManageTab = "requests" | "jobs" | "workers" | "analysis";
 export type ManageTabId = ManageTab;
 
-const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "downloads", "history"]);
+const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "requests", "downloads", "history"]);
 const validPlaylistSources = new Set<PlaylistSourceFilter>(["all", "mint", "youtube", "spotify", "smart"]);
 const validSettingsSections = new Set<SettingsSectionId>(["account", "services", "playback", "devices", "storage"]);
 const validManageTabs = new Set<ManageTab>(["requests", "jobs", "workers", "analysis"]);

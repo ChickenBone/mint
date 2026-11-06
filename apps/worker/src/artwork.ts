@@ -90,8 +90,8 @@ async function cachedImage(key: string, source: ArtworkImage["source"], load: ()
   return task;
 }
 
-async function plexThumb(ratingKey: string, base: string, token: string) {
-  const key = `${base}:${ratingKey}`, cached = thumbs.get(key);
+async function plexThumb(ratingKey: string, base: string, token: string, variant: "album" | "artist") {
+  const key = `${variant}:${base}:${ratingKey}`, cached = thumbs.get(key);
   if (cached && cached.expires > Date.now()) return cached.path;
   const running = metadataPending.get(key);
   if (running) return running;
@@ -102,9 +102,11 @@ async function plexThumb(ratingKey: string, base: string, token: string) {
     });
     if (!response.ok) { await response.body?.cancel(); throw new Error(`Plex artwork metadata HTTP ${response.status}`); }
     const text = (await responseBytes(response, 256_000)).toString("utf8");
-    const data = JSON.parse(text) as { MediaContainer?: { Metadata?: { parentThumb?: unknown; thumb?: unknown }[] } };
+    const data = JSON.parse(text) as { MediaContainer?: { Metadata?: { parentThumb?: unknown; grandparentThumb?: unknown; thumb?: unknown }[] } };
     const item = data.MediaContainer?.Metadata?.[0];
-    const candidates = [item?.parentThumb, item?.thumb];
+    const candidates = variant === "artist"
+      ? [item?.grandparentThumb]
+      : [item?.parentThumb, item?.thumb];
     const path = candidates.find((value): value is string => typeof value === "string" && /^\/library\/metadata\/\d+\/thumb(?:\/\d+)?$/.test(value)) ?? null;
     if (thumbs.size >= 2000) thumbs.delete(thumbs.keys().next().value!);
     thumbs.set(key, { path, expires: Date.now() + (path ? 15 * 60_000 : 60_000) });
@@ -113,7 +115,7 @@ async function plexThumb(ratingKey: string, base: string, token: string) {
     if (thumbs.size >= 2000) thumbs.delete(thumbs.keys().next().value!);
     thumbs.set(key, { path: cached?.path ?? null, expires: Date.now() + 30_000 });
     if (cached?.path) {
-      log.warn("Plex artwork metadata refresh failed; retaining the last known album cover");
+      log.warn({ variant }, "Plex artwork metadata refresh failed; retaining the last known artwork");
       return cached.path;
     }
     throw error;
@@ -139,11 +141,11 @@ async function publicImage(value: string) {
   throw new Error("Artwork redirect limit exceeded");
 }
 
-export async function loadTrackArtwork(track: ArtworkTrack): Promise<ArtworkImage | null> {
+async function plexImage(track: ArtworkTrack, variant: "album" | "artist") {
   const base = process.env.PLEX_URL?.replace(/\/$/, ""), token = process.env.PLEX_TOKEN;
   if (base && token && track.plexRatingKey && /^\d+$/.test(track.plexRatingKey)) {
     try {
-      const thumb = await plexThumb(track.plexRatingKey, base, token);
+      const thumb = await plexThumb(track.plexRatingKey, base, token, variant);
       if (thumb) return await cachedImage(`plex:${base}:${thumb}`, "plex", async () => {
         const url = new URL(`${base}/photo/:/transcode`);
         url.search = new URLSearchParams({ url: thumb, width: "512", height: "512", minSize: "1", upscale: "0" }).toString();
@@ -152,9 +154,19 @@ export async function loadTrackArtwork(track: ArtworkTrack): Promise<ArtworkImag
         }));
       });
     } catch {
-      log.warn({ trackId: track.id }, "Plex artwork unavailable; trying public album artwork");
+      log.warn({ trackId: track.id, variant }, "Plex artwork unavailable");
     }
   }
+  return null;
+}
+
+export async function loadArtistArtwork(track: ArtworkTrack): Promise<ArtworkImage | null> {
+  return plexImage(track, "artist");
+}
+
+export async function loadTrackArtwork(track: ArtworkTrack): Promise<ArtworkImage | null> {
+  const plex = await plexImage(track, "album");
+  if (plex) return plex;
   const urls: string[] = [];
   if (track.artworkUrl) urls.push(track.artworkUrl);
   if (track.mbReleaseGroupId && /^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(track.mbReleaseGroupId)) {

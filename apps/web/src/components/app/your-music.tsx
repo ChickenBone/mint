@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import type { TrackView } from "@mint/core/events";
+import type { BacklogFilter } from "@/lib/backlog";
+import { filterBacklog } from "@/lib/backlog";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -33,6 +35,7 @@ import { LinkYoutubeCallout } from "./link-youtube";
 import { ListeningHistory } from "./listening-history";
 import { LiveTrackList } from "./live-track-list";
 import { NativeLikes } from "./native-likes";
+import { MissingMusic } from "./missing-music";
 import { PageHeader } from "./page-header";
 import { PlaylistToggle } from "./playlist-toggle";
 import { SpotifyPlaylistToggle } from "./spotify-controls";
@@ -80,6 +83,8 @@ export function YourMusic({
   spotifyLinked,
   likedTracks,
   history,
+  backlogSummary,
+  backlogTracks,
 }: {
   memberId: string;
   initialCollections: CollectionList;
@@ -89,6 +94,8 @@ export function YourMusic({
   spotifyLinked: boolean;
   likedTracks: TrackView[];
   history: HistoryInitialData;
+  backlogSummary: { total: number; ready: number; active: number; failed: number };
+  backlogTracks: TrackView[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -98,6 +105,9 @@ export function YourMusic({
   const [data, setData] = useState(initialCollections);
   const [folder, setFolder] = useState("all");
   const [likesFilter, setLikesFilter] = useState<"all" | "mint" | "youtube">("all");
+  const [backlogFilter, setBacklogFilter] = useState<BacklogFilter>("all");
+  const [backlogPage, setBacklogPage] = useState(0);
+  const [missingQuery, setMissingQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [confirmDeleteFolderOpen, setConfirmDeleteFolderOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -160,6 +170,9 @@ export function YourMusic({
 
   const readyLiked = likedTracks.filter((t) => t.stage === "ready" || t.stage === "analyzing");
   const inFlightLiked = likedTracks.filter((t) => t.stage !== "ready" && t.stage !== "analyzing" && t.stage !== "failed");
+  const filteredBacklog = filterBacklog(backlogTracks, backlogFilter);
+  const backlogPageCount = Math.max(1, Math.ceil(filteredBacklog.length / 100));
+  const pageBacklogTracks = filteredBacklog.slice(backlogPage * 100, backlogPage * 100 + 100);
 
   const playlistsContent = (
     <div className="pt-6">
@@ -657,6 +670,59 @@ export function YourMusic({
     </div>
   );
 
+  const requestsContent = (
+    <div className="pt-6">
+      <p className="mb-4 max-w-prose text-sm leading-relaxed text-muted">
+        Songs linked to your Mint account, grouped by what can play now and what still needs work.
+      </p>
+      <div role="group" aria-label="Filter backlog by state" className="mb-5 flex flex-wrap gap-2">
+        {([
+          ["all", `All songs (${backlogTracks.length})`],
+          ["playable", `Playable (${backlogSummary.ready})`],
+          ["on-the-way", `On the way (${backlogSummary.active})`],
+          ["attention", `Needs attention (${backlogSummary.failed})`],
+        ] as const).map(([state, label]) => (
+          <button key={state} type="button" aria-pressed={backlogFilter === state} onClick={() => { setBacklogFilter(state); setBacklogPage(0); }}
+            className={`min-h-11 rounded-full px-4 text-sm font-semibold ${backlogFilter === state ? "bg-fg text-bg" : "bg-elevated text-muted hover:bg-hover hover:text-fg"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <LiveTrackList
+        key={`${backlogFilter}:${backlogPage}`}
+        initial={pageBacklogTracks}
+        mode="jobs"
+        includePlayable
+        empty={
+          <div className="py-6">
+            <p className="text-sm text-muted">{backlogFilter === "attention" ? "Nothing needs attention." : backlogFilter === "on-the-way" ? "Nothing is on the way right now." : backlogFilter === "playable" ? "No linked songs are playable yet." : "Your Mint-linked songs are up to date."}</p>
+            <Link href="#missing-music-search" className="mt-3 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">
+              Find music to add
+            </Link>
+          </div>
+        }
+      />
+      {filteredBacklog.length > 100 && <nav aria-label="Backlog pages" className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">
+        <p className="text-muted tabular">{backlogPage * 100 + 1}–{Math.min((backlogPage + 1) * 100, filteredBacklog.length)} of {filteredBacklog.length}</p>
+        <div className="flex gap-2">
+          <button type="button" disabled={backlogPage === 0} onClick={() => setBacklogPage((page) => page - 1)}
+            className="min-h-11 rounded-full bg-elevated px-4 font-semibold hover:bg-hover disabled:opacity-40">Previous</button>
+          <span className="inline-flex min-h-11 items-center px-2 text-muted">Page {backlogPage + 1} of {backlogPageCount}</span>
+          <button type="button" disabled={backlogPage + 1 >= backlogPageCount} onClick={() => setBacklogPage((page) => page + 1)}
+            className="min-h-11 rounded-full bg-elevated px-4 font-semibold hover:bg-hover disabled:opacity-40">Next</button>
+        </div>
+      </nav>}
+      {backlogTracks.length >= 500 && <p className="mt-4 text-xs text-faint">Showing the 500 most recently updated songs linked to Mint.</p>}
+      <label id="missing-music-search" className="mt-10 block max-w-lg text-sm font-semibold">
+        Find a song to add
+        <input type="search" value={missingQuery} maxLength={100} onChange={(event) => setMissingQuery(event.target.value)}
+          placeholder="Search title and artist"
+          className="mt-2 min-h-11 w-full rounded-control bg-elevated px-4 text-fg placeholder:text-faint ring-1 ring-line focus-visible:ring-2 focus-visible:ring-action" />
+      </label>
+      {missingQuery.trim().length >= 2 && <MissingMusic query={missingQuery.trim()} />}
+    </div>
+  );
+
   return (
     <section className="mx-auto max-w-6xl">
       <PageHeader
@@ -667,6 +733,15 @@ export function YourMusic({
           <Plus className="size-4" aria-hidden />+ New playlist
         </Button>
       </PageHeader>
+
+      <section aria-label="Your music progress" className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-line py-4 text-sm">
+        <span className="font-semibold text-fg">{backlogSummary.ready.toLocaleString()} playable</span>
+        <span className="text-muted">{backlogSummary.active.toLocaleString()} on the way</span>
+        <span className={backlogSummary.failed ? "text-warn" : "text-muted"}>{backlogSummary.failed.toLocaleString()} need attention</span>
+        <span className="text-xs text-faint">Mint-linked songs</span>
+        <button type="button" onClick={() => { setBacklogFilter("all"); setTab("requests"); }}
+          className="ml-auto inline-flex min-h-11 items-center font-semibold text-mint hover:underline">Open requests</button>
+      </section>
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen} title="Create playlist">
         <form
@@ -728,6 +803,7 @@ export function YourMusic({
         tabs={[
           { value: "playlists", label: "Playlists", content: playlistsContent },
           { value: "likes", label: "Likes", content: likesContent },
+          { value: "requests", label: "Requests", content: requestsContent },
           {
             value: "downloads",
             label: "Downloads",

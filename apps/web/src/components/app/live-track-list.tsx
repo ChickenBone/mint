@@ -14,17 +14,19 @@ import type { PlayerCollection } from "@/lib/player-protocol";
 export function LiveTrackList({
   initial,
   mode = "library",
+  includePlayable = false,
   empty,
   collection,
 }: {
   initial: TrackView[];
   mode?: "library" | "jobs";
+  includePlayable?: boolean;
   empty?: React.ReactNode;
   collection?: PlayerCollection;
 }) {
   const router = useRouter();
   const { tracks, flash } = useLiveTracks(initial, {
-    keep: mode === "jobs" ? (t) => t.stage !== "ready" : () => true,
+    keep: mode === "jobs" && !includePlayable ? (t) => t.stage !== "ready" : () => true,
     accept: () => false,
     limit: 2000,
   });

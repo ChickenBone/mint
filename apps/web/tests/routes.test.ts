@@ -69,6 +69,7 @@ test("Your music, Settings and Management tab/section resolvers normalize query 
   assert.equal(resolveCollectionTab("likes"), "likes");
   assert.equal(resolveCollectionTab("downloads"), "downloads");
   assert.equal(resolveCollectionTab("history"), "history");
+  assert.equal(resolveCollectionTab("requests"), "requests");
   assert.equal(resolveCollectionTab("invalid"), "playlists");
 
   assert.equal(resolvePlaylistSource("mint"), "mint");

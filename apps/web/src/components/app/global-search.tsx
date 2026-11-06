@@ -209,7 +209,9 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
       {!loading && groups.map((group) => <section key={group.type} className="mt-6" aria-label={group.label}>
         <h2 className="mb-2 text-sm font-semibold">{group.label}</h2>
         <ul className="divide-y divide-line/70">{group.items.map((item) => <MusicItem as="li" item={item} key={item.id} className="flex min-h-14 items-center gap-3 py-1">
-          <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`size-10 shrink-0 ${item.type === "artist" ? "rounded-full" : "rounded"}`} />
+          {item.type === "artist" ? <Link href={`/app/library/artists/${encodeURIComponent(item.id)}`} onClick={() => { remember(query); close(false); }}>
+            <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 shrink-0 rounded-full" />
+          </Link> : <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 shrink-0 rounded" />}
           <div className="min-w-0 flex-1">
           {item.type === "track" ? <button type="button" onClick={() => chooseTrack(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">
             {item.title}

@@ -168,6 +168,34 @@ export const tracks = pgTable(
   ],
 );
 
+export const artistMetadata = pgTable(
+  "artist_metadata",
+  {
+    artistName: text("artist_name").primaryKey(),
+    musicBrainzArtistId: text("musicbrainz_artist_id"),
+    status: text("status").$type<"queued" | "fetching" | "ready" | "not_found" | "ambiguous" | "failed">().notNull().default("queued"),
+    profile: jsonb("profile").$type<{
+      artistType: string | null;
+      area: string | null;
+      biography: string | null;
+      biographyUrl: string | null;
+      relatedArtists: Array<{ name: string; musicBrainzArtistId: string; source: "listenbrainz" | "musicbrainz" }>;
+      listenCount: number | null;
+      listenerCount: number | null;
+      unavailableSources: string[];
+    } | null>(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("artist_metadata_status_idx").on(t.status, t.nextAttemptAt),
+    index("artist_metadata_mbid_idx").on(t.musicBrainzArtistId),
+  ],
+);
+
 export const chartEntryLinks = pgTable("chart_entry_links", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   provider: text("provider").notNull(),

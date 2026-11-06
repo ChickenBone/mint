@@ -63,6 +63,25 @@ export const catalogPageSchema = z.object({
   total: z.number().int().nonnegative(),
   start: z.number().int().nonnegative(),
   title: z.string().optional(),
+  artistProfile: z.object({
+    status: z.enum(["queued", "fetching", "ready", "not_found", "ambiguous", "failed"]),
+    musicBrainzArtistId: z.string().uuid().nullable(),
+    profile: z.object({
+      artistType: z.string().nullable(),
+      area: z.string().nullable(),
+      biography: z.string().nullable(),
+      biographyUrl: z.string().url().nullable(),
+      relatedArtists: z.array(z.object({
+        name: z.string(),
+        musicBrainzArtistId: z.string().uuid(),
+        source: z.enum(["listenbrainz", "musicbrainz"]),
+      })),
+      listenCount: z.number().int().nonnegative().nullable(),
+      listenerCount: z.number().int().nonnegative().nullable(),
+      unavailableSources: z.array(z.string()),
+    }).nullable(),
+    fetchedAt: z.string().datetime().nullable(),
+  }).nullable().optional(),
 });
 export type CatalogPage = z.infer<typeof catalogPageSchema>;
 export const playerStateSchema = z.object({

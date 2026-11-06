@@ -192,23 +192,37 @@ export async function catalogItems(opts: {
   if (opts.type === "artist" || opts.type === "album") {
     const album = sql<string>`coalesce(${t.album}, '')`;
     const group = opts.type === "album" ? [t.artist, album] : [t.artist];
+    const representativeTrackId = sql<string>`(array_agg(${t.id} order by (${t.plexRatingKey} is null), ${t.id}))[1]`;
     const selection = db.select({ artist: t.artist, album: opts.type === "album" ? album : sql<string>`''`,
+      representativeTrackId,
       thumb: albumArtwork }).from(t).where(where).groupBy(...group);
     const groupedOrder = opts.sort === "newest"
       ? [desc(sql`max(${t.readyAt})`), asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])]
       : opts.type === "album" && (opts.sort === "title" || opts.sort === "album")
         ? [asc(album), asc(t.artist)]
         : [asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])];
-    const [rows, count] = await Promise.all([
+    const [rows, count, artistMetadata] = await Promise.all([
       selection.orderBy(...groupedOrder).limit(size).offset(start),
       db.select({ n: opts.type === "album" ? sql<number>`count(distinct (${t.artist}, coalesce(${t.album}, '')))::int`
         : sql<number>`count(distinct ${t.artist})::int` }).from(t).where(where),
+      collection.kind === "artist"
+        ? db.query.artistMetadata.findFirst({ where: eq(schema.artistMetadata.artistName, title ?? "") })
+        : Promise.resolve(undefined),
     ]);
     return { items: rows.map((r) => ({
       id: opts.type === "album" ? albumPlayerId(r.artist, r.album) : artistPlayerId(r.artist),
       title: opts.type === "album" ? r.album || "Unknown album" : r.artist, type: opts.type === "album" ? "album" : "artist",
-      artist: r.artist, artistId: artistPlayerId(r.artist), thumb: r.thumb ?? undefined,
-    })), total: count[0]?.n ?? 0, start, title };
+      artist: r.artist, artistId: artistPlayerId(r.artist),
+      thumb: opts.type === "artist" ? `/api/artwork/${r.representativeTrackId}?variant=artist` : r.thumb ?? undefined,
+    })), total: count[0]?.n ?? 0, start, title,
+      ...(collection.kind === "artist" ? {
+        artistProfile: artistMetadata ? {
+          status: artistMetadata.status,
+          musicBrainzArtistId: artistMetadata.musicBrainzArtistId,
+          profile: artistMetadata.profile,
+          fetchedAt: artistMetadata.fetchedAt?.toISOString() ?? null,
+        } : null,
+      } : {}) };
   }
   const order = catalogOrder(collection, q, opts.sort);
   const [rows, count] = await Promise.all([

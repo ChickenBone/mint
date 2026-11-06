@@ -6,7 +6,7 @@ import { spotifyAccountView } from "@mint/core/spotify-store";
 import { toTrackView } from "@mint/core/views";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
-import { getLikedTracks, getPlaylists, getYoutubeAccount } from "@/lib/data";
+import { getLikedTracks, getPlaylists, getUserMusicTracks, getUserSummary, getYoutubeAccount } from "@/lib/data";
 import { listCollections, musicProfile } from "@/lib/music-store";
 import { YourMusic } from "@/components/app/your-music";
 
@@ -26,6 +26,8 @@ export default async function CollectionHubPage() {
     likedTracks,
     profile,
     historyRows,
+    backlogSummary,
+    backlogTracks,
   ] = await Promise.all([
     listCollections(db, user.id),
     getPlaylists(user.id),
@@ -46,6 +48,8 @@ export default async function CollectionHubPage() {
       .where(and(eq(musicHistory.userId, user.id)))
       .orderBy(desc(musicHistory.createdAt), desc(musicHistory.id))
       .limit(101),
+    getUserSummary(user.id),
+    getUserMusicTracks(user.id, 500),
   ]);
 
   const ytIds = ytPlaylists.map((p) => p.id);
@@ -98,6 +102,8 @@ export default async function CollectionHubPage() {
       youtubeLinked={Boolean(ytAccount)}
       spotifyLinked={Boolean(spAccount)}
       likedTracks={likedTracks}
+      backlogSummary={backlogSummary}
+      backlogTracks={backlogTracks}
       history={{
         entries: historyRows.map((r) => ({
           ...r,

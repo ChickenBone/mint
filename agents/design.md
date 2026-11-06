@@ -34,7 +34,7 @@ On phones, listening content scrolls above pinned transport and safe-area-aware 
 
 Context menus are Mint-owned and accessible through right-click, options buttons, a 550ms touch/pen hold and keyboard invocation. Use the shared `MusicItem` surface for local songs and collections. Movement/scrolling cancels holds, release clicks are suppressed after a hold, and editing fields retain native gestures. Public browsing retains native context menus. Tabs retain arrow/Home/End support; menus support navigation, dismissal and focus return.
 
-Artist names and album titles navigate independently of playback. Artist/album detail heroes use bounded library artwork and collection-wide Play/Shuffle; an artist mosaic represents album sleeves, not an artist portrait. Overview titles/counts are independent of filtered/paginated results.
+Artist names and album titles navigate independently of playback. Album detail heroes use bounded library artwork; artist heroes use only a real Plex grandparent thumbnail through the authorized artwork proxy, with the shared neutral tile when absent. Never treat an album mosaic as an artist portrait. Collection-wide Play/Shuffle remains available. Overview titles/counts are independent of filtered/paginated results.
 
 ## Discovery and charts
 

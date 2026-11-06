@@ -111,6 +111,17 @@ export async function getUserJobs(userId: string, opts: { failedOnly?: boolean; 
   return rows.map((r) => toTrackView(r.track));
 }
 
+export async function getUserMusicTracks(userId: string, limit = 500): Promise<TrackView[]> {
+  const rows = await db()
+    .select({ track: t })
+    .from(schema.userTracks)
+    .innerJoin(t, eq(t.id, schema.userTracks.trackId))
+    .where(eq(schema.userTracks.userId, userId))
+    .orderBy(desc(t.updatedAt), desc(t.id))
+    .limit(limit);
+  return rows.map((r) => toTrackView(r.track));
+}
+
 export async function getYoutubeAccount(userId: string) {
   return db().query.youtubeAccounts.findFirst({
     where: eq(schema.youtubeAccounts.userId, userId),

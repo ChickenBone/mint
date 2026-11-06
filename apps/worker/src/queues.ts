@@ -1,4 +1,4 @@
-import { QUEUE, type AcquireJob, type FinalizeJob, type MaintenanceJob, type SonicJob, type SyncJob, type TorboxJob } from "@mint/core";
+import { QUEUE, type AcquireJob, type ArtistMetadataJob, type FinalizeJob, type MaintenanceJob, type SonicJob, type SyncJob, type TorboxJob } from "@mint/core";
 import { createRedis } from "@mint/core/redis";
 import { Queue, type DefaultJobOptions } from "bullmq";
 
@@ -20,6 +20,7 @@ export const queues = {
   acquire: new Queue<AcquireJob>(QUEUE.acquire, { connection, defaultJobOptions: defaults }),
   finalize: new Queue<FinalizeJob>(QUEUE.finalize, { connection, defaultJobOptions: defaults }),
   sonic: new Queue<SonicJob>(QUEUE.sonic, { connection, defaultJobOptions: { ...defaults, attempts: 5 } }),
+  artistMetadata: new Queue<ArtistMetadataJob>(QUEUE.artistMetadata, { connection, defaultJobOptions: defaults }),
   torbox: new Queue<TorboxJob>(QUEUE.torbox, { connection, defaultJobOptions: defaults }),
   maintenance: new Queue<MaintenanceJob>(QUEUE.maintenance, {
     connection,

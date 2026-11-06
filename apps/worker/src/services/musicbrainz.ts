@@ -1,8 +1,8 @@
 import { optionalEnv } from "@mint/core/env";
-import { httpJson } from "../http";
+import { httpJson, type RequestOpts } from "../http";
 
 const API = "https://musicbrainz.org/ws/2";
-const UA = optionalEnv("MUSICBRAINZ_USER_AGENT", "Mint/0.1 ( https://mint.chickenbone.dev )");
+const UA = optionalEnv("MUSICBRAINZ_USER_AGENT", "Mint/3.5 ( https://github.com/ChickenBone/mint )");
 
 // MusicBrainz allows ~1 request/second per client.
 let chain: Promise<unknown> = Promise.resolve();
@@ -13,6 +13,14 @@ function throttled<T>(fn: () => Promise<T>): Promise<T> {
     () => new Promise((r) => setTimeout(r, 1100)),
   );
   return next;
+}
+
+export function musicBrainzJson<T>(
+  url: string,
+  query?: Record<string, string | number | boolean | undefined>,
+  options: Pick<RequestOpts, "timeoutMs" | "retries"> = {},
+) {
+  return throttled(() => httpJson<T>(url, { ...options, headers: { "user-agent": UA }, query }));
 }
 
 interface MbRecording {
@@ -52,14 +60,12 @@ export async function matchRecording(q: {
 }): Promise<MbMatch | null> {
   const primaryArtist = q.artist.split(/,|&| feat\.? | ft\.? /i)[0]!.trim();
   const query = `recording:"${esc(q.title)}" AND artist:"${esc(primaryArtist)}"`;
-  const data = q.mbRecordingId ? { recordings: [{ ...await throttled(() =>
-    httpJson<MbRecording>(`${API}/recording/${encodeURIComponent(q.mbRecordingId!)}`, {
-      headers: { "user-agent": UA }, query: { inc: "artists+releases+release-groups", fmt: "json" },
-    })), score: 100 }] } : await throttled(() =>
-    httpJson<{ recordings: MbRecording[] }>(`${API}/recording`, {
-      headers: { "user-agent": UA },
-      query: { query, fmt: "json", limit: 15 },
-    }),
+  const data = q.mbRecordingId ? { recordings: [{ ...await musicBrainzJson<MbRecording>(
+    `${API}/recording/${encodeURIComponent(q.mbRecordingId)}`,
+    { inc: "artists+releases+release-groups", fmt: "json" },
+  ), score: 100 }] } : await musicBrainzJson<{ recordings: MbRecording[] }>(
+    `${API}/recording`,
+    { query, fmt: "json", limit: 15 },
   );
 
   type Candidate = { rec: MbRecording; rel: NonNullable<MbRecording["releases"]>[number]; score: number };
@@ -104,19 +110,14 @@ export function coverArtUrl(releaseGroupId: string) {
 
 /** Match both artist and album; never use the first fuzzy search hit as a cover. */
 export async function albumReleaseGroups(artist: string, album: string): Promise<string[]> {
-  const data = await throttled(() =>
-    httpJson<{ "release-groups": Array<{
+  const data = await musicBrainzJson<{ "release-groups": Array<{
       id: string;
       title: string;
       score: number;
       "artist-credit"?: Array<{ name: string; artist?: { name: string } }>;
     }> }>(`${API}/release-group`, {
-      headers: { "user-agent": UA },
-      query: { query: `releasegroup:"${esc(album)}" AND artist:"${esc(artist)}"`, fmt: "json", limit: 10 },
-      timeoutMs: 15_000,
-      retries: 0,
-    }),
-  );
+    query: `releasegroup:"${esc(album)}" AND artist:"${esc(artist)}"`, fmt: "json", limit: 10,
+    }, { timeoutMs: 15_000, retries: 0 });
   return (data["release-groups"] ?? [])
     .filter((group) => group.score >= 90 && norm(group.title) === norm(album) &&
       group["artist-credit"]?.some((credit) => norm(credit.artist?.name ?? credit.name) === norm(artist)))

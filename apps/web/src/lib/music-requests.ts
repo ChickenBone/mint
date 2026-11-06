@@ -49,7 +49,10 @@ export async function searchRecordings(userId: string, query: string, fetcher: t
       isrcs: item.isrcs?.map((isrc) => isrc.replaceAll("-", "").toUpperCase()) });
     return parsed.success ? [parsed.data] : [];
   });
-  const existing = items.length ? await getDb().select({ id: schema.tracks.id, recordingId: schema.tracks.mbRecordingId, stage: schema.tracks.stage }).from(schema.tracks).where(inArray(schema.tracks.mbRecordingId, items.map((item) => item.id))).limit(210) : [];
+  const existing = items.length ? await getDb().select({
+    id: schema.tracks.id, recordingId: schema.tracks.mbRecordingId, stage: schema.tracks.stage,
+    error: schema.tracks.error, detail: schema.tracks.detail,
+  }).from(schema.tracks).where(inArray(schema.tracks.mbRecordingId, items.map((item) => item.id))).limit(210) : [];
   return items.map((item) => ({ ...item, existing: existing.find((track) => track.recordingId === item.id) ?? null,
     token: signToken("music-request", { userId, recording: item }, 15 * 60_000) }));
 }

@@ -11,6 +11,8 @@ import { ListeningSpotlight } from "@/components/app/listening-spotlight";
 import { MusicTrackList } from "@/components/app/music-track-list";
 import { SetupNudge } from "@/components/app/setup-nudge";
 import { musicHistory } from "@mint/core/music-db";
+import { artistPlayerId } from "@/lib/player-protocol";
+import { Artwork } from "@/components/artwork";
 import { desc, eq } from "drizzle-orm";
 
 function greeting() {
@@ -47,6 +49,7 @@ export default async function Home() {
     .slice(0, 8)
     .map(toTrackView);
   const isLinked = Boolean(acct || spAccount);
+  const likedArtists = [...new Map(liked.map((track) => [track.artist, track])).values()].slice(0, 8);
 
   return (
     <>
@@ -108,6 +111,44 @@ export default async function Home() {
         <p className="mb-5 max-w-prose text-sm leading-relaxed text-muted">{recommendations.explanation}</p>
         <RecommendationShelf items={recommendations.items.slice(0, 6).map(({ track, reason }) => ({ track: toTrackView(track), reason }))} />
       </section>
+
+      {likedArtists.length > 0 && (
+        <section className="mt-10" aria-labelledby="liked-artists">
+          <div className="mb-4 flex items-end justify-between gap-3">
+            <div>
+              <h2 id="liked-artists" className="text-2xl font-bold tracking-tight">Artists from your likes</h2>
+              <p className="mt-1 text-sm text-muted">Real artist artwork from Plex when it is available.</p>
+            </div>
+            <Link href="/app/collection?tab=likes" className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">Your likes</Link>
+          </div>
+          <ul className="flex gap-5 overflow-x-auto pb-3" aria-label="Artists from your YouTube Music likes">
+            {likedArtists.map((track) => (
+              <li key={track.artist} className="w-24 shrink-0 text-center">
+                <Link href={`/app/library/artists/${encodeURIComponent(artistPlayerId(track.artist))}?type=album`}
+                  className="group inline-flex min-h-11 flex-col items-center gap-2 rounded-md p-1 text-sm font-semibold hover:text-fg">
+                  <Artwork track={{ artworkUrl: `/api/artwork/${track.id}?variant=artist` }} className="size-20 rounded-full" />
+                  <span className="max-w-full truncate group-hover:underline">{track.artist}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {(summary.active > 0 || summary.failed > 0) && (
+        <section className="my-10 flex flex-wrap items-center justify-between gap-4 border-y border-line py-5" aria-label="Music backlog progress">
+          <div>
+            <h2 className="text-xl font-bold">{summary.active > 0 ? "Your music is on the way" : "Some music needs attention"}</h2>
+            <p className="mt-1 text-sm text-muted">{[
+              summary.active > 0 ? `${summary.active.toLocaleString()} ${summary.active === 1 ? "song is" : "songs are"} in progress` : "",
+              summary.failed > 0 ? `${summary.failed.toLocaleString()} need attention` : "",
+            ].filter(Boolean).join(" · ")}.</p>
+          </div>
+          <Link href="/app/collection?tab=requests" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+            Review requests
+          </Link>
+        </section>
+      )}
 
       <Link href="/app/discover/charts" className="my-12 flex flex-wrap items-center justify-between gap-5 border-y border-line py-7">
         <div>

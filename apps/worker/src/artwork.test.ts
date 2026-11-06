@@ -1,11 +1,72 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
 import test from "node:test";
-import { loadTrackArtwork, publicArtworkUrl } from "./artwork";
+import { signToken } from "@mint/core/crypto";
+import { serveArtwork } from "./artwork-http";
+import { loadArtistArtwork, loadTrackArtwork, publicArtworkUrl } from "./artwork";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0u0AAAAASUVORK5CYII=", "base64");
 const track = (patch = {}) => ({ id: randomUUID(), plexRatingKey: "101", artworkUrl: "https://archive.org/download/fixture/cover.png",
   mbReleaseGroupId: null, youtubeVideoId: null, ...patch });
+
+test("artist artwork authorization requires a variant-bound signed token", async (t) => {
+  const previous = process.env.MINT_SIGNING_SECRET;
+  process.env.MINT_SIGNING_SECRET = "test-signing-secret-that-is-long-enough";
+  t.after(() => {
+    if (previous === undefined) delete process.env.MINT_SIGNING_SECRET;
+    else process.env.MINT_SIGNING_SECRET = previous;
+  });
+  const id = randomUUID();
+  const server = createServer((req, res) => void serveArtwork(req, res, id, "artist"));
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())));
+  const address = server.address();
+  assert.ok(address && typeof address !== "string");
+  const base = `http://127.0.0.1:${address.port}/artwork/${id}`;
+  const albumToken = signToken("artwork", { trackId: id, variant: "album" }, 30_000);
+  const legacyToken = signToken("artwork", { trackId: id }, 30_000);
+  for (const token of [albumToken, legacyToken]) {
+    const response = await fetch(base, { headers: { authorization: `Bearer ${token}` } });
+    assert.equal(response.status, 401);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+});
+
+test("Plex grandparent artist artwork is proxied and missing portraits do not fall back to album covers", async (t) => {
+  const previous = { url: process.env.PLEX_URL, token: process.env.PLEX_TOKEN };
+  process.env.PLEX_URL = "http://plex-artist-artwork.test";
+  process.env.PLEX_TOKEN = "private-artist-fixture-token";
+  t.after(() => {
+    if (previous.url === undefined) delete process.env.PLEX_URL; else process.env.PLEX_URL = previous.url;
+    if (previous.token === undefined) delete process.env.PLEX_TOKEN; else process.env.PLEX_TOKEN = previous.token;
+  });
+  let metadata = 0, photos = 0;
+  t.mock.method(globalThis, "fetch", async (input: string | URL, init?: RequestInit) => {
+    const url = new URL(input);
+    assert.equal(url.hostname, "plex-artist-artwork.test");
+    assert.equal(new Headers(init?.headers).get("x-plex-token"), "private-artist-fixture-token");
+    if (url.pathname.startsWith("/library/metadata/")) {
+      metadata++;
+      return Response.json({ MediaContainer: { Metadata: [{ grandparentThumb: "/library/metadata/70/thumb/789",
+        parentThumb: "/library/metadata/50/thumb/123", thumb: "/library/metadata/101/thumb/456" }] } });
+    }
+    photos++;
+    assert.equal(url.pathname, "/photo/:/transcode");
+    assert.equal(url.searchParams.get("url"), "/library/metadata/70/thumb/789");
+    assert.ok(!url.href.includes("private-artist-fixture-token"));
+    return new Response(png, { headers: { "content-type": "image/png" } });
+  });
+  const result = await loadArtistArtwork(track());
+  assert.equal(result?.source, "plex");
+  assert.deepEqual(result?.bytes, png);
+  assert.equal(metadata, 1);
+  assert.equal(photos, 1);
+
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ MediaContainer: { Metadata: [{ parentThumb: "/library/metadata/50/thumb/123" }] } }));
+  assert.equal(await loadArtistArtwork(track({ plexRatingKey: "102", artworkUrl: "https://archive.org/download/fixture/album.png" })), null);
+});
 
 test("Plex album covers are primary, resized privately, coalesced and shared across an album", async (t) => {
   const previous = { url: process.env.PLEX_URL, token: process.env.PLEX_TOKEN };

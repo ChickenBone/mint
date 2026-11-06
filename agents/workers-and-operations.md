@@ -10,6 +10,10 @@
 
 A volunteer token does not authenticate analysis. Volunteer counts do not measure built-in worker or analysis connectivity.
 
+## Artist metadata queue
+
+The built-in worker discovers library artists in small batches and enriches them through a dedicated BullMQ queue. It uses MusicBrainz for exact identity/type/relationships, Wikidata to locate an English Wikipedia summary (with attribution), and ListenBrainz for community listening counts and similar artists. Ambiguous names are not guessed; provider failures are persisted and retried. This queue reads metadata only, does not inspect media files, and is separate from measured audio analysis. The queue appears in the worker's existing queue health counts; no new API secret is required.
+
 ## Analysis behavior
 
 Read `docker-compose.analysis.yml`, `apps/worker/src/analysis-worker.ts`, `analysis-http.ts`, and [analysis setup](../docs/self-hosting.md#optional-separate-analysis-machine).

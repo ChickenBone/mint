@@ -8,9 +8,12 @@ const unavailable = (status: number) => new Response(null, { status, headers: { 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
   if (!UUID.test(id)) return unavailable(400);
+  const variant = new URL(request.url).searchParams.get("variant");
+  if (variant !== null && variant !== "artist") return unavailable(400);
   try {
-    const token = signToken("artwork", { trackId: id }, 30_000);
-    const response = await fetch(`${process.env.PLAYBACK_WORKER_URL ?? "http://worker:8080"}/artwork/${id}`, {
+    const token = signToken("artwork", { trackId: id, variant: variant ?? "album" }, 30_000);
+    const suffix = variant === "artist" ? "?variant=artist" : "";
+    const response = await fetch(`${process.env.PLAYBACK_WORKER_URL ?? "http://worker:8080"}/artwork/${id}${suffix}`, {
       headers: { authorization: `Bearer ${token}` }, redirect: "error",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(20_000)]), method: request.method,
     });

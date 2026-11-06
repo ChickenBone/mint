@@ -5,7 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight, Clock3, Play, Search } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
+import { artistPlayerId, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
 import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKeys } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
@@ -56,8 +56,8 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     if (!identityKey) return;
     const controller = new AbortController();
     const query = new URLSearchParams(identityKey);
-    query.set("type", initialCollection?.kind === "artist" ? "album" : "track");
-    query.set("size", "4");
+    query.set("type", initialCollection?.kind === "artist" ? "artist" : "track");
+    query.set("size", initialCollection?.kind === "artist" ? "1" : "4");
     void fetchCatalog(query, controller.signal).then((page) => {
       if (!controller.signal.aborted) setIdentity({ key: identityKey, page });
     }).catch((error: unknown) => {
@@ -69,6 +69,12 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
   const error = result?.key === key ? result.error : undefined;
   const valid = collection !== null;
   const listing = collection?.kind !== "library" || Boolean(q.trim()) || pathname === "/app/library";
+  const metadataStatus = page?.artistProfile?.status ?? identity?.page?.artistProfile?.status;
+  useEffect(() => {
+    if (collection?.kind !== "artist" || (metadataStatus !== "queued" && metadataStatus !== "fetching")) return;
+    const timer = setTimeout(() => setRetry((value) => value + 1), 15_000);
+    return () => clearTimeout(timer);
+  }, [collection?.kind, metadataStatus, key]);
 
   useEffect(() => {
     if (!valid || !listing) return;
@@ -104,18 +110,61 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     : collection.kind === "liked" ? "Liked songs"
     : collection.kind === "playlist" ? page?.title ?? "Playlist"
     : pathname === "/app/library" ? "Library" : "Your music";
+  const itemCount = collection.kind === "artist" ? page?.total : detail?.total;
   return <div className="mx-auto max-w-[100rem]">
     {collection.kind !== "library" && <Link href="/app/library" className="mb-5 inline-flex min-h-11 items-center gap-1 text-sm text-muted hover:text-fg"><ChevronLeft className="size-4" />Library</Link>}
     {identity?.key === identityKey && identity.error && <p role="status" className="mb-4 text-sm text-warn">Collection artwork and overview could not load. {identity.error} Reopen this collection to retry.</p>}
-    <header className={collection.kind === "album" || collection.kind === "artist" ? "collection-hero mb-8" : "mb-7 flex items-end gap-5"}>
-      {(collection.kind === "album" || collection.kind === "artist") && <div className={`collection-hero-art ${collection.kind === "artist" && (detail?.items.length ?? 0) > 1 ? "collection-hero-mosaic" : ""}`}>
-        {(collection.kind === "artist" && (detail?.items.length ?? 0) > 1 ? detail!.items.slice(0, 4) : [first]).map((item, index) =>
-          <Artwork key={item?.id ?? index} track={{ artworkUrl: item?.thumb ?? "" }} eager className="h-full w-full rounded-none" />)}
+    <header className={collection.kind === "artist" ? "artist-hero mb-8" : collection.kind === "album" ? "collection-hero mb-8" : "mb-7 flex items-end gap-5"}>
+      {collection.kind === "album" && <div className="collection-hero-art">
+        <Artwork track={{ artworkUrl: first?.thumb ?? "" }} eager className="h-full w-full rounded-none" />
+      </div>}
+      {collection.kind === "artist" && <div className="artist-hero-art" aria-hidden="true">
+        <Artwork track={{ artworkUrl: detail?.items[0]?.thumb ?? "" }} eager className="h-full w-full rounded-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/65 to-transparent" />
       </div>}
       <div className="min-w-0">
         <h1 className="break-words text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">{collection.kind === "library" ? "Library" : title}</h1>
         <p className="mt-4 text-sm text-muted">{collection.kind === "library" ? "Made for your music. Nothing between you and the next song." : collection.kind === "artist" ? "Explore the albums. Stay for the songs." : first ? <ArtistLink item={first} /> : "Music from your collection."}</p>
-        {detail && <p className="mt-3 text-sm text-muted tabular">{detail.total.toLocaleString()} {collection.kind === "artist" ? detail.total === 1 ? "album" : "albums" : detail.total === 1 ? "song" : "songs"} in your library</p>}
+        {itemCount !== undefined && <p className={`mt-3 text-sm tabular ${collection.kind === "artist" ? "text-fg/80" : "text-muted"}`}>{itemCount.toLocaleString()} {collection.kind === "artist" ? (itemCount === 1 ? "album" : "albums") : itemCount === 1 ? "song" : "songs"} in your library</p>}
+        {collection.kind === "artist" && (() => {
+          const artistProfile = page?.artistProfile ?? detail?.artistProfile;
+          const profile = artistProfile?.profile;
+          const metadataPending = !artistProfile || artistProfile.status === "queued" || artistProfile.status === "fetching";
+          return (
+            <div className="mt-5 max-w-3xl space-y-3">
+              {metadataPending && <p role="status" className="text-sm text-fg/70">Artist details are being gathered in the background.</p>}
+              {artistProfile?.status === "ambiguous" && <p className="text-sm text-fg/70">Mint couldn&apos;t confidently match this name to one artist record.</p>}
+              {artistProfile?.status === "not_found" && <p className="text-sm text-fg/70">No confident match was found in the artist metadata sources.</p>}
+              {artistProfile?.status === "failed" && <p role="status" className="text-sm text-warn">Artist details could not be refreshed. The background queue will retry.</p>}
+              {profile && <>
+                {(profile.artistType || profile.area || artistProfile?.musicBrainzArtistId) && <p className="text-sm text-fg/80">
+                  {[profile.artistType, profile.area].filter(Boolean).join(" · ")}
+                  {artistProfile?.musicBrainzArtistId && <> · <a href={`https://musicbrainz.org/artist/${artistProfile.musicBrainzArtistId}`} target="_blank" rel="noreferrer" className="underline">MusicBrainz</a></>}
+                </p>}
+                {profile.biography && <p className="text-sm leading-relaxed text-fg/90">{profile.biography}
+                  {profile.biographyUrl && <> <a href={profile.biographyUrl} target="_blank" rel="noreferrer" className="whitespace-nowrap font-semibold underline">Wikipedia source</a></>}
+                </p>}
+                {profile.biography && <p className="text-xs text-fg/70">Biography summary by Wikipedia contributors, shared under CC BY-SA. <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noreferrer" className="underline">License</a></p>}
+                {(profile.listenCount !== null || profile.listenerCount !== null) && <p className="text-sm text-fg/80">
+                  <a href={`https://listenbrainz.org/artist/${artistProfile?.musicBrainzArtistId}`} target="_blank" rel="noreferrer" className="underline">ListenBrainz community</a>: {profile.listenCount?.toLocaleString() ?? "—"} listens · {profile.listenerCount?.toLocaleString() ?? "—"} listeners
+                </p>}
+                {!!profile.relatedArtists.length && <div>
+                  <h2 className="text-sm font-semibold">Related artists</h2>
+                  <ul className="mt-2 flex flex-wrap gap-2">
+                    {profile.relatedArtists.map((related) => <li key={related.musicBrainzArtistId}>
+                      <Link href={`/app/library/artists/${encodeURIComponent(artistPlayerId(related.name))}?type=album`}
+                        className="inline-flex min-h-11 items-center rounded-full bg-bg/70 px-4 text-sm font-semibold text-fg/90 hover:bg-hover">
+                        {related.name}
+                      </Link>
+                    </li>)}
+                  </ul>
+                </div>}
+                {profile.unavailableSources.length > 0 && <p className="text-xs text-fg/70">Some sources could not be reached: {profile.unavailableSources.join(", ")}.</p>}
+                {artistProfile?.fetchedAt && <p className="text-xs text-fg/70">Updated {new Date(artistProfile.fetchedAt).toLocaleDateString()}</p>}
+              </>}
+            </div>
+          );
+        })()}
         {(collection.kind === "album" || collection.kind === "artist") && <div className="mt-6 flex items-center gap-2">
           <CollectionActions collection={collection} empty={!first} label={collection.kind} />
           {first && <TrackMenuButton item={{ id: collection.id, type: collection.kind, title, artist: first.artist, artistId: first.artistId, thumb: first.thumb }} />}
