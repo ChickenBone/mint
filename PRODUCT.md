@@ -7,25 +7,25 @@
 web
 
 ## Users
-- **Members**: approved people who link their YouTube Music (Google) account. Mint mirrors their liked songs and chosen playlists into a self-hosted Plex library, and they listen in Mint. They use the dashboard to watch progress, manage what syncs, and browse what they own.
-- **Admin (operator)**: runs the host server. Approves access requests, watches service health, and retries or cancels jobs.
+- **Members**: approved people who listen to the shared library in Mint, discover music and manage their own likes and playlists, and can report problems to the admins. Linking another service is not required for listening.
+- **Admin (operator)**: runs the host server. Approves access requests, reviews and resolves member issue reports, watches service health, and retries or cancels jobs.
 - **Public visitors**: browse library metadata, artwork and chart availability, and request access. They cannot play audio or request acquisition. Library activity remains available separately from everyday browsing.
 
 ## Product Purpose
-Mint turns a person's YouTube Music likes into real files on a self-hosted server. It finds album-quality releases through Lidarr and TorBox, falls back to a self-hosted Cobalt rip from YouTube, tags the files, and imports them into Plex. Mint owns the listening experience; Plex remains the private library server. The job is done when a song liked on a phone is available to listen to without anyone touching it.
+Mint is a self-hosted listening service for a shared music library. Members can find and play music, build personal collections and discover something new without having to understand how the server works. Mint owns the listening experience; Plex remains a private library server. Acquisition and library maintenance support listening rather than defining it.
 
 ## Positioning
 Mint is a self-hosted listening service: private files, personal collections and discovery in one cohesive player. Its acquisition pipeline remains observable in management, not the organizing principle of listening.
 
 ## Operating Context
-- Hosted at mint.chickenbone.dev with Docker Compose. Images are published to GHCR from GitHub Actions.
+- Self-hosted with Docker Compose. Images are published to GHCR from GitHub Actions.
 - Lidarr, TorBox (debrid), Cobalt, and Plex live on an internal network. The public app never talks to them directly; it uses Postgres and Redis queues.
 - Approved members listen inside Mint's persistent, independently implemented browser player, or optionally use an external Plex client with a separate Plex invitation. Public pages remain browse-only.
 
 ## Capabilities and Constraints
 - Access is by request only. A visitor submits a name, email, and password; the account stays inactive until an admin approves it.
 - YouTube linking uses Google OAuth with the read-only YouTube Data API scope.
-- There is one shared Plex music library. Each member has their own likes and playlists, which map to Plex playlists.
+- There is one shared Plex music library. Each member has their own Mint likes and playlists; source-managed imports retain their distinct ownership and are not written upstream.
 - Download order: MusicBrainz match, then Lidarr album search with the TorBox blackhole bridge, then a Cobalt audio fallback.
 - Pipeline stages: queued, matching, searching, downloading, importing, tagging, scanning, analyzing (sonic), ready, failed.
 - Cover art is a remote URL (Cover Art Archive or YouTube thumbnail). It is also embedded in the file for Plex.
@@ -38,7 +38,7 @@ Mint is a self-hosted listening service: private files, personal collections and
 
 ## Brand Commitments
 - Name: **Mint**.
-- The approved **Listening room** direction is spacious and artwork-first: Home, Discover and Library lead; collections remain close and operational tools live in Settings/Management. Desktop and mobile share destinations. Mint owns the interface and audio engine; navigation never remounts playback. Keep dark/Figtree/mint identity and restrained reduced-motion-aware animation.
+- Mint should feel immediately familiar to listeners of Spotify and Apple Music: music, search, playlists and liked songs lead; operational tools stay in a separate admin area. Use Mint branding and independently implemented UI and assets. Desktop and mobile must make the primary listening flow easy to discover. Mint owns the interface and audio engine; navigation never remounts playback.
 
 ## Evidence on Hand
 - There are no users, testimonials, or metrics yet. All stats on the front page must come from the live database and must never be invented.
@@ -46,12 +46,16 @@ Mint is a self-hosted listening service: private files, personal collections and
 ## Product Principles
 1. Music first, machinery within reach. Every job's progress and failure remains visible in management.
 2. Keep a hard wall between the public app and the media services.
-3. Fully automatic once linked. Manual actions are for exceptions only.
-4. Use album quality first and fall back to YouTube, and always label which source a file came from.
+3. Keep setup and ordinary listening simple; provider connections are optional and operational actions belong in management.
+4. Preserve source and acquisition details where they are needed for informed choices and troubleshooting.
+
+## Consumer-first direction
+
+The current direction is a consumer-focused music service with a familiar commercial music-app interface and an admin-only area in the same application. Ordinary controls use listener language such as "Liked songs" and "Create playlist", not redundant Mint qualifiers. Existing provider connections and data are preserved, but provider sync should not organize the consumer experience. YouTube playlist import remains supported. A self-hosted MusicBrainz mirror is optional, with public service fallback; it must not become a mandatory multi-gigabyte install. Chart sources must be honest about scope and respect their terms. Feature parity with commercial services is an aspiration, not a claim that unimplemented capabilities exist.
 
 ## Approved V3.1 / V3.5 scope
 
-The user explicitly approved this scope and staged implementation. The native foundation ships as V3.1; all remaining launch requirements belong to V3.5. V3.5 is complete only after all remaining milestones are delivered and verified. Later-V3 deferrals below remain outside V3.5.
+These are historical scope decisions, not evidence that every milestone has shipped or a replacement for the consumer-first direction above.
 
 1. **Native foundation:** zero embedded Plexamp runtime/build dependencies; native library/search/artist/album/playlist browsing; persistent transport, full-collection queue/shuffle/repeat, ordering, restoration, and member-private media access.
 2. **Analysis and Smart Fades:** Mint-owned, versioned/fingerprinted loudness/peak, silence, waveform, tempo/key and similarity analysis, supplemented by capability-verified Plex data. Lightweight work stays on the NAS; heavy similarity analysis can run on an optional separately authenticated Docker worker. Add scheduling, concurrency/resource limits, resumable backfills, provenance/confidence, coverage and actionable diagnostics. Content-aware fades choose safe overlap/gain curves, normalize loudness with peak headroom, preserve continuous albums and expose explicit fallback/Off modes. Verify direct-play/gapless support and add controlled transcoding where required.

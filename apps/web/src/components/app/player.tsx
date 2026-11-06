@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
+import { ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { GlobalSearch } from "./global-search";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
@@ -290,8 +290,8 @@ export function PlayerBar() {
     <MusicItem item={track} className="flex min-w-0 items-center gap-3">
       <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
-        <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
-        <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to start listening" : "Connecting to your library…"}</p>
+        <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Nothing playing"}</Link>
+        <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to play" : "Connecting…"}</p>
       </div>
       {track && <div className="hidden xl:block"><TrackMenuButton item={track} /></div>}
     </MusicItem>
@@ -303,6 +303,7 @@ export function PlayerBar() {
     <div className="hidden min-w-0 items-center gap-2 lg:flex lg:col-start-3 lg:row-start-1 lg:justify-end">
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
+      <Link href="/app/settings?section=devices" aria-label="Devices" title="Devices" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MonitorSpeaker className="size-5" /></Link>
       <div className="flex max-w-36 items-center gap-1">
         <Transport label={state.volume ? "Mute" : "Unmute"} disabled={!ready} onClick={() => {
           if (state.volume) previousVolume.current = state.volume;

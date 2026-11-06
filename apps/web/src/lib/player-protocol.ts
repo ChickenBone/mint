@@ -52,6 +52,10 @@ export const collectionSchema = z.discriminatedUnion("kind", [
     }).optional(),
   }),
   z.object({ kind: z.literal("liked") }),
+  // An empty ID means all native likes; a UUID narrows the selection to one liked song.
+  z.object({ kind: z.literal("native-liked"), id: z.preprocess(
+    (value) => value == null ? "" : value, z.union([z.literal(""), z.uuid()]),
+  ) }),
   z.object({ kind: z.literal("playlist"), id: z.uuid() }),
   z.object({ kind: z.literal("spotify"), id: z.uuid() }),
   z.object({ kind: z.literal("artist"), id: z.string().max(20_000).regex(/^ar_[A-Za-z0-9_-]+$/) }),

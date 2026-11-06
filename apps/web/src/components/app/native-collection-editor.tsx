@@ -18,17 +18,19 @@ const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-f
 export function NativeCollectionEditor({ initial }: { initial: CollectionDetail }) {
   const [data, setData] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [results, setResults] = useState<TrackView[]>([]);
-  const [searched, setSearched] = useState(false);
+  const [search, setSearch] = useState<{ query: string; page: number; nextPage: number | null } | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<{ userId: string; name: string } | null>(null);
   const router = useRouter();
 
   const reload = async () => setData(await musicRequest<CollectionDetail>(`collections/${data.id}`));
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, message = "Saving your music…") => {
     setBusy(true);
+    setActivity(message);
     setError("");
     setNotice("");
     try {
@@ -39,6 +41,14 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
       setBusy(false);
     }
   };
+
+  const findSongs = (query: string, page = 0) => run(async () => {
+    const result = await musicRequest<{ tracks: TrackView[]; nextPage: number | null }>(
+      `library?q=${encodeURIComponent(query)}&page=${page}`,
+    );
+    setResults(result.tracks);
+    setSearch({ query, page, nextPage: result.nextPage ?? null });
+  }, "Loading songs…");
 
   const mutate = async (patch: Record<string, unknown>) => {
     await musicRequest(`collections/${data.id}`, "PATCH", { ...patch, revision: data.revision });
@@ -68,7 +78,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
   return (
     <section className="mx-auto max-w-6xl">
       <Link href="/app/collection" className="mb-5 inline-flex min-h-11 items-center text-sm text-muted hover:text-fg">
-        ← Your music
+        ← Your Library
       </Link>
 
       <header className="mb-6 flex flex-wrap items-end gap-5">
@@ -81,7 +91,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         )}
         <div className="min-w-0 flex-1">
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge tone="neutral">{data.rules ? "Smart" : "Mint"}</Badge>
+            <Badge tone="neutral">{data.rules ? "Smart playlist" : "Playlist"}</Badge>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted">
               {data.rules ? (
                 <>
@@ -91,7 +101,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               ) : (
                 <>
                   <CheckCircle2 className="size-3.5 text-mint" aria-hidden />
-                  <span>Saved in Mint</span>
+                  <span>{data.role === "owner" ? "Your playlist" : "Collaborative playlist"}</span>
                 </>
               )}
             </span>
@@ -101,7 +111,8 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
             {data.description || (data.rules ? "A living playlist, rebuilt from your library rules." : "Your order. Your repeats. Make this one yours.")}
           </p>
           <p className="mt-2 text-xs text-faint tabular">
-            {data.role === "owner" ? "Owner" : "Collaborating editor"} · {playableCount} of {data.entries.length} playable · Revision {data.revision}
+            {data.role === "owner" ? "Your playlist" : "Collaborating editor"} · {data.entries.length} songs
+            {playableCount < data.entries.length ? ` · ${playableCount} playable` : ""}
           </p>
         </div>
       </header>
@@ -133,7 +144,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         </div>
       )}
       <p role="status" className="mb-4 text-sm text-muted">
-        {busy ? "Saving your music…" : notice}
+        {busy ? activity : notice}
       </p>
 
       <details className="mb-7 border-y border-line py-5">
@@ -201,7 +212,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
             <fieldset className="grid gap-4 border-t border-line pt-5 sm:col-span-2 sm:grid-cols-2">
               <legend className="mb-3 text-lg font-bold">Smart rules</legend>
               <p className="max-w-prose text-sm leading-relaxed text-muted sm:col-span-2">
-                All rules must match. These use the owner&apos;s native likes and listening history. No songs are downloaded automatically.
+                All rules must match. These use the owner&apos;s Liked songs and listening history. No songs are downloaded automatically.
               </p>
               <label className="text-sm">
                 Artist contains
@@ -226,15 +237,15 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                 />
               </label>
               <label className="text-sm">
-                Mint likes
+                Liked songs
                 <select
                   name="liked"
                   defaultValue={data.rules.liked === undefined ? "any" : data.rules.liked ? "yes" : "no"}
                   className={field}
                 >
                   <option value="any">Any song</option>
-                  <option value="yes">Liked in Mint</option>
-                  <option value="no">Not liked in Mint</option>
+                  <option value="yes">Liked</option>
+                  <option value="no">Not liked</option>
                 </select>
               </label>
               <label className="text-sm">
@@ -300,7 +311,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input name="neverPlayed" type="checkbox" defaultChecked={data.rules.neverPlayed} className="size-4 accent-mint" />
-                Never played in Mint
+                Never played
               </label>
             </fieldset>
           )}
@@ -322,11 +333,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
             onSubmit={(e) => {
               e.preventDefault();
               const q = String(new FormData(e.currentTarget).get("q") ?? "");
-              void run(async () => {
-                const result = await musicRequest<{ tracks: TrackView[] }>(`library?q=${encodeURIComponent(q)}`);
-                setResults(result.tracks);
-                setSearched(true);
-              });
+              if (!busy) void findSongs(q.trim());
             }}
           >
             <label className="min-w-0 flex-1 text-sm">
@@ -337,7 +344,11 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               Find songs
             </button>
           </form>
-          {searched && !results.length && <p className="py-5 text-sm text-muted">No playable matches. Try fewer words.</p>}
+          {search && !results.length && (
+            <p className="py-5 text-sm text-muted">
+              {search.page ? "No more playable matches on this page. Go back or search again." : "No playable matches. Try fewer words."}
+            </p>
+          )}
           {!!results.length && (
             <div className="mt-5 max-h-96 overflow-y-auto">
               <MusicTrackList
@@ -356,6 +367,21 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                 )}
               />
             </div>
+          )}
+          {search && (
+            <nav aria-label="Add songs search pages" className="mt-4 flex flex-wrap items-center gap-3">
+              <button type="button" className={button} disabled={busy || search.page === 0}
+                onClick={() => void findSongs(search.query, search.page - 1)}>
+                Previous
+              </button>
+              <span role="status" className="min-w-0 break-words text-sm text-muted">
+                Page {search.page + 1}{search.query ? ` · Results for “${search.query}”` : " · All playable songs"}
+              </span>
+              <button type="button" className={button} disabled={busy || search.nextPage === null}
+                onClick={() => { if (search.nextPage !== null) void findSongs(search.query, search.nextPage); }}>
+                Next
+              </button>
+            </nav>
           )}
           <p className="mt-3 text-xs text-faint">
             Add a song again to keep a second entry. Removing one entry never removes the other.
@@ -379,11 +405,11 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                 type="button"
                 className={button}
                 disabled={busy}
-                aria-label={`Like ${track.title} in Mint`}
+                aria-label={`Like ${track.title}`}
                 onClick={() =>
                   void run(async () => {
                     await musicRequest(`likes/${track.id}`, "PUT");
-                    setNotice("Added to Mint likes.");
+                    setNotice("Added to Liked songs.");
                   })
                 }
               >
@@ -437,7 +463,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         <section className="mt-10 border-t border-line pt-7">
           <h2 className="text-2xl font-bold">Collaborators</h2>
           <p className="mt-3 max-w-prose text-sm text-muted">
-            Invite an approved Mint member by email. Editors can change songs and details. Only you can invite, revoke or delete.
+            Invite a member by email. Editors can change songs and details. Only you can invite, revoke or delete.
           </p>
           <form
             className="my-5 flex flex-wrap items-end gap-3"

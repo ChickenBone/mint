@@ -7,6 +7,7 @@
 - Play/Shuffle selects the complete matching collection, not only the visible page.
 - Server-owned ID snapshots freeze queue membership/order; hydrate later windows progressively. Additions to the library must not inflate an existing queue.
 - Shuffle must visit each queue occurrence once before repeat-all wraps. Deliberate duplicate song additions retain separate queue identities.
+- Previous restarts the current song after three seconds; before that, repeat-all wraps from the first occurrence to the last. Revalidate restored queue windows before selecting.
 - Reorder/remove/clear upcoming without restarting the current song.
 - Search should tolerate reordered words, prefixes, accents and conservative typos; do not require exact titles.
 
@@ -42,7 +43,7 @@ Loudness normalization uses measured LUFS/true peak, LRA-aware gain clamping, an
 
 Mint analysis (`mint-dsp-v2`, `16 kHz` streaming decode) measures SHA-256 fingerprints, EBU R128 loudness (`integratedLufs`, `truePeakDbtp`, `lraLu`, `shortTermMaxLufs`, `crestFactorDb`), silence, 256-bin waveform, MixRamp fade contours, beatgrid tempo/stability, HPCP key + Camelot/Open Key notation, 12-band Bark energy, 13 MFCCs, genre/sub-genre + mood + vocal/instrumental classifications, and 64-d `audio-embedding-v2` similarity vectors. Existing `v1` (`mint-dsp-v1`) records remain valid via a discriminated union (`analysisV1Schema | analysisV2Schema`) until upgraded or reprocessed. Library filters and Smart Playlists can filter by `genre`, `mood`, `minBpm`, `maxBpm`, `camelotKey`, and `vocalType`.
 
-LRCLIB and Lyrics.ovh lyrics are compared on demand, not library-wide. Prefer actual enhanced-LRC word timing, then line sync, then plain text; never synthesize word timing from line duration. Show source/timing capability and partial provider failures, and allow choosing an available source. Keep instrumental/no-match/error states, manual-follow behavior and personal LRCLIB match/timing corrections. A corrected match takes precedence over automatic ranking. Never send audio, private paths or credentials to a lyrics provider. Providers remain bounded, Redis-cached and rate-limited; LRCLIB cooldown does not block the independent fallback.
+LRCLIB and Lyrics.ovh lyrics are compared on demand, not library-wide. Prefer actual enhanced-LRC word timing, then line sync, then plain text; never synthesize word timing from line duration. Source/timing details, partial provider failures, source choice and personal LRCLIB match/timing corrections are available in the admin lyrics details. Keep instrumental/no-match/error states and manual-follow behavior; listeners can report an issue to admins. A corrected match takes precedence over automatic ranking. Never send audio, private paths or credentials to a lyrics provider. Providers remain bounded, Redis-cached and rate-limited; LRCLIB cooldown does not block the independent fallback.
 
 ## Collections, devices and offline
 

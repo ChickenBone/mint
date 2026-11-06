@@ -4,12 +4,13 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { musicCollections, musicEntries, musicExclusions, musicFolders, musicHistory, musicLikes } from "@mint/core/music-db";
 import { collectionMutationSchema, createCollectionSchema, historyEventSchema, MusicError, smartRulesSchema } from "@mint/core/music";
 import { collectionDetail, createCollection, deleteHistory, listCollections, musicProfile, mutateCollection,
-  organizeCollection, recordHistory, respondInvitation, setPrivateSession, smartTracks } from "../src/lib/music-store";
+  importedLikeCandidates, parseImportedLikesCursor, organizeCollection, playlistLibrarySearch, recordHistory, respondInvitation, setPrivateSession, smartTracks } from "../src/lib/music-store";
+import { importLikedSongs } from "../src/lib/music-client";
 import { discoverMusic } from "../src/lib/music-discovery";
 import { catalogItems } from "../src/lib/player-catalog";
 import { collectionFromParams, collectionParams, loadCollection } from "../src/lib/browser-catalog";
@@ -38,6 +39,36 @@ test("music contracts validate safe rules, revisions and bounded history", () =>
 });
 
 const url = process.env.MUSIC_TEST_DATABASE_URL;
+test("legacy favorites are copied explicitly through existing likes writes, once per song", async () => {
+  const calls: string[] = [];
+  const a = randomUUID(), b = randomUUID();
+  const request = async <T>(path: string, method = "GET"): Promise<T> => {
+    assert.equal(method, "PUT");
+    calls.push(path);
+    return {} as T;
+  };
+  await importLikedSongs([], request);
+  assert.deepEqual(calls, [], "merely viewing favorites must not import them");
+  await importLikedSongs([a, b, a], request);
+  assert.deepEqual(calls, [`likes/${a}`, `likes/${b}`]);
+  await assert.rejects(importLikedSongs(Array.from({ length: 101 }, () => randomUUID()), request), /100/);
+  assert.equal(calls.length, 2, "reject oversized batches before writing");
+  let writes = 0;
+  await assert.rejects(importLikedSongs([a, b], async <T>(): Promise<T> => {
+    if (++writes === 2) throw new Error("Disconnected");
+    return {} as T;
+  }), /Disconnected/, "partial errors must not appear successful");
+});
+
+test("imported favorites cursors validate exact timestamps and track identities", () => {
+  assert.equal(parseImportedLikesCursor(null), undefined);
+  const position = { likedAt: "2026-01-01T00:00:00.123456Z", trackId: randomUUID() };
+  assert.deepEqual(parseImportedLikesCursor(Buffer.from(JSON.stringify(position)).toString("base64url")), position);
+  for (const value of ["invalid", "x".repeat(257), Buffer.from(JSON.stringify({ likedAt: "yesterday", trackId: position.trackId })).toString("base64url")]) {
+    assert.throws(() => parseImportedLikesCursor(value), (error: unknown) => error instanceof MusicError && error.status === 400);
+  }
+});
+
 test("native music persists isolation, collaboration, duplicates, privacy and library discovery", { skip: !url && "Set MUSIC_TEST_DATABASE_URL to run real PostgreSQL integration tests" }, async (suite) => {
   const namespace = `music_test_${randomUUID().replaceAll("-", "")}`;
   const admin = new pg.Pool({ connectionString: url, max: 1 });
@@ -130,6 +161,40 @@ test("native music persists isolation, collaboration, duplicates, privacy and li
       assert.equal((await collectionDetail(db, owner.id, playlist.id)).entries.length, 3);
     });
 
+    await suite.test("playlist song search reaches later pages with stable ties and repeat additions", async () => {
+      const fixtureTracks = await db.insert(schema.tracks).values(Array.from({ length: 205 }, () => ({
+        title: "Playlist paging song", artist: "Playlist paging fixture", album: "Literal %_\\ album",
+        stage: "ready" as const, filePath: "/fixture/paging.flac",
+      }))).returning();
+      try {
+        const first = await playlistLibrarySearch(db, "Playlist paging fixture");
+        const second = await playlistLibrarySearch(db, "Playlist paging fixture", first.nextPage!);
+        const last = await playlistLibrarySearch(db, "Playlist paging fixture", second.nextPage!);
+        assert.deepEqual([first.tracks.length, second.tracks.length, last.tracks.length], [100, 100, 5]);
+        assert.equal(last.nextPage, null);
+        const ids = [...first.tracks, ...second.tracks, ...last.tracks].map((track) => track.id);
+        assert.deepEqual(ids, fixtureTracks.map((track) => track.id).sort(), "UUID tie-breaking preserves every matching song exactly once");
+        assert.deepEqual((await playlistLibrarySearch(db, "Playlist paging fixture")).tracks.map((track) => track.id),
+          first.tracks.map((track) => track.id), "Previous returns the same first page");
+        assert.equal((await playlistLibrarySearch(db, "%_\\", 2)).tracks.length, 5, "special characters remain literal");
+        assert.equal((await playlistLibrarySearch(db, "No such fixture")).tracks.length, 0);
+        assert.equal((await playlistLibrarySearch(db, "Pending")).tracks.length, 0, "unplayable songs stay excluded");
+        assert.equal((await playlistLibrarySearch(db, "", 2)).tracks.length, 8, "clearing search browses the shared playable library");
+        for (const page of [-1, 0.5, 10001, NaN]) await assert.rejects(playlistLibrarySearch(db, "", page));
+        await assert.rejects(playlistLibrarySearch(db, "x".repeat(101)));
+        const selected = last.tracks[0]!.id;
+        const playlist = await create(owner.id, { title: "Later-page picks" });
+        await mutation(owner.id, playlist.id, { action: "append", revision: 1, trackIds: [selected, selected] });
+        const detail = await collectionDetail(db, owner.id, playlist.id);
+        assert.deepEqual(detail.entries.map((entry) => entry.track.id), [selected, selected]);
+        assert.equal(new Set(detail.entries.map((entry) => entry.entryId)).size, 2);
+        await assert.rejects(collectionDetail(db, stranger.id, playlist.id), status(404));
+        await mutation(owner.id, playlist.id, { action: "delete", revision: 2 });
+      } finally {
+        await db.delete(schema.tracks).where(inArray(schema.tracks.id, fixtureTracks.map((track) => track.id)));
+      }
+    });
+
     await suite.test("simultaneous editors cannot silently overwrite a revision", async () => {
       const playlist = await create(owner.id, { title: "Racing", trackIds: [a.id] });
       const results = await Promise.allSettled([
@@ -158,6 +223,22 @@ test("native music persists isolation, collaboration, duplicates, privacy and li
       assert.deepEqual((await musicProfile(db, owner.id)).likes, [b.id]);
       assert.equal((await musicProfile(db, stranger.id)).likes.length, 0);
       assert.equal((await db.select().from(schema.userTracks).where(eq(schema.userTracks.userId, owner.id))).length, 1);
+      assert.deepEqual((await importedLikeCandidates(db, owner.id)).tracks.map((track) => track.id), [a.id]);
+      assert.equal((await importedLikeCandidates(db, stranger.id)).tracks.length, 0);
+      await importLikedSongs([a.id], async <T>(path: string, method = "GET"): Promise<T> => {
+        assert.equal(method, "PUT");
+        await db.insert(musicLikes).values({ userId: owner.id, trackId: path.split("/")[1]! }).onConflictDoNothing();
+        return {} as T;
+      });
+      assert.equal((await importedLikeCandidates(db, owner.id)).tracks.length, 0, "native likes are not offered again");
+      await db.delete(musicLikes).where(and(eq(musicLikes.userId, owner.id), eq(musicLikes.trackId, a.id)));
+      await db.insert(schema.userTracks).values({ userId: owner.id, trackId: a.id })
+        .onConflictDoUpdate({ target: [schema.userTracks.userId, schema.userTracks.trackId], set: { origin: "youtube" } });
+      assert.deepEqual((await musicProfile(db, owner.id)).likes, [b.id], "continuous source sync cannot restore a native unlike");
+      assert.deepEqual((await importedLikeCandidates(db, owner.id)).tracks.map((track) => track.id), [a.id], "the preserved source remains explicitly convertible");
+      await db.insert(schema.userTracks).values({ userId: owner.id, trackId: pending.id, origin: "request" });
+      assert.deepEqual((await importedLikeCandidates(db, owner.id)).tracks.map((track) => track.id), [a.id], "requested songs are not presented as legacy favorites");
+      await db.delete(schema.userTracks).where(and(eq(schema.userTracks.userId, owner.id), eq(schema.userTracks.trackId, pending.id)));
     });
 
     await suite.test("smart rules query actual library fields and the owner's private profile", async () => {
@@ -171,6 +252,31 @@ test("native music persists isolation, collaboration, duplicates, privacy and li
       const copy = await create(owner.id, { title: "Smart snapshot", sourceCollectionId: smart.id });
       assert.equal(copy.rules, null);
       assert.deepEqual((await collectionDetail(db, owner.id, copy.id)).entries.map((e) => e.track.id), [b.id]);
+    });
+
+    await suite.test("imported favorites page without writes, preserve ties and stay account scoped", async () => {
+      const [member] = await db.insert(schema.users).values({
+        email: "paging@music.example", name: "Paging", status: "active", passwordHash: "fixture-not-a-password",
+      }).returning();
+      assert.ok(member);
+      const fixtureTracks = await db.insert(schema.tracks).values(Array.from({ length: 102 }, (_, index) => ({
+        title: `Paging ${index}`, artist: "Pagination fixture", stage: "queued" as const,
+      }))).returning();
+      await db.insert(schema.userTracks).values(fixtureTracks.map((track) => ({
+        userId: member.id, trackId: track.id, likedAt: new Date("2026-01-01T00:00:00.000Z"), origin: "youtube",
+      })));
+      const first = await importedLikeCandidates(db, member.id);
+      assert.equal(first.tracks.length, 100);
+      assert.ok(first.nextCursor);
+      const next = await importedLikeCandidates(db, member.id, first.nextCursor);
+      assert.equal(next.tracks.length, 2);
+      assert.equal(next.nextCursor, null);
+      assert.equal(new Set([...first.tracks, ...next.tracks].map((track) => track.id)).size, 102, "timestamp ties cannot skip or repeat songs");
+      assert.deepEqual((await importedLikeCandidates(db, member.id)).tracks.map((track) => track.id), first.tracks.map((track) => track.id), "back navigation is stable without importing");
+      assert.equal((await musicProfile(db, member.id)).likes.length, 0, "pagination never creates native likes");
+      assert.equal((await importedLikeCandidates(db, stranger.id, first.nextCursor)).tracks.length, 0, "a cursor cannot expose another account's favorites");
+      await db.insert(musicLikes).values({ userId: member.id, trackId: first.tracks[0]!.id });
+      assert.deepEqual((await importedLikeCandidates(db, member.id, first.nextCursor)).tracks.map((track) => track.id), next.tracks.map((track) => track.id), "copying earlier songs does not move later page boundaries");
     });
 
     await suite.test("folders and pins are per-user and refuse cross-user folders", async () => {

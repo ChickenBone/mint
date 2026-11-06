@@ -1,13 +1,12 @@
 import { z } from "zod";
-import { and, asc, desc, eq, ilike, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@mint/core/db";
 import { musicFolders, musicHistory, musicLikes, musicExclusions } from "@mint/core/music-db";
 import { collectionMutationSchema, createCollectionSchema, historyEventSchema, MusicError } from "@mint/core/music";
-import { PLAYABLE } from "@mint/core/playback";
 import { getUser } from "@/lib/auth";
 import { boundedJson, publicUrl } from "@/lib/request";
 import { collectionDetail, createCollection, deleteHistory, listCollections, musicProfile, mutateCollection,
-  organizeCollection, recordHistory, respondInvitation, setPrivateSession } from "@/lib/music-store";
+  importedLikeCandidates, organizeCollection, playlistLibrarySearch, recordHistory, respondInvitation, setPrivateSession } from "@/lib/music-store";
 import { discoverMusic } from "@/lib/music-discovery";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { toTrackView } from "@mint/core/views";
@@ -87,6 +86,10 @@ async function handle(request: Request, context: Context) {
         return json({ ok: true });
       }
     } else if (resource === "likes") {
+      if (id === "imported" && method === "GET") {
+        const result = await importedLikeCandidates(db, user.id, url.searchParams.get("cursor"));
+        return json({ tracks: result.tracks.map(toTrackView), nextCursor: result.nextCursor });
+      }
       if (method === "GET") {
         const rows = await db.select({ track: schema.tracks }).from(musicLikes)
           .innerJoin(schema.tracks, eq(schema.tracks.id, musicLikes.trackId)).where(eq(musicLikes.userId, user.id)).orderBy(desc(musicLikes.createdAt)).limit(1000);
@@ -119,12 +122,9 @@ async function handle(request: Request, context: Context) {
       const result = await discoverMusic(db, user.id, mode, seeds);
       return json({ ...result, items: result.items.map(({ track, reason }) => ({ track: toTrackView(track), item: trackPlayerItem(toTrackView(track)), reason })) });
     } else if (resource === "library" && method === "GET") {
-      const query = z.string().max(100).parse(url.searchParams.get("q") ?? "").trim();
-      const match = `%${query.replace(/[%_\\]/g, "\\$&")}%`;
-      const rows = await db.select().from(schema.tracks).where(and(PLAYABLE,
-        ...(query ? [or(ilike(schema.tracks.title, match), ilike(schema.tracks.artist, match), ilike(schema.tracks.album, match))] : [])))
-        .orderBy(asc(schema.tracks.artist), asc(schema.tracks.title)).limit(100);
-      return json({ tracks: rows.map(toTrackView) });
+      const page = z.coerce.number().int().min(0).max(10000).parse(url.searchParams.get("page") ?? 0);
+      const result = await playlistLibrarySearch(db, url.searchParams.get("q") ?? "", page);
+      return json({ tracks: result.tracks.map(toTrackView), nextPage: result.nextPage });
     }
     return json({ error: "Music endpoint not found." }, 404);
   } catch (error) {

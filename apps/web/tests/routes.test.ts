@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isAppDestinationActive,
+  isAdminWorkspace,
+  listeningDestinations,
   legacyCollectionDetailHref,
   legacyCollectionsHref,
   legacyDevicesHref,
@@ -86,6 +88,7 @@ test("Your music, Settings and Management tab/section resolvers normalize query 
   assert.equal(resolveSettingsSection("account"), "account");
   assert.equal(resolveSettingsSection(null), "account");
 
+  assert.equal(resolveManageTab("reports"), "reports");
   assert.equal(resolveManageTab("jobs"), "jobs");
   assert.equal(resolveManageTab("workers"), "workers");
   assert.equal(resolveManageTab("analysis"), "analysis");
@@ -98,6 +101,8 @@ test("primary navigation active state includes nested detail, Your music, Settin
   assert.equal(isAppDestinationActive("/app/library/albums/abc", "/app/library"), true);
   assert.equal(isAppDestinationActive("/app/collection", "/app/collection"), true);
   assert.equal(isAppDestinationActive("/app/collection/abc", "/app/collection"), true);
+  assert.equal(isAppDestinationActive("/app/library/albums/abc", "/app/collection"), true);
+  assert.equal(isAppDestinationActive("/app/search", "/app/search"), true);
   assert.equal(isAppDestinationActive("/app/downloads", "/app/collection"), true);
   assert.equal(isAppDestinationActive("/app/playlists/abc", "/app/collection"), true);
   assert.equal(isAppDestinationActive("/app/devices", "/app/settings"), true);
@@ -105,4 +110,23 @@ test("primary navigation active state includes nested detail, Your music, Settin
   assert.equal(isAppDestinationActive("/app/admin/analysis", "/app/manage"), true);
   assert.equal(isAppDestinationActive("/app/settings", "/app"), false);
   assert.equal(isAppDestinationActive("/appish", "/app"), false);
+});
+
+test("listener navigation has only Home, Search and Your Library", () => {
+  assert.deepEqual(listeningDestinations, [
+    { href: "/app", label: "Home" },
+    { href: "/app/search", label: "Search" },
+    { href: "/app/collection", label: "Your Library" },
+  ]);
+});
+
+test("admin navigation is a separate role-gated workspace, never a listener destination", () => {
+  for (const path of ["/app/manage", "/app/admin", "/app/admin/analysis", "/app/jobs", "/app/workers"]) {
+    assert.equal(isAdminWorkspace(path, true), true);
+    assert.equal(isAdminWorkspace(path, false), false);
+  }
+  for (const path of ["/app", "/app/library", "/app/settings", "/app/collection", "/app/management"]) {
+    assert.equal(isAdminWorkspace(path, true), false);
+    assert.equal(isAdminWorkspace(path, false), false);
+  }
 });

@@ -1,11 +1,11 @@
 # Design and experience guidance
 
-The current visual contract is [DESIGN.md](../DESIGN.md): **Listening room**, a spacious music service rather than a backend dashboard.
+The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-first consumer service rather than a backend dashboard.
 
 ## Identity and hierarchy
 
 - Preserve the dark charcoal/Figtree/mint-green identity. Artwork and music supply the color; mint marks actions and focus.
-- Use generous gutters, readable secondary text, quiet controls and clear section separation.
+- Use readable secondary text, familiar controls and clear section separation.
 - Prefer coherent collection shelves and artwork-led views over crowded diagnostic panels.
 - Use existing tokens in `apps/web/src/app/globals.css` and shared components. Avoid parallel design systems and one-off variants.
 - Keep errors, loading, empty, unavailable and success states intentional; never make failures resemble empty success.
@@ -14,15 +14,15 @@ The current visual contract is [DESIGN.md](../DESIGN.md): **Listening room**, a 
 
 | Destination | Purpose |
 | --- | --- |
-| Home | Personal recommendations, recent likes and new music |
+| Home | Personal recommendations, recent listens and new music |
 | Discover | Virtual playlist shelves, radios, mixes, charts and genre discovery |
 | Library | Bounded album/artist/song browsing, search, filters and full-collection playback |
-| Your collection | Native playlists/likes and imported collections, preserving their distinct ownership |
+| Your Library | Personal playlists and liked songs, with optional imports retaining their distinct ownership |
 | Player / Now Playing | Transport, queue and lyrics; never a separate embedded application |
 | Settings & management | Provider linking, devices/parties, activity/requests, workers and administration |
 | Public pages | Browse-only discovery and requests for access; public activity remains separately reachable |
 
-Desktop and mobile share destinations. Current mobile navigation uses primary bottom destinations and a personal/settings entry. Existing route links must remain usable during navigation changes.
+Desktop and mobile lead with Home, Search and Your Library. Discover and the shared catalog remain reachable from listening surfaces; Settings is available from the account control. Existing route links must remain usable during navigation changes.
 
 Move machinery out of the listening foreground; do not remove it. Sync status, acquisition failures and necessary user actions still need contextual visibility.
 
@@ -42,7 +42,7 @@ Discover should feel like shelves of playable collections, not a provider config
 
 Within a chart, distinguish available, missing, ambiguous, requested, processing and failed states in text as well as color. Missing rows are gray/muted but readable; **Add to library** means acquisition, not playback-queue insertion.
 
-Keep provider, territory, ranking period, publication/refresh times and stale notices discoverable. International provider-community charts are not worldwide industry charts.
+Show provider, territory, available ranking period and meaningful stale notices. Publication/refresh timestamps remain in the API for diagnostics. International provider-community charts are not worldwide industry charts.
 
 ## Accessibility, motion and writing
 

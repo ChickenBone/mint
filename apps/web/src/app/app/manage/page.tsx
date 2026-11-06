@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ManageView } from "@/components/app/manage-view";
+import { getDb } from "@mint/core/db";
 import { requireAdmin } from "@/lib/auth";
 import {
   getAccessRequests,
@@ -12,9 +13,10 @@ import {
   getRemotePoolSize,
   getStats,
 } from "@/lib/data";
+import { listIssueReports } from "@/lib/issue-reports";
 import { publicUrl } from "@/lib/request";
 
-export const metadata: Metadata = { title: "Management" };
+export const metadata: Metadata = { title: "Admin portal" };
 export const dynamic = "force-dynamic";
 
 export default async function ManagePage() {
@@ -29,6 +31,7 @@ export default async function ManagePage() {
     myWorkers,
     remotePoolSize,
     stats,
+    issueReports,
   ] = await Promise.all([
     getAccessRequests(),
     getMembers(),
@@ -39,6 +42,7 @@ export default async function ManagePage() {
     getMyWorkers(admin.id),
     getRemotePoolSize(),
     getStats(),
+    listIssueReports(getDb()),
   ]);
 
   return (
@@ -60,6 +64,7 @@ export default async function ManagePage() {
       myWorkers={myWorkers}
       remotePoolSize={remotePoolSize}
       workersOnline={stats.workersOnline ?? 0}
+      issueReports={issueReports}
     />
   );
 }

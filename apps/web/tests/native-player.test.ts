@@ -7,6 +7,36 @@ import { NativePlayer } from "../src/lib/native-player";
 import { defaultDsp, playerStateSchema, type PlayerItem } from "../src/lib/player-protocol";
 import { camelotCompatibility, normalizationGain, smartTransition } from "../src/lib/smart-fades";
 import { analysisSchema } from "@mint/core/analysis";
+import React, { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PlaybackControls } from "../src/components/app/player-controls";
+import { QueueContents } from "../src/components/app/player-panels";
+import type { PlayerState } from "../src/lib/player-protocol";
+
+test("playback controls and queue communicate their current state", () => {
+  const [track, next] = tracks(2).map((item, index) => ({ ...item, queueId: `entry-${index}` }));
+  const state: PlayerState = { playing: true, track: track!, time: 0, duration: 90_000, volume: 100,
+    shuffle: false, repeat: 2, queue: [track!, next!], queueOffset: 0, queueTotal: 3 };
+  const controls = renderToStaticMarkup(createElement(PlaybackControls, { state, ready: true, command: () => undefined, expanded: true }));
+  assert.match(controls, /aria-label="Repeat all"[^>]*aria-pressed="true"/);
+  // The test runner uses the classic JSX transform for components compiled by Next.
+  const previousReact = Object.getOwnPropertyDescriptor(globalThis, "React");
+  Object.defineProperty(globalThis, "React", { value: React, configurable: true });
+  try {
+    const queue = renderToStaticMarkup(createElement(QueueContents, { state, command: () => undefined }));
+    assert.match(queue, /Next in queue.*2 songs/);
+    assert.match(queue, /Showing the next 1 of 2 songs/);
+    assert.match(queue, /aria-label="Play Song 2"/);
+    assert.equal((queue.match(/aria-label="Play Song 2"/g) ?? []).length, 1);
+    assert.match(queue, /aria-label="Remove Song 2 from queue"/);
+    const partial = renderToStaticMarkup(createElement(QueueContents, { state: { ...state, queue: [track!] }, command: () => undefined }));
+    assert.match(partial, /More songs are in your queue/);
+    assert.doesNotMatch(partial, /Your queue is empty/);
+  } finally {
+    if (previousReact) Object.defineProperty(globalThis, "React", previousReact);
+    else Reflect.deleteProperty(globalThis, "React");
+  }
+});
 
 function audioFixture(): HTMLAudioElement {
   const element = new EventTarget() as HTMLAudioElement;
@@ -241,6 +271,125 @@ test("repeat-one replays an ended song; repeat-all wraps; previous restarts afte
     await engine.execute({ action: "repeat" }); await engine.execute({ action: "next" }); await engine.execute({ action: "next" });
     assert.equal(engine.getState().track!.title, "Song 1");
   } finally { engine.dispose(); }
+});
+
+test("Previous restarts a restored song after three seconds without autoplay or fetching its queue", async () => {
+  const rows = tracks(220), original = setup(rows);
+  await original.engine.execute({ ...library, id: rows[120]!.id });
+  original.elements[0].currentTime = 14;
+  original.engine.dispose();
+  const restored = setup(rows, original.storage);
+  try {
+    const occurrence = restored.engine.getState().track!.queueId;
+    await restored.engine.execute({ action: "previous" });
+    assert.equal(restored.engine.getState().track!.queueId, occurrence);
+    assert.equal(restored.engine.getState().time, 0);
+    assert.equal(restored.engine.getState().playing, false);
+    assert.deepEqual(restored.requests, []);
+    assert.ok(restored.elements.every((element) => !element.src && element.paused));
+    await restored.engine.execute({ action: "resume" });
+    assert.equal(restored.engine.getState().track!.queueId, occurrence);
+    assert.equal(restored.engine.getState().time, 0);
+    assert.equal(restored.engine.getState().playing, true);
+  } finally { restored.engine.dispose(); }
+});
+
+test("Previous near the start of a restored song revalidates the window and selects the preceding audio", async () => {
+  const rows = tracks(220), original = setup(rows);
+  await original.engine.execute({ ...library, id: rows[120]!.id });
+  original.elements[0].currentTime = 2;
+  original.engine.dispose();
+  const restored = setup(rows, original.storage);
+  try {
+    await restored.engine.execute({ action: "previous" });
+    assert.deepEqual(restored.requests, [119]);
+    assert.equal(restored.engine.getState().track!.id, rows[119]!.id);
+    assert.equal(restored.elements[0].src, `/api/player/audio/${rows[119]!.id}`);
+    assert.equal(restored.engine.getState().time, 0);
+    assert.equal(restored.engine.getState().playing, true);
+  } finally { restored.engine.dispose(); }
+});
+
+test("Previous wraps repeat-all through a bounded tail window and Next returns to the first occurrence", async () => {
+  const rows = tracks(620), { engine, elements, requests } = setup(rows);
+  try {
+    await engine.execute(library);
+    const first = engine.getState().track!.queueId;
+    await engine.execute({ action: "repeat" });
+    await engine.execute({ action: "repeat" });
+    elements[0].currentTime = 8;
+    await engine.execute({ action: "previous" });
+    assert.equal(engine.getState().track!.queueId, first, "restart takes precedence over wrapping");
+    assert.equal(engine.getState().time, 0);
+    await engine.execute({ action: "previous" });
+    assert.equal(engine.getState().track!.id, rows.at(-1)!.id);
+    assert.equal(engine.getState().queueTotal, 620);
+    assert.equal(engine.getState().queueOffset, 599);
+    assert.ok(engine.getState().queue.length <= 100);
+    assert.equal(engine.getState().playing, true);
+    assert.deepEqual(requests, [-1, 619]);
+    await engine.execute({ action: "next" });
+    assert.equal(engine.getState().track!.queueId, first);
+    assert.deepEqual(requests, [-1, 619, 0]);
+  } finally { engine.dispose(); }
+});
+
+test("Previous wraps local repeat-all queues by occurrence, including duplicate songs", async () => {
+  const rows = tracks(2), { engine } = setup(rows);
+  try {
+    await engine.execute({ action: "items", items: [rows[0]!, rows[1]!, rows[0]!], repeat: 2 });
+    const first = engine.getState().track!.queueId, last = engine.getState().queue.at(-1)!.queueId;
+    await engine.execute({ action: "previous" });
+    assert.equal(engine.getState().track!.queueId, last);
+    assert.notEqual(engine.getState().track!.queueId, first);
+    await engine.execute({ action: "previous" });
+    assert.equal(engine.getState().track!.id, rows[1]!.id);
+    for (const repeat of [0, 1]) {
+      await engine.execute({ action: "items", items: rows, repeat });
+      const occurrence = engine.getState().track!.queueId;
+      await engine.execute({ action: "previous" });
+      assert.equal(engine.getState().track!.queueId, occurrence, "repeat-off and repeat-one never wrap backward");
+    }
+  } finally { engine.dispose(); }
+});
+
+test("a slow Previous wrap cannot replace a newer selection, and conflicting queue revisions fail explicitly", { timeout: 5000 }, async () => {
+  for (const conflict of [false, true]) {
+    const rows = tracks(220).map((track) => ({ ...track, queueId: randomUUID() })), id = randomUUID();
+    let started!: () => void, release!: () => void;
+    const loading = new Promise<void>((resolve) => { started = resolve; });
+    const fetcher: typeof fetch = async (input) => {
+      const position = Number(new URL(String(input), "http://mint.test").searchParams.get("position")) || 0;
+      if (position === rows.length - 1) {
+        started();
+        if (!conflict) await new Promise<void>((resolve) => { release = resolve; });
+      }
+      const offset = Math.max(0, position - 20);
+      return Response.json({ context: { id, revision: position > 0 && conflict ? 2 : 1, total: rows.length, offset, position, shuffle: false },
+        items: rows.slice(offset, offset + 100) });
+    };
+    const { engine, elements } = setup(rows, new MemoryStorage(), "member-one", fetcher);
+    try {
+      await engine.execute(library);
+      await engine.execute({ action: "repeat" });
+      await engine.execute({ action: "repeat" });
+      const first = engine.getState().track!.queueId;
+      const previous = engine.execute({ action: "previous" });
+      if (conflict) {
+        await assert.rejects(previous, /changed on another device/);
+        assert.equal(engine.getState().track!.queueId, first);
+      } else {
+        await loading;
+        await engine.execute({ action: "items", items: [rows[1]!], paused: true });
+        release();
+        await assert.rejects(previous, { name: "AbortError" });
+        assert.equal(engine.getState().track!.id, rows[1]!.id);
+        assert.equal(engine.getState().queueTotal, 1);
+        assert.equal(engine.getState().playing, false);
+      }
+      assert.equal(elements[0].src, `/api/player/audio/${engine.getState().track!.id}`);
+    } finally { engine.dispose(); }
+  }
 });
 
 test("member-scoped queues restore paused with their position and cannot leak to a different account", async () => {

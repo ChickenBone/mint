@@ -17,9 +17,9 @@ export function LyricsMatch({ id, title, offset, refresh }: { id: string; title:
     if (!response.ok) throw new Error(body.error ?? "The lyrics correction could not save.");
     setResults(null); refresh();
   });
-  return <details className="my-5 border-y border-line py-3">
-    <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">Wrong lyrics or timing?</summary>
-    <p className="mt-2 text-xs leading-relaxed text-muted">Search LRCLIB for a better match. Your correction and timing offset apply only to your Mint account.</p>
+  return <details className="mt-4">
+    <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">Fix lyrics</summary>
+    <p className="mt-2 text-xs leading-relaxed text-muted">Wrong lyrics or timing? Pick a better match. This only changes your own account; nothing is sent to admins.</p>
     <form className="my-4 flex flex-wrap gap-2" onSubmit={(event) => {
       event.preventDefault();
       void perform(async () => {
@@ -38,12 +38,11 @@ export function LyricsMatch({ id, title, offset, refresh }: { id: string; title:
         <span className="block text-sm font-semibold">{match.trackName}</span><span className="mt-1 block text-xs text-muted">{match.artistName} · {match.albumName} · {Math.round(match.duration)}s{match.instrumental ? " · Instrumental" : ""}</span>
       </button>
     </li>) : <li className="text-sm text-muted">No matches. Try a simpler title and artist.</li>}</ul>}
-    <label className="block text-sm">Lyrics timing offset <span className="float-right text-muted">{shift > 0 ? "+" : ""}{shift.toFixed(1)}s</span>
+    <label className="block text-sm">Timing <span className="float-right text-muted">{shift > 0 ? "+" : ""}{shift.toFixed(1)}s</span>
       <input aria-label="Lyrics timing offset" type="range" min="-30" max="30" step=".1" value={shift} onChange={(event) => setShift(Number(event.target.value))} className="mt-3 h-8 w-full accent-mint" />
     </label>
-    <p className="mb-3 text-xs text-muted">Positive values show each line later.</p>
     <div className="flex flex-wrap gap-2"><button disabled={busy} onClick={() => void save()} className="min-h-11 rounded-full bg-elevated px-4 text-sm font-semibold disabled:opacity-40">Save timing</button>
-      <button disabled={busy} onClick={() => void save(undefined, true)} className="min-h-11 rounded-full px-3 text-sm text-muted hover:bg-hover disabled:opacity-40">Reset to automatic match</button></div>
+      <button disabled={busy} onClick={() => void save(undefined, true)} className="min-h-11 rounded-full px-3 text-sm text-muted hover:bg-hover disabled:opacity-40">Reset</button></div>
     {error && <p role="alert" className="mt-4 text-sm text-warn">{error}</p>}
   </details>;
 }

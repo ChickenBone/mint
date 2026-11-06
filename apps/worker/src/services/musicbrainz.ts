@@ -1,5 +1,6 @@
 import { optionalEnv } from "@mint/core/env";
-import { httpJson, type RequestOpts } from "../http";
+import { HttpError, httpJson, type RequestOpts } from "../http";
+import { log } from "../log";
 
 const API = "https://musicbrainz.org/ws/2";
 const UA = optionalEnv("MUSICBRAINZ_USER_AGENT", "Mint/3.5 ( https://github.com/ChickenBone/mint )");
@@ -15,12 +16,76 @@ function throttled<T>(fn: () => Promise<T>): Promise<T> {
   return next;
 }
 
+const object = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const text = (value: unknown): value is string => typeof value === "string" && value.trim().length > 0;
+
+function validMirrorResult(value: unknown, pathname: string): boolean {
+  if (!object(value) || "error" in value) return false;
+  const parts = pathname.slice("/ws/2/".length).split("/").filter(Boolean);
+  const entity = parts[0];
+  if (parts.length > 2 || !["recording", "artist", "release-group"].includes(entity ?? "")) return false;
+  const validEntity = (row: unknown): boolean => {
+    if (!object(row) || !text(row.id) || !text(entity === "artist" ? row.name : row.title)) return false;
+    if (row.score !== undefined && ((typeof row.score !== "number" && typeof row.score !== "string") ||
+      !text(String(row.score)) || !Number.isFinite(Number(row.score)))) return false;
+    if (parts.length === 1 && entity !== "artist" && row.score === undefined) return false;
+    if (row.length !== undefined && row.length !== null &&
+      (typeof row.length !== "number" || !Number.isFinite(row.length) || row.length < 0)) return false;
+    if (row["artist-credit"] !== undefined && (!Array.isArray(row["artist-credit"]) ||
+      !row["artist-credit"].every((credit) => object(credit) && text(credit.name) &&
+        object(credit.artist) && text(credit.artist.id) && text(credit.artist.name)))) return false;
+    if (row.releases !== undefined && (!Array.isArray(row.releases) ||
+      !row.releases.every((release) => object(release) && text(release.id) && text(release.title) &&
+        (release["release-group"] === undefined || (object(release["release-group"]) &&
+          text(release["release-group"].id) &&
+          (release["release-group"]["secondary-types"] === undefined ||
+            Array.isArray(release["release-group"]["secondary-types"]))))))) return false;
+    if (row.relations !== undefined && (!Array.isArray(row.relations) || !row.relations.every(object))) return false;
+    return true;
+  };
+  if (parts.length === 2) return validEntity(value);
+  const results = value[entity === "release-group" ? "release-groups" : `${entity}s`];
+  return Array.isArray(results) && results.every(validEntity);
+}
+
 export function musicBrainzJson<T>(
   url: string,
   query?: Record<string, string | number | boolean | undefined>,
   options: Pick<RequestOpts, "timeoutMs" | "retries"> = {},
 ) {
-  return throttled(() => httpJson<T>(url, { ...options, headers: { "user-agent": UA }, query }));
+  const request = { ...options, headers: { "user-agent": UA }, query };
+  return throttled(async () => {
+    const mirror = optionalEnv("MUSICBRAINZ_MIRROR_URL", "").trim();
+    const publicUrl = new URL(url);
+    // Route canonical URLs here so all existing worker consumers share the same fallback.
+    if (mirror && publicUrl.origin === "https://musicbrainz.org" &&
+      publicUrl.pathname.startsWith("/ws/2/")) {
+      try {
+        const base = new URL(mirror);
+        if (!["http:", "https:"].includes(base.protocol) || base.origin === publicUrl.origin || base.username || base.password ||
+          base.search || base.hash || !base.pathname.replace(/\/+$/, "").endsWith("/ws/2")) {
+          throw new Error("Invalid MusicBrainz mirror API base");
+        }
+        base.pathname = base.pathname.replace(/\/+$/, "") + publicUrl.pathname.slice("/ws/2".length);
+        base.search = publicUrl.search;
+        const result = await httpJson<T>(base.toString(), {
+          ...request,
+          timeoutMs: Math.min(options.timeoutMs ?? 3000, 3000),
+          retries: 0,
+          redirect: "error",
+        });
+        if (!validMirrorResult(result, publicUrl.pathname)) {
+          throw new Error("Invalid MusicBrainz mirror JSON");
+        }
+        return result;
+      } catch (err) {
+        log.warn({ status: err instanceof HttpError ? err.status : undefined },
+          "MusicBrainz mirror unavailable or invalid; falling back to public service");
+      }
+    }
+    return httpJson<T>(url, request);
+  });
 }
 
 interface MbRecording {

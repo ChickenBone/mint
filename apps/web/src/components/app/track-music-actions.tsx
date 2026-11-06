@@ -51,8 +51,8 @@ export function TrackMusicActions({ item, close }: { item: PlayerItem; close: ()
     {item.type === "track" && <>
       <button role="menuitem" disabled={busy || !profile} className={menuClass} onClick={() => void run(async () => {
         await musicRequest(`likes/${item.id}`, profile?.likes.includes(item.id) ? "DELETE" : "PUT");
-      })}>{profile?.likes.includes(item.id) ? "Remove from Mint likes" : "Like in Mint"}</button>
-      <button role="menuitem" disabled={busy || !collections} className={menuClass} onClick={() => setChoose(!choose)} aria-expanded={choose}>Save to Mint playlist…</button>
+      })}>{profile?.likes.includes(item.id) ? "Remove from Liked songs" : "Like"}</button>
+      <button role="menuitem" disabled={busy || !collections} className={menuClass} onClick={() => setChoose(!choose)} aria-expanded={choose}>Save to playlist…</button>
       {choose && <div className="max-h-52 overflow-y-auto border-y border-line py-1">
         <p className="px-3 py-2 text-xs font-semibold text-muted">Recent playlists</p>
         {(showAll ? editable : editable.slice(0, 3)).map((collection) => <button key={collection.id} role="menuitem" disabled={busy} className={menuClass}
@@ -72,7 +72,7 @@ export function TrackMusicActions({ item, close }: { item: PlayerItem; close: ()
           <input id="track-action-playlist-title" name="title" required maxLength={200} autoFocus placeholder="New playlist name"
             className="mb-2 min-h-11 w-full rounded bg-hover px-3 text-sm text-fg" />
           <button type="submit" disabled={busy} className="min-h-11 w-full rounded bg-mint px-3 text-sm font-bold text-mint-ink disabled:opacity-40">Create and add song</button>
-        </form> : <button role="menuitem" className={menuClass} onClick={() => setCreating(true)}>New playlist…</button>}
+        </form> : <button role="menuitem" className={menuClass} onClick={() => setCreating(true)}>Create playlist…</button>}
       </div>}
       <button role="menuitem" disabled={busy || !profile} className={menuClass} onClick={() => void run(async () => {
         await musicRequest(`exclusions/${item.id}`, profile?.exclusions.includes(item.id) ? "DELETE" : "PUT");

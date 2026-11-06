@@ -1,13 +1,13 @@
-# Mint · Listening room
+# Mint · Music first
 
-The approved redesign is a spacious listening service, not a pipeline dashboard. A listener opens Mint on a desk or a dimly lit phone to find a song and stay with it. Charcoal surfaces reduce glare; artwork supplies color. Figtree and the mint-green action accent preserve Mint's identity.
+Mint is a listening service, not a pipeline dashboard. Its navigation and everyday controls should feel familiar to people who use established music apps, while using Mint's own branding, implementation and assets. Charcoal surfaces reduce glare; artwork supplies color. Figtree and the mint-green action accent identify Mint.
 
 ## Direction contract
 
-**Thesis:** music leads; the machinery stays available without competing for attention.
-**World:** broad charcoal fields, generous gutters, square sleeves, quiet rounded controls, readable secondary text, and mint reserved for action/focus.
-**Path:** Home → Discover → Library; personal collections sit alongside these. Settings is the doorway to integrations and management.
-**First viewport:** a quiet navigation rail, an artwork-led listening invitation, a single play action, and a persistent transport. On phones Home, Discover, Library and Your collection share the bottom bar; the You destination remains the doorway to Settings.
+**Thesis:** music and personal collections lead; the machinery stays available without competing for attention.
+**World:** charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus.
+**Path:** Home, Search and Your Library lead. Discover and the shared catalog remain accessible from listening surfaces. Settings holds personal preferences and optional imports; the admin portal holds server operations.
+**First viewport:** navigation, familiar music shelves and an anchored transport. Phones retain the same primary destinations and persistent playback.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
 
 **Discover:** Spotify-style playlist shelves, not a chart administration form. Original generated covers carry oversized typography, a confident color palette and small Mint/source credits. Daily blend, Fresh finds, rediscovery and artist radio open real library mixes; chart and genre covers open their actual ranked collections. Horizontal shelves remain swipeable on phones. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
@@ -33,12 +33,13 @@ The approved redesign is a spacious listening service, not a pipeline dashboard.
 | Provider charts, territory Top 50, weekly community/trending collections | Discover → playlist cards / All charts |
 | Personal discovery, radio, multi-seed/sonic mixes, rediscovery, saved mixes | Discover → Your mixes |
 | Native albums/artists/songs, search, metadata filters, full-collection queues/shuffle | Library |
-| Native/editable/smart/collaborative playlists, folders/pins and Mint likes | Your collection |
-| YouTube likes and imported playlists | Your collection / Settings → YouTube Music |
-| Spotify metadata playlists and account linking | Your collection / Settings → Spotify |
+| Native/editable/smart/collaborative playlists, folders/pins and liked songs | Your Library |
+| YouTube imports and existing sync controls | Optional import / Settings → Music imports |
+| Spotify metadata playlists and account linking | Settings → Music imports |
 | Persistent playback, seek, repeat, queue editing | Player / Now Playing |
 | DSP/EQ, normalization, Smart Fades, playback compatibility | Settings → Playback & sound |
-| Lyrics and personal lyric-match corrections | Player → Lyrics |
+| Lyrics and issue reporting | Player → Lyrics; reports in Admin → Reports |
+| Personal lyric-match corrections and diagnostics | Player → Lyrics → Admin details (admins only) |
 | Account-scoped offline downloads, storage/retry/removal | Downloads |
 | Private history, private sessions and history deletion | Listening history |
 | Devices, explicit handoff and single-output parties | Settings → Devices & parties |
@@ -55,7 +56,7 @@ Existing routes remain valid. Public visitors never receive player items or medi
 
 ## Charts and recording safety
 
-Every collection identifies provider, audience/territory, ranking period, provider publication time and Mint check time. “Worldwide” describes only the named provider's community, never an inferred global industry chart. Apple genre labels are metadata, not independent genre rankings; Audius supplies its own genre-specific trending collections.
+Every chart identifies its provider, audience/territory and available ranking period. Provider publication and Mint check times remain in the API for diagnostics rather than crowding the listening screen. “Worldwide” describes only the named provider's community, never an inferred global industry chart. Apple genre labels are metadata, not independent genre rankings; Audius supplies its own genre-specific trending collections.
 
 Missing recordings are muted but readable and have a labeled Add to library action. Requested, processing, failed and ambiguous states have distinct text. Ambiguous identity opens a recording/source chooser instead of silently playing or acquiring. Matching retains version words, compares duration and identifiers where present, and never strips remaster/live/remix qualifiers.
 

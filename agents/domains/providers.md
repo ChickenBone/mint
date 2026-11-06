@@ -4,7 +4,7 @@
 
 ## Boundaries
 
-- Owns chart providers, cache and service (`lib/chart*.ts`, `/api/charts`), chart pages, Spotify linking and matching, Google/YouTube OAuth and sync jobs.
+- Owns chart providers, cache and service (`lib/chart*.ts`, `/api/charts`, `services/chart-source/**`), chart pages, Spotify linking and matching, Google/YouTube OAuth and sync jobs.
 - Chart **acquisition** requests hand off to `acquisition` through its request lifecycle. This domain never downloads anything itself.
 
 ## Invariants
@@ -33,15 +33,15 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map providers` (exports, line counts, cross-domain import edges).
 
-### Owned files (36)
+### Owned files (41)
 
 - `apps/web/src/app/(public)/` `charts/page.tsx`
 - `apps/web/src/app/actions/` `spotify.ts`
 - `apps/web/src/app/api/` `charts/request/route.ts`, `charts/route.ts`, `oauth/google/callback/route.ts`, `oauth/google/start/route.ts`, `oauth/spotify/callback/route.ts`, `oauth/spotify/start/route.ts`
 - `apps/web/src/app/app/` `discover/charts/[chart]/page.tsx`, `discover/charts/page.tsx`, `spotify/[id]/page.tsx`, `spotify/page.tsx`
 - `apps/web/src/components/app/` `chart-browser.tsx`, `link-youtube.tsx`, `spotify-controls.tsx`, `sync-panel.tsx`
-- `apps/web/src/lib/` `chart-cache.ts`, `chart-providers.ts`, `chart-service.ts`, `charts.ts`, `spotify-queue.ts`
-- `apps/web/tests/` `charts-db.test.ts`, `charts.test.ts`
+- `apps/web/src/lib/` `chart-cache.ts`, `chart-providers.ts`, `chart-service.ts`, `chart-source.ts`, `charts.ts`, `spotify-queue.ts`
+- `apps/web/tests/` `charts-db.test.ts`, `charts-source.test.ts`, `charts.test.ts`
 - `apps/worker/src/` `chart-acquisition.test.ts`, `spotify-jobs.ts`, `spotify.integration.test.ts`, `spotify.test.ts`
 - `apps/worker/src/jobs/` `sync.ts`
 - `apps/worker/src/services/` `youtube.ts`
@@ -49,15 +49,16 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - `packages/core/migrations/` `0010_spotify.sql`, `0012_charts.sql`
 - `packages/core/src/` `spotify-store.ts`, `spotify.ts`
 - `packages/core/src/db/` `spotify.ts`
+- `services/chart-source/` `main.mts`, `service.mts`, `tsconfig.json`
 
 ### Validate
 
-Owned tests: 5.
+Owned tests: 6.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/charts-db.test.ts tests/charts.test.ts
+npm exec -w @mint/web -- tsx --test tests/charts-db.test.ts tests/charts-source.test.ts tests/charts.test.ts
 npm run typecheck -w @mint/worker
 npm exec -w @mint/worker -- tsx --test src/chart-acquisition.test.ts src/spotify.integration.test.ts src/spotify.test.ts
 npm run typecheck -w @mint/core

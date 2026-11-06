@@ -31,14 +31,14 @@ Details: [working at scale](../working-at-scale.md) and [engineering](../enginee
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map handbook` (exports, line counts, cross-domain import edges).
 
-### Owned files (72)
+### Owned files (74)
 
 - `./` `.gitignore`, `AGENTS.md`, `DESIGN.md`, `PRODUCT.md`, `README.md`
 - `.github/instructions/` `acquisition.instructions.md`, `analysis.instructions.md`, `collections.instructions.md`, `deploy.instructions.md`, `devices.instructions.md`, `handbook.instructions.md`, `library.instructions.md`, `platform.instructions.md`, `playback.instructions.md`, `providers.instructions.md`, `realtime.instructions.md`, `web-shell.instructions.md`, `workers.instructions.md`
 - `agents/` `README.md`, `architecture.md`, `browser-testing-and-mocks.md`, `design.md`, `domains.json`, `engineering.md`, `integrations-and-charts.md`, `playback-and-library.md`, `product-decisions.md`, `sleeves-and-shelves.md`, `workers-and-operations.md`, `working-at-scale.md`
 - `agents/domains/` `README.md`, `acquisition.md`, `analysis.md`, `collections.md`, `deploy.md`, `devices.md`, `handbook.md`, `library.md`, `platform.md`, `playback.md`, `providers.md`, `realtime.md`, `web-shell.md`, `workers.md`
 - `docs/` `ui-library.md`
-- `docs/screenshots/` `admin.png`, `analysis.png`, `browse.png`, `charts.png`, `discover-mix.png`, `discover.png`, `home.png`, `jobs.png`, `landing-stats.png`, `landing.png`, `library.png`, `liked.png`, `mobile-charts.png`, `mobile-discover.png`, `mobile-home.png`, `mobile-landing.png`, `mobile-player.png`, `mobile-small-charts.png`, `mobile-small-discover.png`, `now-playing.png`, `settings.png`, `workers.png`
+- `docs/screenshots/` `admin.png`, `analysis.png`, `browse.png`, `chart-requested.png`, `charts.png`, `discover-mix.png`, `discover.png`, `home.png`, `jobs.png`, `landing-stats.png`, `landing.png`, `library.png`, `liked.png`, `mobile-charts.png`, `mobile-discover.png`, `mobile-home.png`, `mobile-landing.png`, `mobile-player.png`, `mobile-small-charts.png`, `mobile-small-discover.png`, `now-playing.png`, `search-missing.png`, `settings.png`, `workers.png`
 - `docs/ux/` `current-state.md`, `target-ux.md`
 - `scripts/agents/` `cli.mjs`, `lib.mjs`, `lib.test.mjs`
 

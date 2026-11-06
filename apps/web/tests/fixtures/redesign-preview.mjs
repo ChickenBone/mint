@@ -7,9 +7,9 @@ import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 import { Redis } from "ioredis";
 import { Queue } from "bullmq";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, closeDb, schema } from "@mint/core/db";
-import { musicCollections, musicEntries } from "@mint/core/music-db";
+import { musicCollections, musicEntries, musicLikes } from "@mint/core/music-db";
 import { sha256, verifyToken } from "@mint/core/crypto";
 import { CHARTS } from "../../src/lib/charts.ts";
 
@@ -36,6 +36,7 @@ const catalog = [
 ];
 const missingId = "b00b6c22-98cd-4ce0-84bb-d8dd07146b45";
 const missing = { id: "demo-missing", title: "Late Windows", artist: "Sunday Static", album: "Night Rooms", durationSec: 180, recordingId: missingId };
+const searchRecording = { id: "a13416ce-f0b7-484e-a460-7b6cb748bf1a", title: "Imaginary Signal", artist: "The Paper Moons", album: "Fictional Nights" };
 if (process.env.MINT_PREVIEW_RESET === "true") {
   const existing = await db.select().from(schema.tracks);
   assert.ok(existing.every((track) => !track.filePath || track.filePath.startsWith("/fictional-")), "Only this tool's fictional database can be reset.");
@@ -55,6 +56,9 @@ const tracks = await db.insert(schema.tracks).values(catalog.flatMap(([title, ar
     libraryMatchKey: `${artist.toLowerCase()}|${title.toLowerCase()}`, readyAt: new Date(Date.now() - i * 3600000),
     year: 2026, progress: 1 })))).returning();
 await db.insert(schema.userTracks).values(tracks.slice(0, 15).map((track) => ({ userId: user.id, trackId: track.id, origin: "youtube" })));
+await db.insert(musicLikes).values(tracks.slice(3, 11).map((track) => ({ userId: user.id, trackId: track.id })));
+const [demoPlaylist] = await db.insert(musicCollections).values({ ownerId: user.id, title: "Evening drives" }).returning();
+await db.insert(musicEntries).values(tracks.slice(0, 4).map((track, position) => ({ collectionId: demoPlaylist.id, trackId: track.id, position })));
 await db.insert(schema.playlists).values({ userId: user.id, youtubePlaylistId: "fictional-playlist", title: "After hours", itemCount: 12, syncEnabled: false });
 await db.insert(schema.tracks).values([
   { title: "The Last Tram", artist: "Juniper Club", album: "City Notes", stage: "downloading", progress: .64, detail: "Fictional demo · downloading source", attempts: 1 },
@@ -88,6 +92,10 @@ const gateway = createServer(async (req, res) => {
     const url = new URL(req.url, "http://127.0.0.1:3088"), id = url.pathname.split("/").at(-1);
     if (url.pathname === "/test/recordings") {
       res.setHeader("content-type", "application/json");
+      if (url.searchParams.get("query")?.includes(searchRecording.title)) {
+        return res.end(JSON.stringify({ recordings: [{ ...searchRecording, length: 180000,
+          "artist-credit": [{ name: searchRecording.artist }], releases: [{ title: searchRecording.album }] }] }));
+      }
       return res.end(JSON.stringify({ recordings: [{ id: missingId, title: missing.title, length: 180000, "artist-credit": [{ name: missing.artist }], releases: [{ title: missing.album }] }] }));
     }
     if (url.pathname.startsWith("/artwork/")) {
@@ -133,7 +141,15 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
   await context.addCookies([{ name: "mint_session", value: token, url: base }]);
   const shot = async (name, route) => {
     if (route) await page.goto(`${base}${route}`);
-    await page.waitForTimeout(500);
+    await page.getByRole("status", { name: "Loading page" }).waitFor({ state: "hidden" });
+    await page.getByRole("button", { name: "Loading music…" }).waitFor({ state: "hidden" });
+    await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() => Array.from(document.images).every((image) => {
+      const bounds = image.getBoundingClientRect();
+      const visible = bounds.width > 0 && bounds.height > 0 &&
+        bounds.right > 0 && bounds.left < innerWidth && bounds.bottom > 0 && bounds.top < innerHeight;
+      return !visible || (image.complete && image.naturalWidth > 0);
+    }));
     assert.ok(!await page.getByText("Application error:").count(), route);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `No horizontal page overflow: ${route}`);
     await page.screenshot({ path: `${screenshotDir}/${name}.png` });
@@ -149,6 +165,8 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal((await publicContext.request.get(`${base}/api/player/audio/${tracks[0].id}`)).status(), 401);
     await publicContext.close();
     await page.goto(`${base}/app/discover`);
+    const sidebarPlaylists = page.getByRole("list", { name: "Mint playlists" });
+    await sidebarPlaylists.getByRole("link", { name: "Evening drives", exact: true }).waitFor();
     try { await page.waitForFunction(() => document.querySelector('[data-player-mounted="ready"]'), { timeout: 10000 }); }
     catch (error) {
       console.error("Player startup diagnostics", failures,
@@ -171,13 +189,14 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.waitForFunction((previous) => document.querySelector("audio[data-preview-identity]")?.currentTime > previous, playing);
     await shot("home"); await page.getByRole("link", { name: "Discover", exact: true }).first().click(); await page.waitForURL("**/app/discover");
     await page.getByRole("link", { name: "Open United States Top 50", exact: true }).click();
-    await page.getByRole("button", { name: "Play local songs", exact: true }).click();
-    await page.getByRole("status").filter({ hasText: "Skipped 1 missing" }).waitFor();
+    await page.getByRole("button", { name: "Play", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "1 not in your library yet" }).waitFor();
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, missingId)), 0, "Chart playback must not acquire missing songs");
     assert.equal((await context.request.post(`${base}/api/charts/request`, { data: { chart: "apple-us", entry: missing.id }, headers: { origin: "https://unrelated.test" } })).status(), 403);
     await shot("charts");
     await page.getByRole("button", { name: `Add to library: ${missing.title} by ${missing.artist}`, exact: true }).click();
-    await page.getByRole("status").filter({ hasText: "Requested. Progress" }).waitFor();
+    await page.getByRole("status").filter({ hasText: "Request sent" }).waitFor();
+    await shot("chart-requested");
     const [requested] = await db.select().from(schema.tracks).where(eq(schema.tracks.mbRecordingId, missingId));
     assert.ok(requested);
     const queue = new Queue("mint-acquire", { connection: { host: "127.0.0.1", port: Number(new URL(process.env.REDIS_URL).port) } });
@@ -189,24 +208,38 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, missingId)), 1);
     // Simulate worker completion only; never download or acquire third-party audio for screenshots.
     await db.update(schema.tracks).set({ stage: "downloading", progress: .64 }).where(eq(schema.tracks.id, requested.id));
-    await page.getByText("Processing · 64%", { exact: true }).waitFor({ timeout: 20000 });
+    await page.getByText("Adding · 64%", { exact: true }).waitFor({ timeout: 20000 });
+    await shot("chart-processing");
     await db.update(schema.tracks).set({ stage: "ready", progress: 1, filePath: "/fictional-downloaded/late-windows.flac", plexRatingKey: "fictional" }).where(eq(schema.tracks.id, requested.id));
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor({ timeout: 20000 });
+    await shot("chart-playable");
     assert.equal(await page.locator("audio[data-preview-identity]").count(), 1, "Chart progress refresh must not replace the player");
-    await page.getByRole("button", { name: "Refresh chart availability" }).click();
+    await page.getByRole("button", { name: "Refresh chart", exact: true }).click();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor();
     const chartBody = await (await context.request.get(`${base}/api/charts?chart=apple-us`)).json();
     for (const [status, message] of [["stale", "Fictional provider timeout; cached ranking retained."], ["empty", null], ["error", "Fictional cache unavailable."]]) {
       await page.route("**/api/charts?*", (route) => route.fulfill({ json: { ...chartBody, status, notice: message,
         ...(status === "stale" ? {} : { items: [], total: 0, nextOffset: null }) } }));
-      await page.getByRole("button", { name: "Refresh chart availability" }).click();
-      await page.getByText(status === "stale" ? "Stale ranking" : status === "empty" ? "No rankings published yet." : "This chart couldn’t be reached.", { exact: true }).waitFor();
+      await page.getByRole("button", { name: "Refresh chart", exact: true }).click();
+      await page.getByText(status === "stale" ? "This chart may be out of date." : status === "empty" ? "Nothing on this chart yet." : "This chart isn’t available right now.", { exact: status !== "stale" }).waitFor();
       await page.unroute("**/api/charts?*");
     }
-    await page.getByRole("button", { name: "Refresh chart availability" }).click();
+    await page.getByRole("button", { name: "Refresh chart", exact: true }).click();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).click();
-    await page.getByRole("link", { name: "Library", exact: true }).first().click(); await page.waitForURL((url) => url.pathname === "/app/library");
+    await page.getByRole("link", { name: "Search", exact: true }).first().click();
+    await page.getByRole("searchbox", { name: "Search songs, artists or albums" }).fill(searchRecording.title);
+    await page.getByRole("button", { name: `Find “${searchRecording.title}”` }).click();
+    await page.getByRole("heading", { name: searchRecording.title, exact: true }).waitFor();
+    assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 0, "Searching must not request a song");
+    await shot("search-missing");
+    await page.getByRole("button", { name: "Add to library", exact: true }).click();
+    await page.getByText("Requested · view progress").waitFor();
+    assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 1, "The selected fictional recording is requested once");
+    await page.getByRole("link", { name: "Home", exact: true }).first().click();
+    await page.waitForURL((url) => url.pathname === "/app");
+    await page.getByRole("link", { name: "Browse all music", exact: true }).click();
+    await page.waitForURL((url) => url.pathname === "/app/library");
     await page.waitForFunction(() => document.querySelector("audio[data-preview-identity]")?.paused === false);
     await shot("library");
 
@@ -252,15 +285,16 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")), `More options for ${rowTitle}`, "Closing the row menu restores focus");
 
     await rowMenuButton.click();
-    await page.getByRole("menuitem", { name: /Save to Mint playlist/ }).click();
+    await page.getByRole("menuitem", { name: /Save to playlist/ }).click();
     await page.getByRole("menu").locator("div.max-h-52").evaluate((list) => { list.scrollTop = list.scrollHeight; });
-    const newPlaylist = page.getByRole("menuitem", { name: "New playlist…" });
+    const newPlaylist = page.getByRole("menuitem", { name: "Create playlist…" });
     await newPlaylist.evaluate((item) => item.scrollIntoView({ block: "end" }));
     await newPlaylist.click();
     await page.getByRole("textbox", { name: "New playlist name" }).fill("UX actions");
     await page.getByRole("button", { name: "Create and add song" }).click();
     await page.getByRole("status").filter({ hasText: "Added to UX actions." }).waitFor();
-    const [createdCollection] = await db.select().from(musicCollections).where(eq(musicCollections.ownerId, user.id));
+    await sidebarPlaylists.getByRole("link", { name: "UX actions", exact: true }).waitFor({ timeout: 10000 });
+    const [createdCollection] = await db.select().from(musicCollections).where(and(eq(musicCollections.ownerId, user.id), eq(musicCollections.title, "UX actions")));
     assert.ok(createdCollection);
     assert.equal(await db.$count(musicEntries, eq(musicEntries.collectionId, createdCollection.id)), 1, "The selected track is added to the new playlist");
     await page.getByRole("button", { name: "Undo" }).click();
@@ -269,20 +303,30 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
 
     await rowMenuButton.click();
     await page.getByRole("menuitem", { name: "Download song" }).click();
-    await page.waitForURL((url) => url.pathname === "/app/downloads");
+    await page.waitForURL((url) => url.pathname === "/app/collection" && url.searchParams.get("tab") === "downloads");
     await shot("downloads");
     await page.getByRole("link", { name: "Open now playing" }).click();
     await page.waitForURL("**/app/now-playing");
     const queueTab = page.getByRole("tab", { name: "Queue" });
     await queueTab.focus(); await page.keyboard.press("End");
-    await page.getByRole("tab", { name: "Sound" }).waitFor();
-    assert.equal(await page.getByRole("tab", { name: "Sound" }).getAttribute("aria-selected"), "true");
+    await page.getByRole("tab", { name: "Lyrics" }).waitFor();
+    assert.equal(await page.getByRole("tab", { name: "Lyrics" }).getAttribute("aria-selected"), "true");
+    await page.getByRole("button", { name: "Report an issue", exact: true }).click();
+    const report = page.getByRole("dialog", { name: "Report an issue" });
+    await report.getByRole("radio", { name: "Lyrics are wrong or missing" }).waitFor();
+    assert.equal(await report.getByRole("radio", { name: "Lyrics are wrong or missing" }).isChecked(), true);
+    await report.getByLabel("Tell us what happened").fill("Fictional lyrics issue");
+    await report.getByRole("button", { name: "Send report" }).click();
+    await report.getByText("Thanks. Your report was sent to the people who run this server.").waitFor();
+    assert.equal(await db.$count(schema.issueReports, eq(schema.issueReports.message, "Fictional lyrics issue")), 1);
+    await report.getByRole("button", { name: "Done" }).click();
+    await queueTab.click();
     await page.getByRole("region", { name: "Current song" }).getByRole("button", { name: "More options for Quiet Orbit", exact: true }).click();
-    await page.getByRole("menuitem", { name: "Like in Mint" }).waitFor();
+    await page.getByRole("menuitem", { name: "Like", exact: true }).waitFor();
     await page.keyboard.press("Escape");
     const playerBeforeDevices = await page.evaluate(() => document.querySelector("audio[data-preview-identity]")?.currentTime ?? 0);
     await page.getByRole("link", { name: "Devices", exact: true }).click();
-    await page.waitForURL("**/app/devices");
+    await page.waitForURL((url) => url.pathname === "/app/settings" && url.searchParams.get("section") === "devices");
     await page.waitForFunction((previous) => document.querySelector("audio[data-preview-identity]")?.currentTime > previous, playerBeforeDevices);
     await page.goBack();
     await page.waitForURL("**/app/now-playing");
@@ -290,13 +334,14 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByRole("link", { name: "Close now playing" }).click();
-    await page.getByRole("button", { name: "Search your music" }).click();
+    await page.getByRole("link", { name: "Search", exact: true }).click();
+    await page.waitForURL((url) => url.pathname === "/app/search");
     await page.getByRole("dialog", { name: "Search your music" }).waitFor();
     const mobileSearchbox = page.getByRole("dialog", { name: "Search your music" }).getByRole("searchbox", { name: "Search songs, artists or albums" });
     await mobileSearchbox.waitFor();
     assert.equal(await mobileSearchbox.evaluate((element) => element === document.activeElement), true);
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Search your music");
+    await page.getByRole("link", { name: "Home", exact: true }).click();
+    await page.waitForURL((url) => url.pathname === "/app");
     await page.goto(`${base}/app/music?view=search&q=Quiet%20Orbit`);
     await page.waitForURL((url) => url.pathname === "/app/search" && url.searchParams.get("q") === "Quiet Orbit");
     await shot("search");
@@ -310,18 +355,35 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.setViewportSize({ width: 360, height: 800 }); await shot("narrow-library", "/app/library");
     await page.setViewportSize({ width: 768, height: 1024 }); await shot("tablet-discover", "/app/discover");
     await page.setViewportSize({ width: 1440, height: 1000 });
-    await shot("liked", "/app/liked");
+    await shot("liked", "/app/collection?tab=likes");
+    await page.getByText("8 songs", { exact: true }).waitFor();
+    await page.getByText("Previously imported favorites", { exact: true }).click();
+    await page.getByRole("button", { name: "Add Quiet Orbit to Liked songs" }).click();
+    await page.getByText("9 songs", { exact: true }).waitFor();
+    await page.getByRole("link", { name: "Download", exact: true }).click();
+    await page.waitForURL((url) => url.searchParams.get("kind") === "native-liked");
+    await page.getByRole("button", { name: "Choose Liked songs" }).click();
+    await page.getByText("9 songs selected", { exact: true }).waitFor();
     await shot("settings", "/app/settings");
-    await shot("jobs", "/app/jobs");
-    await shot("analysis", "/app/admin/analysis");
-    await shot("workers", "/app/workers");
+    await shot("admin", "/app/manage");
+    await page.getByRole("navigation", { name: "Admin navigation" }).getByRole("link", { name: "Reports", exact: true }).click();
+    await page.getByText("Fictional lyrics issue", { exact: true }).waitFor();
+    await page.getByRole("button", { name: "Mark resolved", exact: true }).click();
+    await page.getByRole("heading", { name: "Recently resolved" }).waitFor();
+    await page.setViewportSize({ width: 320, height: 740 });
+    await page.getByRole("navigation", { name: "Admin navigation" }).getByRole("link", { name: "Reports", exact: true }).waitFor();
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Admin navigation fits a narrow phone");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await shot("jobs", "/app/manage?tab=jobs");
+    await shot("analysis", "/app/manage?tab=analysis");
+    await shot("workers", "/app/manage?tab=workers");
     await page.setViewportSize({ width: 390, height: 844 });
     await shot("mobile-player", "/app/now-playing");
     await shot("mobile-discover", "/app/discover");
     await shot("mobile-charts", "/app/discover/charts/apple-us");
     await page.setViewportSize({ width: 320, height: 740 });
     await shot("mobile-small-discover", "/app/discover");
-    await shot("mobile-small-charts", "/app/discover?chart=apple-us");
+    await shot("mobile-small-charts", "/app/discover/charts/apple-us");
     await page.keyboard.press("Tab");
     assert.ok(await page.evaluate(() => document.activeElement?.tagName !== "BODY"), "Keyboard navigation has a focusable destination");
     await page.locator("audio").evaluateAll((audio) => audio.forEach((element) => element.pause()));

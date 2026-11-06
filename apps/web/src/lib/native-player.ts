@@ -393,7 +393,8 @@ export class NativePlayer {
 
   private async hydrate(position: number): Promise<number> {
     if (!this.context) return position;
-    if (position >= this.context.offset && position < this.context.offset + this.queue.length) return position - this.context.offset;
+    // Restored metadata must be revalidated before selection, not later during resume.
+    if (!this.contextRestored && position >= this.context.offset && position < this.context.offset + this.queue.length) return position - this.context.offset;
     if (this.windowLoad) {
       const id = this.context.id, generation = this.transitionGeneration;
       try { await this.windowLoad; }
@@ -513,11 +514,12 @@ export class NativePlayer {
       case "toggle": if (forcePlay || this.element.paused) await this.resume(); else this.pause(); break;
       case "next": await this.next(); break;
       case "previous":
-        if (this.element.currentTime > 3) this.seek(0);
+        if (this.getState().time > 3000) this.seek(0);
         else if (this.context) {
-          const position = Math.max(0, this.context.offset + this.index - 1);
+          const current = this.context.offset + this.index;
+          const position = current > 0 ? current - 1 : this.repeat === 2 ? this.context.total - 1 : 0;
           await this.select(await this.hydrate(position));
-        } else await this.select(Math.max(0, this.index - 1));
+        } else await this.select(this.index > 0 ? this.index - 1 : this.repeat === 2 ? this.queue.length - 1 : 0);
         break;
       case "seek": this.seek(command.value); break;
       case "volume":

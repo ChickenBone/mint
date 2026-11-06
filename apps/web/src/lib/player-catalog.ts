@@ -8,6 +8,7 @@ import { collectionDetail } from "./music-store";
 import { MusicError } from "@mint/core/music";
 import { catalogSearch } from "./catalog-search";
 import { spotifyPlayablePage, spotifyQueueTrackSource } from "@mint/core/spotify-store";
+import { musicLikes } from "@mint/core/music-db";
 
 const t = schema.tracks;
 export class CatalogInputError extends Error {}
@@ -18,6 +19,10 @@ function collectionFilter(collection: PlayerCollection, userId: string): SQL | u
     case "spotify": throw new CatalogInputError("Use the Spotify playlist catalog.");
     case "library": return undefined;
     case "liked": return inArray(t.id, db.select({ id: schema.userTracks.trackId }).from(schema.userTracks).where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube"))));
+    case "native-liked": return and(
+      inArray(t.id, db.select({ id: musicLikes.trackId }).from(musicLikes).where(eq(musicLikes.userId, userId))),
+      collection.id ? eq(t.id, collection.id) : undefined,
+    );
     case "playlist": return inArray(t.id, db.select({ id: schema.playlistTracks.trackId }).from(schema.playlistTracks)
       .innerJoin(schema.playlists, eq(schema.playlistTracks.playlistId, schema.playlists.id))
       .where(and(eq(schema.playlists.userId, userId), eq(schema.playlists.id, collection.id))));

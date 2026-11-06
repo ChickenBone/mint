@@ -79,3 +79,19 @@ export function matchChartEntry(entry: ChartEntry, candidates: ChartCandidate[],
     requested: "Already requested. Waiting for acquisition.", processing: `Acquiring · ${found.stage}`,
   }[availability] };
 }
+
+export type ChartRequestOutcome = { status: "available" | "requested" | "resolve" } | { status: "error"; message: string };
+/** Decides how a finished request may affect the UI; `current` is false once the member has changed chart, page or reloaded. */
+export function chartRequestEffect(current: boolean, title: string, outcome: ChartRequestOutcome) {
+  const none = { resolve: false, rowError: null as string | null, markRequested: false, refresh: false, notice: "", error: "" };
+  if (current) {
+    if (outcome.status === "resolve") return { ...none, resolve: true };
+    if (outcome.status === "error") return { ...none, rowError: outcome.message };
+    if (outcome.status === "available") return { ...none, refresh: true, notice: `${title} is already in your library.` };
+    return { ...none, markRequested: true, refresh: true, notice: "Request sent." };
+  }
+  if (outcome.status === "resolve") return { ...none, notice: `Pick a version of ${title} to add it.` };
+  if (outcome.status === "error") return { ...none, error: `Couldn’t add ${title}. ${outcome.message}` };
+  if (outcome.status === "available") return { ...none, notice: `${title} is already in your library.` };
+  return { ...none, notice: `Request sent for ${title}.` };
+}

@@ -32,22 +32,22 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (17)
+### Owned files (21)
 
-- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `Dockerfile`, `docker-compose.dev.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
+- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `Dockerfile`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `ci.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
-- `deploy/docker/` `caddy.test.mjs`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`
+- `deploy/docker/` `caddy.test.mjs`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`
 - `docs/` `self-hosting.md`
 
 ### Validate
 
-Owned tests: 2.
+Owned tests: 3.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs
+node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs
 docker compose config --quiet
 ```
 

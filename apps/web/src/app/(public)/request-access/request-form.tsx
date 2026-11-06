@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Clock3 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 import { requestAccess, type FormState } from "@/app/actions/auth";
@@ -11,23 +11,16 @@ export function RequestForm() {
   if (state.ok) {
     return (
       <div className="rounded-2xl border border-line/70 bg-elevated p-6 sm:p-8" role="status">
-        <div className="flex items-center gap-2 text-mint">
-          <CheckCircle2 className="size-7 shrink-0" aria-hidden />
-          <span className="text-xs font-semibold tracking-wider uppercase">Request received</span>
-        </div>
-        <h2 className="mt-3 text-2xl font-bold">Request sent</h2>
+        <h2 className="flex items-center gap-3 text-2xl font-bold"><CheckCircle2 className="size-7 shrink-0 text-mint" aria-hidden />Request sent</h2>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
-          Your account is now in the review queue. Because Mint is a private home-server library, an admin approves new members manually—typically within a day.
+          Your administrator will review your request. Approval timing depends on the server; your account is not active yet.
         </p>
-        <div className="mt-5 rounded-xl border border-line/60 bg-surface/60 p-4 text-sm">
-          <p className="flex items-center gap-2 font-semibold text-fg">
-            <Clock3 className="size-4 text-mint" aria-hidden />
-            What happens next
-          </p>
-          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-muted">
+        <div className="mt-5 border-t border-line pt-5 text-sm">
+          <h3 className="font-semibold">What happens next</h3>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-muted">
             <li>Keep the email and password you just chose—they activate as soon as you&rsquo;re approved.</li>
             <li>Sign in at the Sign in page once approved to listen in your browser.</li>
-            <li>After signing in, you can link YouTube Music or Spotify in Settings to bring in your playlists and likes.</li>
+            <li>Find a song in the library and press play. Make your own playlists in Your music.</li>
           </ol>
         </div>
         <div className="mt-6 flex flex-wrap gap-3">

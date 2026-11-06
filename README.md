@@ -2,13 +2,13 @@
 
 **Your music library. Your server. Your player.**
 
-Mint is a self-hosted music service that brings your Plex library, personal collections and fresh discoveries into a spacious, artwork-first listening room. Listen in Mint's own persistent player, explore real charts and keep operational tools in Settings & management. Your music files stay on your server; Plex remains the library server, not an embedded player.
+Mint is a self-hosted music service for listening, discovering and collecting music from your own library. Listen in Mint's persistent player, explore real charts and keep server tools in the admin area. Your music files stay on your server; Plex remains the library server, not an embedded player.
 
 Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are published to **GitHub Container Registry** for amd64 and arm64. You can connect an existing Plex library read-only or start with the bundled Plex server.
 
 [Get started](#get-started) · [Self-hosting guide](docs/self-hosting.md) · [Screenshots](#screenshots) · [Updating](#updating-and-backups) · [Troubleshooting](#troubleshooting)
 
-![Mint's listening room with personal recommendations, album artwork and a persistent music player](docs/screenshots/home.png)
+![Mint home with personal recommendations, album artwork and a persistent music player](docs/screenshots/home.png)
 
 ## What you can do
 
@@ -16,10 +16,10 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | --- | --- |
 | **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and forgiving search for large libraries. No embedded Plexamp required. |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
-| **Sync YouTube Music** | Import your liked songs and selected playlists through Google OAuth. Follow matching, acquisition, tagging and Plex scanning from one dashboard. |
-| **Import Spotify playlists** | Mirror playlist metadata and play songs already available locally. Spotify imports do **not** stream Spotify audio or automatically download missing songs. [Provider requirements](docs/spotify.md). |
+| **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
+| **Discover music** | Explore daily mixes, artist radio and real charts alongside your own library. |
 | **Shape your listening** | Equalizer, loudness normalization, waveform, Mint Smart Fades, lyrics and personal lyric corrections. Mint's own analysis does not require Plex Pass. |
-| **Discover and organize** | Generated playlist covers, daily mixes and artist radio, alongside editable and smart playlists, collaboration, and private listening history. |
+| **Bring existing playlists** | YouTube Music linking and Spotify playlist metadata are optional integrations. Spotify imports play local matches only; they do not stream Spotify audio or automatically download missing songs. [Provider requirements](docs/spotify.md). |
 | **Explore real charts** | Keyless Apple Music country Top 50s, ListenBrainz community rankings and Audius trending/genre collections. Play local matches or explicitly request missing recordings; never automatic downloads. [Coverage, providers and setup](docs/charts.md). |
 | **Listen across devices** | Control awake browser clients, hand off playback, or share a party queue with one output device. [How devices work](docs/devices.md). |
 | **Take music offline** | Install the HTTPS web app from Android Chrome and explicitly download music for offline listening. Browser storage and background limits still apply. |
@@ -91,9 +91,9 @@ The [complete guide](docs/self-hosting.md#command-line-setup) explains provider 
 
 ### Your first session
 
-1. **Check Settings & management → Admin.** Confirm the worker and Plex are reachable. If using existing music, wait for indexing and correct any path-mapping errors before syncing.
-2. **Open Library or Discover.** Browse indexed albums, search songs or explore charts. Linking a provider is not required to listen to existing music; keyless charts need no extra account.
-3. **Connect only what you need.** Set up [Google/YouTube Music](docs/self-hosting.md#google-youtube-music-linking), [Spotify playlists](docs/spotify.md), or [Lidarr + TorBox](docs/self-hosting.md#lidarr--torbox).
+1. **Open the Admin portal.** Confirm the worker and Plex are reachable. If using existing music, wait for indexing and correct any path-mapping errors before syncing.
+2. **Browse or search.** Explore indexed albums, songs and charts. Linking a provider is not required to listen to existing music; keyless charts need no extra account.
+3. **Make it yours.** Like songs, create a playlist and explore your library. Connections such as [YouTube Music](docs/self-hosting.md#google-youtube-music-linking), [Spotify playlists](docs/spotify.md), or [Lidarr + TorBox](docs/self-hosting.md#lidarr--torbox) are optional.
 4. **Invite your household.** People request an account on your own hostname; approve them in Admin. A separate Plex library invitation is needed only for external Plex clients.
 
 ## Screenshots
@@ -104,10 +104,12 @@ Current desktop and mobile views, captured from a local demo instance. All names
 | --- | --- |
 | ![Mint Now playing view with album artwork, playback controls and the upcoming queue](docs/screenshots/now-playing.png) | ![Mint jobs dashboard with matching, downloads and Plex scanning progress](docs/screenshots/jobs.png) |
 | **Now playing:** your music, queue and multi-source lyrics. Sound controls live in Settings. | **Jobs:** see what is happening and where a track needs attention. |
-| ![Mint album library with artwork-led browsing and collection playback](docs/screenshots/library.png) | ![Mint audio analysis coverage, connected workers and full-library processing actions](docs/screenshots/analysis.png) |
-| **Library:** albums, artists, songs and playlists without loading everything at once. | **Audio analysis:** check coverage and queue full-library processing. |
-| ![Ranked chart discovery with provider attribution, local playback and explicit Add to library actions](docs/screenshots/charts.png) | ![Settings and management hub with collections, devices, activity and administration](docs/screenshots/settings.png) |
-| **Charts:** genuine provider rankings, clearly separated from local availability. | **Your space:** connected accounts and operational tools, away from everyday listening. |
+| ![Mint's all-music view with songs, album artwork and playback controls](docs/screenshots/library.png) | ![Mint audio analysis coverage, connected workers and full-library processing actions](docs/screenshots/analysis.png) |
+| **All music:** browse songs, albums and artists without loading everything at once. | **Audio analysis:** check coverage and queue full-library processing. |
+| ![Ranked chart discovery with provider attribution, local playback and explicit Add to library actions](docs/screenshots/charts.png) | ![Listener settings for playback, downloads and connected services](docs/screenshots/settings.png) |
+| **Charts:** provider rankings with local playback and song requests. The screenshot uses fictional chart data. | **Settings:** personal playback and account preferences. |
+| ![A fictional missing-song search result ready to add to the library](docs/screenshots/search-missing.png) | ![A fictional chart song after an explicit request](docs/screenshots/chart-requested.png) |
+| **Search:** find and add a missing song. | **Requests:** follow a song as it becomes available; the demo simulates completion. |
 
 ![Discover's generated playlist covers, daily mixes, artist radio and chart collections](docs/screenshots/discover.png)
 
@@ -124,7 +126,7 @@ Current desktop and mobile views, captured from a local demo instance. All names
 
 | Public browsing | Member and admin tools |
 | --- | --- |
-| ![Mint public landing page with an album-art wall and access request button](docs/screenshots/landing.png) | ![YouTube Music liked songs available to play in Mint](docs/screenshots/liked.png) |
+| ![Mint public landing page with an album-art wall and access request button](docs/screenshots/landing.png) | ![Personal liked songs in Mint](docs/screenshots/liked.png) |
 | ![Public library statistics and recently added music](docs/screenshots/landing-stats.png) | ![Admin dashboard for approving accounts and monitoring service health](docs/screenshots/admin.png) |
 | ![Public searchable library without audio streaming controls](docs/screenshots/browse.png) | ![Built-in pipeline worker and optional volunteer download workers](docs/screenshots/workers.png) |
 
@@ -138,14 +140,11 @@ Current desktop and mobile views, captured from a local demo instance. All names
 
 ```mermaid
 flowchart LR
-  yt[YouTube Music likes and playlists] --> worker[Private pipeline worker]
-  worker --> sources[Lidarr + TorBox / Cobalt]
-  sources --> files[Music files on your server]
-  files --> plex[Plex library]
+  files[Music files on your server] --> plex[Plex library]
   plex --> worker
-  worker --> mint[Mint web app]
-  spotify[Spotify playlist metadata] --> mint
-  charts[Apple / ListenBrainz / Audius chart metadata] --> mint
+  worker[Private pipeline worker] --> mint[Mint web app]
+  charts[Public chart metadata] --> mint
+  imports[Optional playlist imports] --> mint
   mint --> listener[Approved members]
 ```
 
@@ -195,7 +194,7 @@ Use `docker compose ps` and `docker compose logs --tail=100 worker` for details.
 - [Devices, playback handoff and parties](docs/devices.md)
 - [Vercel deployment](docs/self-hosting.md#optional-the-website-on-vercel) — advanced; native playback requires separate private gateway connectivity and platform streaming-limit validation. It is not a drop-in replacement for the all-in-one stack.
 - [Local development](docs/self-hosting.md#development) — Node.js 22+, npm workspaces, PostgreSQL and Redis.
-- [CI/CD and image publishing](docs/self-hosting.md#cicd) — GitHub Actions checks and five multi-architecture images: web, worker, realtime, agent and analysis.
+- [CI/CD and image publishing](docs/self-hosting.md#cicd) — GitHub Actions checks and multi-architecture images for web, worker, realtime, agent, analysis and the optional chart metadata service.
 
 Mint Smart Fades and audio measurements are independent implementations, not Plexamp's proprietary features. Plex Pass is only relevant to Plex's own entitlement-gated features. Browser autoplay, codecs, offline storage and Android background execution remain subject to browser/device limits; sample-accurate gapless playback and synchronized multi-device audio are not promised.
 

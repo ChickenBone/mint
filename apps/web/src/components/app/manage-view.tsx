@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { TrackView } from "@mint/core/events";
@@ -18,12 +19,19 @@ import {
   Waves,
   XCircle,
 } from "lucide-react";
-import { decideRequest, retryAllFailed, setMemberRole, setMemberStatus } from "@/app/actions/admin";
+import {
+  decideRequest,
+  retryAllFailed,
+  setIssueReportResolved,
+  setMemberRole,
+  setMemberStatus,
+} from "@/app/actions/admin";
 import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
 import { Tabs } from "@/components/ui/interactive";
 import { Badge } from "@/components/ui/primitives";
 import { resolveManageTab, type ManageTab } from "@/lib/app-routes";
 import type { Health } from "@/lib/data";
+import { issueCategoryLabel, type IssueReportView } from "@/lib/issue-report-model";
 import { formatCount, timeAgo } from "@/lib/format";
 import { ActionButton } from "./admin-controls";
 import { AnalysisPanel } from "./analysis-panel";
@@ -70,6 +78,7 @@ export interface ManageViewProps {
   myWorkers: MyWorkerRow[];
   remotePoolSize: number;
   workersOnline: number;
+  issueReports: { open: IssueReportView[]; resolved: IssueReportView[]; openCount: number };
 }
 
 const SERVICE_LABEL = {
@@ -112,6 +121,7 @@ export function ManageView({
   myWorkers,
   remotePoolSize,
   workersOnline,
+  issueReports,
 }: ManageViewProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -151,10 +161,16 @@ export function ManageView({
 
   return (
     <div className="space-y-8">
-      <PageHeader
-        title="Management"
-        sub="Access requests, members, pipeline queue, volunteer workers and audio analysis."
-      />
+      <PageHeader title="Admin portal" sub="Membership, library activity and the services behind your music.">
+        <div className="flex flex-wrap gap-3">
+          <Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+            ← Back to music
+          </Link>
+          <Link href="/app/settings?section=services" className="inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold ring-1 ring-line hover:bg-hover">
+            Connected services
+          </Link>
+        </div>
+      </PageHeader>
 
       {/* Summary strip */}
       <section aria-label="System summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -245,13 +261,13 @@ export function ManageView({
       </section>
 
       <Tabs
-        label="Management sections"
+        label="Admin portal sections"
         value={tab}
         onValueChange={setTab}
         tabs={[
           {
             value: "requests",
-            label: requests.length > 0 ? `Requests (${formatCount(requests.length)})` : "Requests",
+            label: requests.length > 0 ? `Members (${formatCount(requests.length)} pending)` : "Members",
             content: (
               <div className="space-y-10">
                 <section aria-labelledby="manage-access-requests">
@@ -472,6 +488,46 @@ export function ManageView({
                     </table>
                   </div>
                 </section>
+              </div>
+            ),
+          },
+          {
+            value: "reports",
+            label: issueReports.openCount > 0 ? `Reports (${formatCount(issueReports.openCount)})` : "Reports",
+            content: (
+              <div className="space-y-10">
+                <section aria-labelledby="manage-open-reports">
+                  <div className="mb-4">
+                    <h2 id="manage-open-reports" className="text-xl font-bold">
+                      Open reports{" "}
+                      {issueReports.openCount > 0 && (
+                        <span className="text-mint tabular">({formatCount(issueReports.openCount)})</span>
+                      )}
+                    </h2>
+                    <p className="mt-1 max-w-prose text-sm text-muted">
+                      Problems members sent with Report an issue. Mark each one resolved once it&apos;s handled.
+                    </p>
+                  </div>
+                  {issueReports.open.length === 0 ? (
+                    <p className="rounded-xl border border-line/60 bg-elevated/50 p-5 text-sm text-muted">
+                      No open reports. New ones appear here when a member sends one.
+                    </p>
+                  ) : (
+                    <IssueReportList reports={issueReports.open} now={now} />
+                  )}
+                  {issueReports.open.length < issueReports.openCount && (
+                    <p className="mt-3 text-xs text-muted">
+                      Showing the newest {formatCount(issueReports.open.length)}. Resolve some to see older reports.
+                    </p>
+                  )}
+                </section>
+
+                {issueReports.resolved.length > 0 && (
+                  <section aria-labelledby="manage-resolved-reports">
+                    <h2 id="manage-resolved-reports" className="mb-4 text-xl font-bold">Recently resolved</h2>
+                    <IssueReportList reports={issueReports.resolved} now={now} />
+                  </section>
+                )}
               </div>
             ),
           },
@@ -732,5 +788,46 @@ export function ManageView({
         ]}
       />
     </div>
+  );
+}
+
+function IssueReportList({ reports, now }: { reports: IssueReportView[]; now: number | null }) {
+  return (
+    <ul className="divide-y divide-line rounded-xl border border-line/70 bg-elevated">
+      {reports.map((report) => (
+        <li key={report.id} className="flex flex-wrap items-start justify-between gap-4 p-4">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-fg">
+              {issueCategoryLabel(report.category)}
+              {report.status === "resolved" && (
+                <Badge tone="positive">
+                  <CheckCircle2 className="size-3.5" aria-hidden />
+                  Resolved
+                </Badge>
+              )}
+            </p>
+            {report.context && (
+              <p className="text-sm break-words text-muted">
+                About <span className="text-fg">{report.context}</span>
+              </p>
+            )}
+            <p className="max-w-prose text-sm whitespace-pre-wrap break-words text-fg">{report.message}</p>
+            <p className="text-xs break-words text-faint">
+              {report.reporter ? `${report.reporter.name} · ${report.reporter.email}` : "Former member"} · Sent{" "}
+              {formatRelative(report.createdAt, now)}
+              {report.status === "resolved" &&
+                ` · Resolved ${formatRelative(report.resolvedAt, now)}${report.resolvedBy ? ` by ${report.resolvedBy}` : ""}`}
+            </p>
+          </div>
+          {report.status === "open" ? (
+            <ActionButton action={setIssueReportResolved.bind(null, report.id, true)} tone="primary">
+              Mark resolved
+            </ActionButton>
+          ) : (
+            <ActionButton action={setIssueReportResolved.bind(null, report.id, false)}>Reopen</ActionButton>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

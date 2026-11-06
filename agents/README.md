@@ -27,7 +27,7 @@ Agents route each task to one or more **domains** first. See the [domain index](
 4. Preserve authorization, read-only originals, persistent playback and large-library behavior.
 5. If intent and code differ, state the discrepancy and resolve it within the task rather than making an undocumented product change.
 
-The latest recorded UI direction is **Listening room**, with playlist-first discovery and real provider charts. Pipeline-first UI and embedded Plexamp are historical, not instructions to restore them.
+The latest UI direction is a familiar, music-first consumer experience, with personal playlists and real provider charts. Pipeline-first UI and embedded Plexamp are historical, not instructions to restore them.
 
 Exact implementation limits below are useful regression checkpoints, not permission to duplicate constants or silently change their values. Read the owning schema/helper for authoritative values.
 

@@ -14,13 +14,19 @@ const libraryTabs: Record<string, string> = {
 export type CollectionTab = "playlists" | "likes" | "requests" | "downloads" | "history";
 export type PlaylistSourceFilter = "all" | "mint" | "youtube" | "spotify" | "smart";
 export type SettingsSectionId = "account" | "services" | "playback" | "devices" | "storage";
-export type ManageTab = "requests" | "jobs" | "workers" | "analysis";
+export type ManageTab = "requests" | "reports" | "jobs" | "workers" | "analysis";
 export type ManageTabId = ManageTab;
+
+export const listeningDestinations = [
+  { href: "/app", label: "Home" },
+  { href: "/app/search", label: "Search" },
+  { href: "/app/collection", label: "Your Library" },
+] as const;
 
 const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "requests", "downloads", "history"]);
 const validPlaylistSources = new Set<PlaylistSourceFilter>(["all", "mint", "youtube", "spotify", "smart"]);
 const validSettingsSections = new Set<SettingsSectionId>(["account", "services", "playback", "devices", "storage"]);
-const validManageTabs = new Set<ManageTab>(["requests", "jobs", "workers", "analysis"]);
+const validManageTabs = new Set<ManageTab>(["requests", "reports", "jobs", "workers", "analysis"]);
 
 function withQuery(path: string, params: URLSearchParams) {
   const query = params.toString();
@@ -188,6 +194,7 @@ export function isAppDestinationActive(pathname: string, href: string) {
     return [
       "/app/collection",
       "/app/collections",
+      "/app/library",
       "/app/liked",
       "/app/spotify",
       "/app/downloads",
@@ -205,4 +212,8 @@ export function isAppDestinationActive(pathname: string, href: string) {
   }
   if (href === "/app") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function isAdminWorkspace(pathname: string, isAdmin: boolean) {
+  return isAdmin && isAppDestinationActive(pathname, "/app/manage");
 }

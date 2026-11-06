@@ -12,17 +12,17 @@ export async function discoverMusic(db: Db, userId: string, mode: DiscoveryMode,
   const t = schema.tracks;
   const conditions = and(PLAYABLE, notInArray(t.id, excluded));
   if (mode === "sonic") {
-    if (!seeds.length) throw new MusicError("Choose one or more analyzed seed songs first.");
+    if (!seeds.length) throw new MusicError("Choose one or more songs first.");
     const matches = await similarAnalyzedTracks(db, seeds, limit * 3);
-    if (!matches.length) return { items: [], explanation: "Sonic matches appear after Mint has measured audio for your seeds and other library songs." };
+    if (!matches.length) return { items: [], explanation: "Sonic matches aren’t ready for these songs yet. Try different songs or check back later." };
     const rows = await db.select().from(t).where(and(conditions, inArray(t.id, matches.map((m) => m.trackId))));
     const byId = new Map(rows.map((row) => [row.id, row]));
     return { items: matches.flatMap((m) => byId.has(m.trackId) ? [{ track: byId.get(m.trackId)!, reason: m.reason }] : []).slice(0, limit),
-      explanation: "Measured audio similarity only. No metadata is presented as sonic analysis." };
+      explanation: "Songs that sound like your picks." };
   }
   if (mode === "recent") {
     const rows = await db.select().from(t).where(conditions).orderBy(desc(t.createdAt), asc(t.id)).limit(limit);
-    return { items: rows.map((track) => ({ track, reason: "Recently added to your playable library" })), explanation: "The latest playable additions. Nothing here triggers a download." };
+    return { items: rows.map((track) => ({ track, reason: "Recently added" })), explanation: "The newest songs in your library." };
   }
   if (mode === "rediscover") {
     const old = await db.select({ id: musicHistory.trackId, last: sql<Date>`max(${musicHistory.createdAt})` })
@@ -30,7 +30,7 @@ export async function discoverMusic(db: Db, userId: string, mode: DiscoveryMode,
       .where(and(eq(musicHistory.userId, userId), conditions))
       .groupBy(musicHistory.trackId).having(sql`max(${musicHistory.createdAt}) < now() - interval '7 days'`)
       .orderBy(asc(sql`max(${musicHistory.createdAt})`), asc(musicHistory.trackId)).limit(limit);
-    if (!old.length) return { items: [], explanation: "Rediscovery starts when a song in your listening history has rested for at least seven days." };
+    if (!old.length) return { items: [], explanation: "Songs you haven’t played in a while will show up here." };
     const rows = await db.select().from(t).where(and(conditions, inArray(t.id, old.map((p) => p.id))));
     const byId = new Map(rows.map((r) => [r.id, r]));
     return { items: old.flatMap((p) => byId.has(p.id) ? [{ track: byId.get(p.id)!, reason: `Last played ${new Date(p.last).toISOString().slice(0, 10)}` }] : []).slice(0, limit),
@@ -55,10 +55,10 @@ export async function discoverMusic(db: Db, userId: string, mode: DiscoveryMode,
     const sameArtist = artists.has(track.artist), sameAlbum = albums.has(`${track.artist}\0${track.album}`);
     const unheard = !counts.has(track.id);
     return { track, score: (sameArtist ? 4 : 0) + (sameAlbum ? 2 : 0) + (unheard ? 1 : 0),
-      reason: sameAlbum ? `From the same seed album by ${track.artist}` : sameArtist ? `More ${track.artist}, from your ${seeds.length ? "seed selection" : "likes and listening history"}`
-        : unheard ? "Not yet played in Mint — explore your library" : "A different corner of your playable library" };
+      reason: sameAlbum ? `From the same album by ${track.artist}` : sameArtist ? `More ${track.artist}, based on ${seeds.length ? "your picks" : "what you like"}`
+        : unheard ? "Something you haven’t played yet" : "From elsewhere in your library" };
   }).sort((a, b) => b.score - a.score || hash(a.track.id) - hash(b.track.id));
   return { items: rows.slice(0, limit), explanation: seedTracks.length
-    ? "A daily library mix based on real artist and album matches, with unplayed songs mixed in. Not sonic similarity."
-    : "Start with your playable library. Native likes and listening will personalize this shelf; imported YouTube likes stay separate." };
+    ? "A daily mix of artists and albums you like, plus a few songs you haven’t played."
+    : "Like songs and keep listening to make this mix yours." };
 }

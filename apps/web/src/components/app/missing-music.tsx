@@ -29,6 +29,7 @@ export function MissingMusic({ query }: { query: string }) {
   const [youtubeUrls, setYoutubeUrls] = useState<Record<string, string>>({});
   const { tracks: liveRequestTracks } = useLiveTracks(requestTracks, { keep: () => true, accept: () => true, limit: 10 });
   const canRequest = (item: Result) => requestable(item) && !requested[item.id];
+  const canSelectMultiple = (results?.filter(canRequest).length ?? 0) > 1 || selected.size > 0;
 
   const submitRequest = async (item: Result, youtubeUrl = "") => {
     setBusy(item.id);
@@ -73,10 +74,9 @@ export function MissingMusic({ query }: { query: string }) {
 
   return (
     <section className="mt-10 border-t border-line pt-7" aria-label="Request missing music">
-      <h2 className="text-xl font-bold">Not in the backlog yet?</h2>
+      <h2 className="text-xl font-bold">Can&apos;t find a song?</h2>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-        Search the recording catalog and choose the exact recording before requesting it. Mint uses its configured acquisition sources only after you choose Add to library.
-        MusicBrainz receives this search text, not your library or account.
+        Find the right recording in MusicBrainz and add it to your library.
       </p>
       <button
         disabled={busy !== null || query.trim().length < 2}
@@ -97,13 +97,13 @@ export function MissingMusic({ query }: { query: string }) {
         }}
         className="mt-4 min-h-11 rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover disabled:opacity-40"
       >
-        {busy === "search" ? "Searching recordings…" : `Find missing music for “${query}”`}
+        {busy === "search" ? "Searching…" : `Find “${query}”`}
       </button>
       {results && !results.length && <p className="mt-4 text-sm text-muted">No recordings found. Try the title and artist without punctuation.</p>}
-      {!!results?.some(canRequest) && (
+      {canSelectMultiple && (
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted">Choose the exact recording. Selected requests will be added one by one.</p>
-          <button type="button" disabled={busy !== null || !results.some((item) => selected.has(item.id) && canRequest(item))}
+          <p className="text-sm text-muted">Choose the right version, or select several songs.</p>
+          <button type="button" disabled={busy !== null || !results?.some((item) => selected.has(item.id) && canRequest(item))}
             onClick={() => void addSelected()}
             className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40">
             {busy && busy !== "search" ? "Adding selected…" : `Add selected to library (${selected.size})`}
@@ -118,7 +118,7 @@ export function MissingMusic({ query }: { query: string }) {
         return (
           <li key={item.id} className="py-4">
             <div className="flex flex-wrap items-center gap-3">
-              {canRequest(item) && (
+              {canSelectMultiple && canRequest(item) && (
                 <label className="grid min-h-11 min-w-11 place-items-center" title={`Select ${item.title} by ${item.artist}`}>
                   <input type="checkbox" checked={selected.has(item.id)} disabled={busy !== null}
                     aria-label={`Select ${item.title} by ${item.artist}`}
@@ -132,7 +132,7 @@ export function MissingMusic({ query }: { query: string }) {
               )}
               <div className="min-w-0 flex-1">
                 <h3 className="font-semibold">{item.title}</h3>
-                <p className="text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}</p>
+                <p className="text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}{item.durationSec ? ` · ${Math.floor(item.durationSec / 60)}:${String(Math.floor(item.durationSec % 60)).padStart(2, "0")}` : ""}</p>
                 {item.existing && <div className="mt-2"><StageBadge stage={item.existing.stage} /></div>}
                 {item.existing?.stage === "failed" && (item.existing.error || item.existing.detail) && (
                   <p className="mt-2 max-w-prose text-sm text-warn">{item.existing.error || item.existing.detail}</p>
@@ -152,7 +152,7 @@ export function MissingMusic({ query }: { query: string }) {
                   </>
                 )}
                 {live?.stage !== "failed" && <Link href={statusHref} className="inline-flex min-h-11 items-center text-sm font-semibold text-mint">
-                  {playable ? "Playable now · open library" : "Added to library · view progress"}
+                  {playable ? "Playable now · open library" : "Requested · view progress"}
                 </Link>}
               </div>
             ) : item.existing && !requestable(item) ? (
@@ -162,19 +162,24 @@ export function MissingMusic({ query }: { query: string }) {
               </Link>
             ) : (
               <div className="mt-3 flex flex-wrap items-end gap-3">
-                <label className="min-w-0 flex-[1_1_16rem] text-xs text-muted">YouTube video URL (optional)
-                  <input type="url" maxLength={2048} value={youtubeUrls[item.id] ?? ""}
-                    onChange={(event) => setYoutubeUrls((previous) => ({ ...previous, [item.id]: event.target.value }))}
-                    placeholder="https://music.youtube.com/watch?v=…"
-                    className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 text-sm text-fg ring-1 ring-line focus:ring-mint" />
-                </label>
                 <button type="button" disabled={busy !== null} onClick={() => void submitRequest(item, youtubeUrls[item.id] ?? "")}
                   className="min-h-11 rounded-full bg-mint px-5 text-sm font-bold text-mint-ink disabled:opacity-40">
                   {busy === item.id ? "Adding…" : item.existing?.stage === "failed" ? "Retry" : "Add to library"}
                 </button>
-                <p className="w-full text-xs leading-relaxed text-faint">
-                  Without a video URL, Mint tries configured release sources, then your linked YouTube Music source. Source or quota failures remain visible in Requests.
-                </p>
+                <details className="w-full">
+                  <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-muted hover:text-fg">
+                    Choose a source instead
+                  </summary>
+                  <label className="mt-1 block max-w-lg text-xs text-muted">YouTube video URL (optional)
+                    <input type="url" maxLength={2048} value={youtubeUrls[item.id] ?? ""}
+                      onChange={(event) => setYoutubeUrls((previous) => ({ ...previous, [item.id]: event.target.value }))}
+                      placeholder="https://music.youtube.com/watch?v=…"
+                      className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 text-sm text-fg ring-1 ring-line focus:ring-mint" />
+                  </label>
+                  <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted">
+                    Otherwise Mint tries configured sources. Source or quota failures appear in Music requests.
+                  </p>
+                </details>
                 {rowErrors[item.id] && <div className="w-full">
                   <p role="alert" className="text-sm text-warn">{rowErrors[item.id]}</p>
                   <button type="button" disabled={busy !== null} onClick={() => void submitRequest(item, youtubeUrls[item.id] ?? "")}

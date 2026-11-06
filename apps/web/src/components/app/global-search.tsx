@@ -2,16 +2,23 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { Search, X } from "lucide-react";
+import { Disc3, ListMusic, MicVocal, Play, Search, TrendingUp, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { MissingMusic } from "@/components/app/missing-music";
 import { fetchCatalog } from "@/lib/browser-catalog";
+import { formatDuration } from "@/lib/format";
 import type { PlayerItem } from "@/lib/player-protocol";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
 
 const recentKey = "mint:recent-searches";
+const browseTiles = [
+  { label: "All music", href: "/app/library", icon: ListMusic, className: "bg-mint/25" },
+  { label: "Albums", href: "/app/library?type=album", icon: Disc3, className: "bg-elevated" },
+  { label: "Artists", href: "/app/library?type=artist", icon: MicVocal, className: "bg-hover" },
+  { label: "Charts", href: "/app/discover/charts", icon: TrendingUp, className: "bg-warn/20" },
+];
 const emptyRecent: string[] = [];
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };
 type SearchResult = { query: string; retry: number; groups: ResultGroup[]; error: string };
@@ -190,7 +197,7 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
       onKeyDown={onKeyDown} onMouseDown={(event) => {
         if (!fullPage && event.target === event.currentTarget && phone) close();
       }}
-      className={fullPage ? "mx-auto max-w-3xl" : "search-panel fixed inset-0 z-[var(--z-overlay)] overflow-y-auto bg-surface p-5 pt-[max(1.25rem,var(--safe-area-top))] md:absolute md:inset-auto md:right-0 md:top-[calc(100%+0.75rem)] md:max-h-[min(75dvh,48rem)] md:w-[min(44rem,calc(100vw-6rem))] md:rounded-surface md:border md:border-line md:bg-elevated md:p-6 md:shadow-floating"}>
+      className={fullPage ? "mx-auto max-w-6xl" : "search-panel fixed inset-0 z-[var(--z-overlay)] overflow-y-auto bg-surface p-5 pt-[max(1.25rem,var(--safe-area-top))] md:absolute md:inset-auto md:right-0 md:top-[calc(100%+0.75rem)] md:max-h-[min(75dvh,48rem)] md:w-[min(44rem,calc(100vw-6rem))] md:rounded-surface md:border md:border-line md:bg-elevated md:p-6 md:shadow-floating"}>
       <div className="flex items-center gap-3">
         <label className="relative min-w-0 flex-1">
           <span className="sr-only">Search songs, artists or albums</span>
@@ -202,32 +209,101 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
       </div>
       {online === false && <p role="status" className="mt-4 text-sm text-warn">You’re offline. Search needs a connection; downloaded songs remain available in Downloads.</p>}
       {error && <p role="alert" className="mt-4 text-sm text-danger">{error} <button type="button" className="underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></p>}
-      {!query.trim() && !!recent.length && <section className="mt-6" aria-label="Recent searches"><h2 className="mb-2 text-sm font-semibold">Recent searches</h2>
-        <ul className="divide-y divide-line/70">{recent.map((item) => <li key={item}><button type="button" className="flex min-h-11 w-full items-center gap-3 text-left text-sm text-muted hover:text-fg" onClick={() => setQuery(item)}><Search className="size-4" />{item}</button></li>)}</ul>
+      {!query.trim() && !!recent.length && <section className="mt-6" aria-label="Recent searches"><h2 className="mb-2 text-base font-bold">Recent searches</h2>
+        <ul className="flex flex-wrap gap-2">{recent.map((item) => <li key={item}><button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-hover px-4 text-sm text-fg hover:bg-line" onClick={() => setQuery(item)}><Search className="size-4 text-muted" aria-hidden />{item}</button></li>)}</ul>
       </section>}
-      {loading && <p role="status" className="mt-6 text-sm text-muted">Searching your library…</p>}
-      {!loading && groups.map((group) => <section key={group.type} className="mt-6" aria-label={group.label}>
-        <h2 className="mb-2 text-sm font-semibold">{group.label}</h2>
-        <ul className="divide-y divide-line/70">{group.items.map((item) => <MusicItem as="li" item={item} key={item.id} className="flex min-h-14 items-center gap-3 py-1">
-          {item.type === "artist" ? <Link href={`/app/library/artists/${encodeURIComponent(item.id)}`} onClick={() => { remember(query); close(false); }}>
-            <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 shrink-0 rounded-full" />
-          </Link> : <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 shrink-0 rounded" />}
-          <div className="min-w-0 flex-1">
-          {item.type === "track" ? <button type="button" onClick={() => chooseTrack(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">
-            {item.title}
-          </button> : <Link href={item.type === "album" ? `/app/library/albums/${encodeURIComponent(item.id)}` : `/app/library/artists/${encodeURIComponent(item.id)}`}
-            onClick={() => { remember(query); close(false); }} className="block truncate text-sm font-medium hover:underline">{item.title}</Link>}
-          <p onClick={() => close(false)} className="mt-1 truncate text-xs text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
-          </div>
-          {item.type === "track" && player && <button type="button" aria-label={`Play ${item.title}`} disabled={!player.ready || player.busy}
-            onClick={() => chooseTrack(item)} className="grid size-11 shrink-0 place-items-center rounded-full bg-mint text-mint-ink disabled:opacity-40">▶</button>}
-          {player && <TrackMenuButton item={item} />}
-        </MusicItem>)}</ul>
-      </section>)}
+      {!query.trim() && <nav className="mt-8" aria-label="Browse">
+        <h2 className="mb-3 text-base font-bold">Browse all</h2>
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">{browseTiles.map((tile) => <li key={tile.href}>
+          <Link href={tile.href} onClick={() => close(false)} className={`relative flex aspect-[16/10] min-h-24 overflow-hidden rounded-lg p-4 text-lg font-bold text-fg transition hover:brightness-110 ${tile.className}`}>
+            {tile.label}<tile.icon className="absolute -bottom-2 -right-2 size-16 rotate-12 opacity-30" aria-hidden />
+          </Link>
+        </li>)}</ul>
+      </nav>}
+      {loading && <p role="status" className="mt-6 text-sm text-muted">Searching…</p>}
+      {!loading && !!groups.length && <SearchResults groups={groups} fullPage={fullPage} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
+        onPlay={chooseTrack} onNavigate={() => { remember(query); close(false); }} />}
       {!loading && query.trim().length >= 2 && !groups.length && !error && <>
         <p className="mt-6 text-sm text-muted">No songs, artists or albums match “{query}”.</p>
         <MissingMusic query={query.trim()} />
       </>}
     </div>}
   </div>;
+}
+
+const albumHref = (id: string) => `/app/library/albums/${encodeURIComponent(id)}`;
+const artistHref = (id: string) => `/app/library/artists/${encodeURIComponent(id)}`;
+
+function topResult(groups: ResultGroup[]) {
+  const artist = groups.find((group) => group.type === "artist")?.items[0];
+  const track = groups.find((group) => group.type === "track")?.items[0];
+  const album = groups.find((group) => group.type === "album")?.items[0];
+  return artist ?? track ?? album ?? null;
+}
+
+function SearchResults({ groups, fullPage, canPlay, playDisabled, onPlay, onNavigate }: {
+  groups: ResultGroup[]; fullPage: boolean; canPlay: boolean; playDisabled: boolean;
+  onPlay: (item: PlayerItem) => void; onNavigate: () => void;
+}) {
+  const top = topResult(groups);
+  const songs = groups.find((group) => group.type === "track")?.items.slice(0, fullPage ? 6 : 4) ?? [];
+  const artists = groups.find((group) => group.type === "artist")?.items ?? [];
+  const albums = groups.find((group) => group.type === "album")?.items ?? [];
+  const typeLabel = (item: PlayerItem) => item.type === "artist" ? "Artist" : item.type === "album" ? "Album" : "Song";
+  return <>
+    <div className={`mt-6 grid gap-6 ${fullPage ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : "md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"}`}>
+      {top && <section aria-label="Top result">
+        <h2 className="mb-3 text-xl font-bold">Top result</h2>
+        <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
+          {top.type === "artist" ? <Link href={artistHref(top.id)} onClick={onNavigate} aria-label={`Open ${top.title}`} tabIndex={-1}>
+            <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-full shadow-floating" />
+          </Link> : <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
+          <div className="min-w-0">
+            {top.type === "track" ? <button type="button" onClick={() => onPlay(top)} className="block max-w-full truncate text-left text-3xl font-bold tracking-tight hover:underline">{top.title}</button>
+              : <Link href={top.type === "album" ? albumHref(top.id) : artistHref(top.id)} onClick={onNavigate} className="block truncate text-3xl font-bold tracking-tight hover:underline">{top.title}</Link>}
+            <p className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted">
+              {top.type !== "artist" && <span onClick={onNavigate} className="min-w-0 truncate"><ArtistLink item={top} /></span>}
+              <span className="shrink-0 rounded-full bg-bg/60 px-3 py-1 text-xs font-semibold text-fg">{typeLabel(top)}</span>
+            </p>
+          </div>
+          {top.type === "track" && canPlay && <button type="button" aria-label={`Play ${top.title}`} disabled={playDisabled} onClick={() => onPlay(top)}
+            className="absolute bottom-5 right-5 grid size-12 place-items-center rounded-full bg-mint text-mint-ink shadow-floating transition hover:scale-105 disabled:opacity-40"><Play className="size-5 fill-current" aria-hidden /></button>}
+          {canPlay && <span className="absolute right-3 top-3"><TrackMenuButton item={top} /></span>}
+        </MusicItem>
+      </section>}
+      {!!songs.length && <section aria-label="Songs">
+        <h2 className="mb-3 text-xl font-bold">Songs</h2>
+        <ul>{songs.map((item) => <MusicItem as="li" item={item} key={item.id} className="group flex min-h-14 items-center gap-3 rounded-control px-2 py-1 hover:bg-hover">
+          <span className="relative shrink-0">
+            <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 rounded" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <button type="button" onClick={() => onPlay(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{item.title}</button>
+            <p onClick={onNavigate} className="mt-0.5 truncate text-xs text-muted"><ArtistLink item={item} /></p>
+          </div>
+          {item.duration ? <span className="hidden text-xs tabular-nums text-muted sm:inline">{formatDuration(item.duration / 1000)}</span> : null}
+          {item !== top && canPlay && <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(item)}
+            className="grid size-11 shrink-0 place-items-center rounded-full text-fg hover:bg-line disabled:opacity-40"><Play className="size-4 fill-current" aria-hidden /></button>}
+          {canPlay && <TrackMenuButton item={item} />}
+        </MusicItem>)}</ul>
+      </section>}
+    </div>
+    {!!artists.length && <CardShelf label="Artists" items={artists} round canMenu={canPlay} onNavigate={onNavigate} />}
+    {!!albums.length && <CardShelf label="Albums" items={albums} canMenu={canPlay} onNavigate={onNavigate} />}
+  </>;
+}
+
+function CardShelf({ label, items, round = false, canMenu, onNavigate }: { label: string; items: PlayerItem[]; round?: boolean; canMenu: boolean; onNavigate: () => void }) {
+  return <section className="mt-8" aria-label={label}>
+    <h2 className="mb-3 text-xl font-bold">{label}</h2>
+    <ul className="-mx-2 flex snap-x gap-2 overflow-x-auto pb-2">{items.map((item) => <MusicItem as="li" item={item} key={item.id}
+      className="group relative w-36 shrink-0 snap-start rounded-lg p-2 transition hover:bg-hover sm:w-40">
+      <Link href={item.type === "album" ? albumHref(item.id) : artistHref(item.id)} onClick={onNavigate} className="block">
+        <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`aspect-square w-full shadow-floating ${round ? "rounded-full" : "rounded-lg"}`} />
+        <span className="mt-2 block truncate text-sm font-semibold">{item.title}</span>
+      </Link>
+      <p onClick={onNavigate} className="mt-0.5 truncate text-xs text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
+      {canMenu && <span className="absolute right-3 top-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><TrackMenuButton item={item} /></span>}
+    </MusicItem>)}</ul>
+  </section>;
 }

@@ -274,6 +274,7 @@
       ],
       "ui": true,
       "paths": [
+        "services/chart-source/**",
         "apps/web/src/lib/chart*.ts",
         "apps/web/src/lib/spotify-*.ts",
         "apps/web/src/components/app/chart-browser.tsx",

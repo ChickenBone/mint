@@ -7,7 +7,7 @@ Mint is a self-hosted music service: local files, a Plex-backed shared library, 
 There are three audiences:
 
 - **Public visitors:** browse library metadata, artwork, chart availability and public activity; request an account.
-- **Approved members:** listen, manage personal collections, link providers and explicitly request missing music.
+- **Approved members:** listen, manage personal collections, optionally import playlists and explicitly request missing music.
 - **Operators/admins:** approve access, manage jobs/workers, inspect integration health and control analysis.
 
 An account request is not playback approval. A member can listen to existing music without linking Google or Spotify. Separate Plex invitations are needed only for external Plex clients.
@@ -18,7 +18,7 @@ An account request is not playback approval. A member can listen to existing mus
 - Make listening cohesive and reliable without exposing private media services.
 - Support massive libraries through bounded discovery, tolerant search and progressive queues.
 - Keep acquisition and analysis progress observable, including failures and recovery actions.
-- Retain YouTube Music synchronization; support Spotify playlists as metadata matched to local music.
+- Preserve existing provider data and integrations, but do not organize the listener experience around provider sync. Keep YouTube playlist import available; provider-managed data must not be silently deleted or misrepresented as editable.
 - Keep all current listening, organization, offline and management capabilities during redesigns.
 - Make self-hosting understandable for people using NAS project editors, not only shell users.
 - Keep optional providers, remote download workers and separate analysis machines genuinely optional.
@@ -36,6 +36,7 @@ An account request is not playback approval. A member can listen to existing mus
 | Artwork reliability | Plex is the primary library artwork source; validated free public sources are backup. Private tokens/URLs must not reach browsers. |
 | Listening-room redesign | Home, Discover and Library lead. Collections stay nearby; technical operations move into Settings/Management without disappearing. |
 | Chart discovery | Real US/country and clearly scoped international/genre charts become virtual collections. Local songs play; missing songs are muted with explicit acquisition. Provider scope must be honest. |
+| Consumer-first direction | The listener experience should feel familiar to Spotify and Apple Music users, with standard labels such as "Liked songs" and "Create playlist" rather than repetitive Mint qualifiers. Use Mint branding and independently implemented UI and assets. Administration stays in an admin-only area of the same application. Preserve existing provider data and integrations while moving sync out of the consumer experience. An optional self-hosted MusicBrainz mirror must retain a public fallback. Use supported chart feeds or permitted scraping, not sources that prohibit it. Commercial-service parity is a goal, not a claim of implemented features. |
 
 Historical requests for proprietary Plexamp features do **not** authorize entitlement bypasses, pretending Plex Pass is enabled or labeling independent algorithms as Plexamp technology. The current decision is an independent Mint implementation with truthful capability/fallback states.
 

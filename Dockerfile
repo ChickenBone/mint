@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.7
-# One Dockerfile: --target web | worker (also runs the hub) | analysis | realtime | agent
+# One Dockerfile: --target web | worker (also runs the hub) | analysis | realtime | agent | chart-source
 
 ARG NODE_VERSION=22
 
@@ -30,6 +30,23 @@ RUN --mount=type=cache,target=/root/.npm rm -rf node_modules && npm ci --omit=de
 
 FROM deps AS realtime-deps
 RUN --mount=type=cache,target=/root/.npm rm -rf node_modules && npm ci --omit=dev -w @mint/realtime --no-audit --no-fund
+
+# Separate build avoids requiring a Next.js build for the metadata-only service.
+FROM deps AS chart-source-build
+COPY tsconfig.base.json ./
+COPY services/chart-source ./services/chart-source
+COPY apps/web/src/lib/charts.ts apps/web/src/lib/chart-cache.ts apps/web/src/lib/chart-providers.ts ./apps/web/src/lib/
+RUN ./node_modules/.bin/esbuild services/chart-source/main.mts --bundle --platform=node --target=node22 --format=cjs --outfile=chart-source.cjs
+
+FROM node:${NODE_VERSION}-bookworm-slim AS chart-source
+ENV NODE_ENV=production PORT=3090
+WORKDIR /app
+COPY --from=chart-source-build --chown=node:node /repo/chart-source.cjs ./chart-source.cjs
+USER node
+EXPOSE 3090
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3090/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "chart-source.cjs"]
 
 # ---- web: Next.js standalone server ----
 FROM node:${NODE_VERSION}-bookworm-slim AS web

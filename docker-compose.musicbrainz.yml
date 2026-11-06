@@ -1,0 +1,13 @@
+# Optional connection to the pinned upstream stack prepared by deploy/docker/musicbrainz.mjs.
+# Does not download data or start mirror containers. Prepare/import/index upstream first.
+# Use with docker-compose.yml (or docker-compose.nas.yml), preserving existing Plex overrides.
+services:
+  worker:
+    environment:
+      MUSICBRAINZ_MIRROR_URL: http://musicbrainz-mirror:5000/ws/2
+    networks: [data, media, mint_metadata]
+
+networks:
+  mint_metadata:
+    external: true
+    name: mint_metadata

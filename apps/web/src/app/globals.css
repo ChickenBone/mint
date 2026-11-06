@@ -258,6 +258,8 @@
   .listening-content { padding-top: 1rem; }
   .chart-row { grid-template-columns: 1.25rem 3.5rem minmax(0,1fr); gap: .75rem; }
   .chart-row-actions { grid-column: 3; justify-content: flex-start; flex-wrap: wrap; }
+  .chart-row[data-availability="available"] { grid-template-columns: 1.25rem 3.5rem minmax(0,1fr) auto; gap: .5rem; }
+  .chart-row[data-availability="available"] .chart-row-actions { grid-column: 4; flex-wrap: nowrap; }
   .chart-row-actions > button { padding-inline: .8rem; font-size: .75rem; }
   .chart-row-actions > a:last-child { width: 2rem; }
   .chart-row-reason { grid-column: 2 / -1; }

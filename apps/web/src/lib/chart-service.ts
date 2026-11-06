@@ -6,6 +6,7 @@ import { toTrackView } from "@mint/core/views";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { CHARTS, chartIdentity, chartKey, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
 import { cachedChart, type CachedChart, type ChartCacheStore } from "./chart-cache";
+import { fetchChartSource } from "./chart-source";
 import { readRequestRecording, requestRecording, searchRecordings } from "./music-requests";
 import { trackPlayerItem } from "./player-protocol";
 
@@ -27,6 +28,14 @@ function cacheStore(): ChartCacheStore {
 async function loadChart(chart: ChartDefinition): Promise<CachedChart> {
   if (process.env.MINT_CHARTS_ENABLED === "false") return { snapshot: null, status: "error", retryAt: null,
     notice: "Charts are disabled on this instance. The operator can enable MINT_CHARTS_ENABLED on the web service." };
+  if (process.env.MINT_CHART_SOURCE_URL) {
+    try { return await fetchChartSource(chart, process.env.MINT_CHART_SOURCE_URL); }
+    catch (error) {
+      console.error("Chart source request failed", error instanceof Error ? error.name : "Unknown error");
+      return { snapshot: null, status: "error", retryAt: null,
+        notice: "The configured chart source is unavailable or returned invalid data. Check MINT_CHART_SOURCE_URL and service health." };
+    }
+  }
   try { return await cachedChart(chart, cacheStore()); }
   catch (error) {
     console.error("Chart cache unavailable", error instanceof Error ? error.message : "Unknown cache error");

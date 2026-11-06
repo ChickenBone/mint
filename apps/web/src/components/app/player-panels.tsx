@@ -10,6 +10,7 @@ import { TrackAnalysis } from "./track-analysis";
 import { LyricsMatch } from "./lyrics-match";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
+import { ReportIssueButton } from "./report-issue";
 import { TrackMenuButton } from "./player";
 
 export function PlayerPanel({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {
@@ -151,26 +152,28 @@ export function QueueContents({ state, command }: { state: PlayerState; command:
       </div>
     </div>}
     <div className="mb-3 flex items-center justify-between gap-3">
-      <h3 className="text-sm font-semibold">Up next <span className="ml-1 text-muted tabular">· {remaining}</span></h3>
+      <h3 className="text-sm font-bold">Next in queue <span className="ml-1 font-normal text-muted tabular">· {remaining} {remaining === 1 ? "song" : "songs"}</span></h3>
       {remaining > 0 && <button onClick={() => command({ action: "clear" })} className="min-h-11 rounded-full px-3 text-xs text-muted hover:bg-hover hover:text-fg">Clear upcoming</button>}
     </div>
     {remaining > upcoming.length && <p className="mb-3 text-xs text-muted">Showing the next {upcoming.length} of {remaining} songs.</p>}
     <ol className="space-y-1">
-      {upcoming.map((track, index) => <MusicItem as="li" item={track} key={track.queueId} className="group flex flex-wrap items-center gap-1 rounded-md border-b border-line/50 pb-2 hover:bg-hover">
-        <div className="flex w-full min-w-0 items-center">
-        <button onClick={() => command({ action: "skip", queueId: track.queueId! })} className="flex min-w-0 flex-1 items-center gap-3 p-2 text-left" aria-label={`Play ${track.title}`}>
-          <Artwork track={{ artworkUrl: track.thumb ?? "" }} className="size-10" />
-          <span className="min-w-0"><span className="block truncate text-sm font-semibold">{track.title}</span></span>
-        </button>
-        <TrackMenuButton item={track} />
+      {upcoming.map((track, index) => <MusicItem as="li" item={track} key={track.queueId} className="group flex flex-wrap items-center gap-1 rounded-md border-b border-line/50 pb-2 hover:bg-hover sm:flex-nowrap sm:border-0 sm:pb-0">
+        <div className="flex w-full min-w-0 items-center gap-3 p-2 sm:flex-1">
+          <Artwork track={{ artworkUrl: track.thumb ?? "" }} className="size-10 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <button onClick={() => command({ action: "skip", queueId: track.queueId! })} className="block min-h-11 max-w-full truncate text-left text-sm font-semibold hover:underline" aria-label={`Play ${track.title}`}>{track.title}</button>
+            <p className="truncate text-xs text-muted"><ArtistLink item={track} /></p>
+          </div>
+          <div className="sm:hidden"><TrackMenuButton item={track} /></div>
         </div>
-        <p className="min-w-0 flex-1 truncate pl-2 text-xs text-muted"><ArtistLink item={track} /></p>
+        <span className="flex-1 sm:hidden" />
+        <div className="hidden sm:block"><TrackMenuButton item={track} /></div>
         <button aria-label={`Move ${track.title} earlier`} disabled={index === 0} onClick={() => command({ action: "move", queueId: track.queueId!, before: upcoming[index - 1]!.queueId! })} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg disabled:opacity-30"><ArrowUp className="size-4" /></button>
         <button aria-label={`Move ${track.title} later`} disabled={index === upcoming.length - 1} onClick={() => command({ action: "move", queueId: upcoming[index + 1]!.queueId!, before: track.queueId! })} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg disabled:opacity-30"><ArrowDown className="size-4" /></button>
         <button aria-label={`Remove ${track.title} from queue`} onClick={() => command({ action: "remove", queueId: track.queueId! })} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg"><X className="size-4" /></button>
       </MusicItem>)}
     </ol>
-    {!upcoming.length && <p className="py-6 text-sm leading-relaxed text-muted">{state.track ? "You're all caught up. Add songs from the library to keep listening." : "Play a song or album to start your queue."}</p>}
+    {!upcoming.length && <p className="py-6 text-sm leading-relaxed text-muted">{remaining > 0 ? "More songs are in your queue." : state.track ? "Your queue is empty. Add songs to play next." : "Play a song or album to start your queue."}</p>}
   </div>;
 }
 
@@ -179,7 +182,7 @@ export function LyricsPanel({ state, command }: { state: PlayerState; command: (
   return id ? <TrackLyrics key={id} id={id} state={state} command={command} /> : <p className="text-sm text-muted">Choose a song to see its lyrics.</p>;
 }
 function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; command: (command: PlayerCommand) => void }) {
-  const [result, setResult] = useState<{ lyrics: Lyrics | null; alternatives: Lyrics[]; warnings: string[]; offsetMs: number; corrected: boolean } | null>(null);
+  const [result, setResult] = useState<{ lyrics: Lyrics | null; alternatives: Lyrics[]; warnings: string[]; admin: boolean; offsetMs: number; corrected: boolean } | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
@@ -201,7 +204,7 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
       if (!controller.signal.aborted) setResult({ lyrics: body.lyrics === null ? null : lyricsSchema.parse(body.lyrics),
         alternatives: lyricsSchema.array().max(2).parse(body.alternatives ?? []),
         warnings: Array.isArray(body.warnings) ? body.warnings.filter((value: unknown): value is string => typeof value === "string") : [],
-        corrected: body.corrected === true, offsetMs: Number(body.offsetMs) || 0 });
+        corrected: body.corrected === true, admin: body.admin === true, offsetMs: Number(body.offsetMs) || 0 });
     }).catch((error: unknown) => { if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Lyrics could not load."); });
     return () => controller.abort();
   }, [id, retry]);
@@ -215,21 +218,24 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
   }, [index, follow]);
   return <div onWheel={() => setFollow(false)} onTouchMove={() => setFollow(false)}>
     <p className="font-semibold">{state.track?.title}</p><p className="mt-1 text-sm text-muted">{state.track && <ArtistLink item={state.track} />}</p>
-    <p className="mt-4 text-xs leading-relaxed text-muted">Automatic matching compares LRCLIB and Lyrics.ovh, preferring word timing, then synced lines, then text. Only song metadata is shared, never audio.</p>
-    {lyrics && <p className="mt-3 text-xs font-semibold text-muted">{timing} · <a className="underline hover:text-fg" href={lyrics.source === "Lyrics.ovh" ? "https://lyrics.ovh" : "https://lrclib.net"} target="_blank" rel="noreferrer">{lyrics.source}</a>{result?.corrected ? " · Your corrected match" : source ? " · Selected source" : " · Best available"}</p>}
-    {(result?.alternatives.length ?? 0) > 1 && <label className="mt-4 block text-sm text-muted">Lyrics source
-      <select value={source ?? ""} onChange={(event) => { setSource(event.target.value || null); setFollow(true); }} className="mt-2 min-h-11 w-full rounded-md border border-line bg-elevated px-3 text-fg">
-        <option value="">Automatic · best timing</option>
-        {result!.alternatives.map((lyrics) => <option key={lyrics.source} value={lyrics.source}>{lyrics.source} · {lyricTiming(lyrics)}</option>)}
-      </select>
-    </label>}
-    {!!result?.warnings.length && <p role="status" className="mt-3 text-xs text-warn">{result.warnings.join(" ")}</p>}
-    <LyricsMatch key={result?.offsetMs ?? 0} id={id} title={`${state.track?.title ?? ""} ${state.track?.artist ?? ""}`} offset={result?.offsetMs ?? 0} refresh={() => { setSource(null); setError(null); setResult(null); setRetry((value) => value + 1); }} />
+    {result?.admin && <details className="mt-4 text-xs text-muted">
+      <summary className="min-h-11 cursor-pointer py-3 font-semibold">Admin · lyrics details</summary>
+      {lyrics && <p className="font-semibold">{timing} · <a className="underline hover:text-fg" href={lyrics.source === "Lyrics.ovh" ? "https://lyrics.ovh" : "https://lrclib.net"} target="_blank" rel="noreferrer">{lyrics.source}</a>{result.corrected ? " · User corrected match" : source ? " · Selected source" : " · Best available"}</p>}
+      {result.alternatives.length > 1 && <label className="mt-3 block">Lyrics source
+        <select value={source ?? ""} onChange={(event) => { setSource(event.target.value || null); setFollow(true); }} className="mt-2 min-h-11 w-full rounded-md border border-line bg-elevated px-3 text-fg">
+          <option value="">Automatic · best timing</option>
+          {result.alternatives.map((lyrics) => <option key={lyrics.source} value={lyrics.source}>{lyrics.source} · {lyricTiming(lyrics)}</option>)}
+        </select>
+      </label>}
+      {!!result.warnings.length && <p role="status" className="mt-3 text-warn">{result.warnings.join(" ")}</p>}
+      <LyricsMatch key={result.offsetMs} id={id} title={`${state.track?.title ?? ""} ${state.track?.artist ?? ""}`} offset={result.offsetMs} refresh={() => { setSource(null); setError(null); setResult(null); setRetry((value) => value + 1); }} />
+    </details>}
+    <ReportIssueButton defaultCategory="lyrics" context={state.track ? `${state.track.title} — ${state.track.artist}` : null} />
     {error ? <div role="alert" className="mt-6 text-sm"><p className="text-warn">{error}</p><button disabled={retryRemaining > 0} className="mt-3 min-h-11 rounded-full bg-elevated px-4 hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50"
       onClick={() => { setError(null); setResult(null); setRetry((n) => n + 1); }}>{retryRemaining > 0 ? `Retry in ${retryRemaining}s` : "Retry lyrics"}</button></div>
       : !result ? <p role="status" className="mt-6 text-sm text-muted">Finding lyrics…</p>
-      : !lyrics ? <p className="mt-6 text-muted">Neither source has matching lyrics yet. Open “Wrong lyrics or timing?” to search.</p>
-      : lyrics.instrumental ? <p className="mt-6 text-muted">Instrumental · no sung lyrics.</p>
+      : !lyrics ? <p className="mt-6 text-muted">No lyrics found for this song yet.</p>
+      : lyrics.instrumental ? <p className="mt-6 text-muted">Instrumental.</p>
       : lines.length ? <div className="mt-6">
         <button aria-pressed={follow} onClick={() => setFollow(!follow)} className="sticky top-0 mb-5 min-h-11 rounded-full bg-elevated px-4 text-xs font-semibold hover:bg-hover">{follow ? "Following the song" : "Resume following"}</button>
         <ol className="space-y-3 pb-16">{lines.map((line, i) => <li key={`${line.time}-${i}`}><button ref={i === index ? active : undefined} aria-current={i === index ? "true" : undefined}
@@ -237,6 +243,6 @@ function TrackLyrics({ id, state, command }: { id: string; state: PlayerState; c
           className={`min-h-11 text-left text-2xl font-bold leading-relaxed transition-colors hover:text-mint ${i === index ? "text-fg" : "text-muted"}`}>
           {line.words?.length ? line.words.map((word, wordIndex) => <span key={wordIndex} className={i === index && state.time >= word.time + (result?.offsetMs ?? 0) ? "text-mint" : undefined}>{word.text}</span>) : line.text || "♪"}</button></li>)}</ol>
       </div> : lyrics.plainLyrics ? <p className="mt-6 whitespace-pre-line text-lg leading-relaxed">{lyrics.plainLyrics}</p>
-      : <p className="mt-6 text-muted">Lyrics have not been added for this track.</p>}
+      : <p className="mt-6 text-muted">No lyrics for this song yet.</p>}
   </div>;
 }

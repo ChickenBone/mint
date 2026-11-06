@@ -11,7 +11,7 @@ export function Transport({ children, label, active, disabled, onClick, classNam
   children: React.ReactNode; label: string; active?: boolean; disabled?: boolean; onClick: () => void; className?: string;
 }) {
   return <button type="button" aria-label={label} title={label} aria-pressed={active} disabled={disabled} onClick={onClick}
-    className={`size-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-5 ${active ? "text-mint" : "text-muted hover:text-fg"} ${className}`}>{children}</button>;
+    className={`relative size-11 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-hover disabled:cursor-not-allowed disabled:opacity-40 [&>svg]:size-5 ${active ? "text-mint" : "text-muted hover:text-fg"} ${className}`}>{children}{active && <span aria-hidden="true" className="absolute bottom-1 size-1 rounded-full bg-mint" />}</button>;
 }
 
 export function PlaybackControls({ state, ready, command, expanded = false }: {
@@ -22,11 +22,11 @@ export function PlaybackControls({ state, ready, command, expanded = false }: {
     <Transport label="Shuffle" active={state.shuffle} disabled={disabled} onClick={() => command({ action: "shuffle" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}><Shuffle /></Transport>
     <Transport label="Previous track" disabled={disabled} onClick={() => command({ action: "previous" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}><SkipBack /></Transport>
     <button type="button" aria-label={state.playing ? "Pause" : "Play"} disabled={disabled} onClick={() => command({ action: "toggle" })}
-      className={`grid shrink-0 place-items-center rounded-full transition-[background-color,transform] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${expanded ? "size-16 bg-mint text-mint-ink hover:bg-mint-strong" : "size-11 bg-fg text-bg hover:bg-mint"}`}>
+      className={`grid shrink-0 place-items-center rounded-full bg-fg text-bg transition-[background-color,transform] hover:bg-mint active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${expanded ? "size-16" : "size-11"}`}>
       {state.playing ? <Pause className={expanded ? "size-7" : "size-5"} fill="currentColor" /> : <Play className={expanded ? "size-7" : "size-5"} fill="currentColor" />}
     </button>
     <Transport label="Next track" disabled={disabled} onClick={() => command({ action: "next" })}><SkipForward /></Transport>
-    <Transport label={state.repeat === 1 ? "Repeat one" : "Repeat"} active={state.repeat > 0} disabled={disabled} onClick={() => command({ action: "repeat" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}>{state.repeat === 1 ? <Repeat1 /> : <Repeat />}</Transport>
+    <Transport label={state.repeat === 1 ? "Repeat one" : state.repeat === 2 ? "Repeat all" : "Repeat off"} active={state.repeat > 0} disabled={disabled} onClick={() => command({ action: "repeat" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}>{state.repeat === 1 ? <Repeat1 /> : <Repeat />}</Transport>
   </div>;
 }
 

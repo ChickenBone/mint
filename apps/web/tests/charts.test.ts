@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CHARTS, chartKey, compatibleChartRecording, matchChartEntry, type ChartCandidate, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
+import { CHARTS, chartKey, chartRequestEffect, compatibleChartRecording, matchChartEntry, type ChartCandidate, type ChartRequestOutcome, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
 import { boundedProviderJson, ChartProviderError, fetchChart } from "../src/lib/chart-providers";
 import { cachedChart, CHART_KEEP_SECONDS, type ChartCacheStore } from "../src/lib/chart-cache";
 
@@ -116,4 +116,20 @@ test("empty, expired, malformed, timed-out and stale provider output remain dist
   await assert.rejects(boundedProviderJson(new Response("x".repeat(2_000_001))), /safety limit/);
   await assert.rejects(boundedProviderJson(new Response("{")), /invalid JSON/);
   await assert.rejects(boundedProviderJson(new Response(null, { status: 429, headers: { "retry-after": "120" } })), (error) => error instanceof ChartProviderError && error.retrySeconds === 120);
+});
+
+test("chart request responses only affect the page view that sent them", () => {
+  const current = (outcome: ChartRequestOutcome) => chartRequestEffect(true, "Distant Window", outcome);
+  const stale = (outcome: ChartRequestOutcome) => chartRequestEffect(false, "Distant Window", outcome);
+  assert.equal(current({ status: "resolve" }).resolve, true);
+  assert.equal(current({ status: "error", message: "Rate limited." }).rowError, "Rate limited.");
+  assert.deepEqual([current({ status: "requested" }).markRequested, current({ status: "requested" }).refresh], [true, true]);
+  for (const outcome of [{ status: "resolve" }, { status: "error", message: "Rate limited." }, { status: "requested" }, { status: "available" }] as ChartRequestOutcome[]) {
+    const effect = stale(outcome);
+    assert.deepEqual([effect.resolve, effect.rowError, effect.markRequested, effect.refresh], [false, null, false, false], outcome.status);
+    assert.match(effect.notice || effect.error, /Distant Window/, "Stale outcomes stay visible and name the song");
+  }
+  assert.match(stale({ status: "requested" }).notice, /^Request sent for Distant Window/, "Submitted requests are still acknowledged after paging");
+  assert.match(stale({ status: "resolve" }).notice, /^Pick a version of Distant Window/);
+  assert.match(stale({ status: "error", message: "Rate limited." }).error, /^Couldn’t add Distant Window\. Rate limited\./);
 });

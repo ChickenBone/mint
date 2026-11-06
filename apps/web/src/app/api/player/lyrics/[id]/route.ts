@@ -14,17 +14,17 @@ const json = (body: unknown, status = 200, retry?: number) => Response.json(body
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const user = await getUser();
   if (!user) return json({ error: "Approved membership required" }, 401);
-  const { id } = await context.params;
+  const admin = user.role === "admin", { id } = await context.params;
   if (!UUID.test(id)) return json({ error: "Invalid track" }, 400);
   try {
     if (!await rateLimit(`lyrics:${user.id}`, 30, 60)) return json({ error: "Too many lyrics requests. Try again in a minute." }, 429, 60);
     const track = await getDb().query.tracks.findFirst({ where: and(eq(schema.tracks.id, id), PLAYABLE) });
     if (!track) return json({ error: "This track is not available for playback." }, 404);
     const [match] = await getDb().select().from(lyricMatches).where(and(eq(lyricMatches.userId, user.id), eq(lyricMatches.trackId, id))).limit(1);
-    if (match?.lyrics) return json({ lyrics: match.lyrics, offsetMs: match.offsetMs, source: "LRCLIB", corrected: true });
+    if (match?.lyrics) return json({ lyrics: match.lyrics, offsetMs: match.offsetMs, source: "LRCLIB", corrected: true, admin });
     const redis = getRedis(), cacheKey = `mint:lyrics:v2:${id}:${track.updatedAt.getTime()}`;
     const cached = await redis.get(cacheKey);
-    if (cached) return json({ ...JSON.parse(cached), offsetMs: match?.offsetMs ?? 0 });
+    if (cached) return json({ ...JSON.parse(cached), offsetMs: match?.offsetMs ?? 0, admin });
     const cooldown = await redis.ttl("mint:lyrics:cooldown");
     if (!await rateLimit("lyrics:provider", 60, 60)) return json({ error: "Lyrics lookups are busy. Try again in a minute." }, 429, 60);
     const lockKey = `${cacheKey}:lookup`, lock = crypto.randomUUID();
@@ -33,7 +33,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       const { retryAfter, ...body } = await fetchBestLyrics({ artist: track.artist, title: track.title, album: track.album, duration: track.durationSec ?? track.existingDurationSec }, fetch, cooldown);
       if (retryAfter) await redis.set("mint:lyrics:cooldown", "1", "EX", retryAfter);
       await redis.set(cacheKey, JSON.stringify(body), "EX", body.warnings.length ? 300 : body.lyrics ? 86400 : 3600);
-      return json({ ...body, offsetMs: match?.offsetMs ?? 0 });
+      return json({ ...body, offsetMs: match?.offsetMs ?? 0, admin });
     } catch (error) {
       if (!(error instanceof LyricsBusyError)) throw error;
       if (error.provider === "LRCLIB") await redis.set("mint:lyrics:cooldown", "1", "EX", error.retryAfter);

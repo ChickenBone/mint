@@ -7,6 +7,7 @@ import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
+import { setIssueReportStatus } from "@/lib/issue-reports";
 import { enqueueRetry } from "@/lib/queues";
 
 const id = z.uuid();
@@ -52,4 +53,11 @@ export async function retryAllFailed() {
   }
   revalidatePath("/app/admin");
   return { retried: failed.length };
+}
+
+export async function setIssueReportResolved(reportId: string, resolved: boolean) {
+  const admin = await requireAdmin();
+  id.parse(reportId);
+  await setIssueReportStatus(getDb(), reportId, resolved ? "resolved" : "open", admin.id);
+  revalidatePath("/app/manage");
 }

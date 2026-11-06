@@ -14,7 +14,7 @@ export function RecommendationShelf({ items }: { items: { track: TrackView; reas
     const entries = items.map(({ track }) => trackPlayerItem(track));
     player?.command({ action: "items", items: mix ? shuffled(entries) : entries, index: mix ? 0 : index });
   };
-  if (!items.length) return <p className="py-6 text-sm text-muted">Recommendations appear as playable music finishes indexing. Search for a song to request something missing.</p>;
+  if (!items.length) return <p className="py-6 text-sm text-muted">Recommendations will appear as you listen. Search to find something to play.</p>;
   return <>
     <button disabled={!player?.ready || player.busy} onClick={() => play(0, true)} className="mb-5 inline-flex min-h-11 items-center gap-2 rounded-full bg-mint px-5 text-sm font-bold text-mint-ink disabled:opacity-40"><Shuffle className="size-4" />Play this mix</button>
     <ol className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 xl:grid-cols-6">{items.map(({ track, reason }, index) => <MusicItem as="li" item={trackPlayerItem(track)} key={track.id} className="group min-w-0">

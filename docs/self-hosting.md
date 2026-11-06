@@ -18,6 +18,8 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [Private analysis workers](#optional-separate-analysis-machine)
 - [Architecture](#architecture)
 - [Services, integrations and troubleshooting](#setup-details)
+- [Optional MusicBrainz metadata mirror](#optional-musicbrainz-metadata-mirror)
+- [Optional standalone chart metadata API](#optional-standalone-chart-metadata-api)
 - [Volunteer download workers](#volunteer-workers)
 - [Development](#development) and [CI/CD](#cicd)
 
@@ -173,6 +175,203 @@ Vercel also needs reachable PostgreSQL and Redis; the home server keeps the priv
    Download [`docker-compose.vercel.yml`](../docker-compose.vercel.yml) next to the main file and run `docker compose up -d`. Caddy now answers only `ws.mint.example.com` (live updates) and `hub.mint.example.com` (volunteer uploads). Point both at this machine with DNS only; proxied uploads are subject to your provider's plan limits.
 3. Import the repository into Vercel. Set **Root Directory** to `apps/web` and leave "Include files outside the root directory" on. Add the variables from [`apps/web/.env.vercel.example`](../apps/web/.env.vercel.example), using Neon's *pooled* URL. Print the shared secrets with `docker compose run --rm init vercel`. `NEXT_PUBLIC_*` values are baked in at build time, so redeploy after changing them.
 4. Add `mint.example.com` as a domain in Vercel.
+
+### Optional MusicBrainz metadata mirror
+
+**Optional advanced setup, not part of Mint's default startup.** Mint continues to use
+public MusicBrainz unless the pipeline worker's `MUSICBRAINZ_MIRROR_URL` is set.
+A real mirror is MusicBrainz's recording/artist/release **metadata database**, not
+a free song/audio collection, not complete coverage of every song, and not a cache.
+It does not replace Plex: local browsing, availability, file paths and primary
+library artwork still use indexed Plex metadata. Existing Plex and original music
+remain read-only when configured that way.
+
+Use the maintained [MetaBrainz musicbrainz-docker stack](https://github.com/metabrainz/musicbrainz-docker)
+in a **separate project**, with its own PostgreSQL, MusicBrainz server, Solr search,
+indexer and Valkey. Mint does not substitute an unverified single-container image,
+share its application database with the mirror, download dumps, build search indexes
+or enable replication automatically.
+
+#### Capacity, licensing and freshness
+
+The upstream README checked in November 2026 recommends **x86-64, 16 CPU threads,
+16 GB RAM and 350 GB disk with indexed search**; without indexed search its estimate
+is 2 threads, 4 GB and 100 GB. These are estimates, not caps: reserve additional
+space for downloads, imports, indexes, backups and growth. Mint's name-based matching
+needs indexed search, so a database-only mirror is insufficient. The upstream stack
+builds images from its supplied build contexts; its current PostgreSQL version and
+schema are independent of Mint's. Do not assume ARM NAS support or sufficient space.
+
+- [Core catalog dumps](https://musicbrainz.org/doc/MusicBrainz_Database/Download)
+  (`mbdump.tar.bz2`) are **CC0**. Derived data (including user tags/ratings),
+  edit/editor/statistics and artwork-reference dumps have **CC BY-NC-SA 3.0**
+  terms. Preserve applicable attribution and share-alike obligations; do not label
+  the whole installation CC0: upstream's default `createdb.sh -fetch` imports
+  noncommercial-licensed dumps too, not just the CC0 core. Artwork-reference dumps do not contain cover images,
+  and metadata licensing does not license audio or artwork.
+- [Live Data Feed](https://musicbrainz.org/doc/Live_Data_Feed) replication packets
+  are **CC BY-NC-SA 3.0**. Personal/noncommercial operators can obtain a free
+  MetaBrainz account/access token. Commercial use requires reviewing MetaBrainz's
+  account/licensing arrangements; do not assume replication is free for any use.
+- A dump-only installation is a **snapshot**, not a live mirror. Database
+  replication does not itself update Solr. Rebuild indexes on a deliberate schedule
+  or evaluate upstream's explicitly experimental live indexing. Upstream's default
+  replication cron is daily, not hourly; monitor both replication lag and index age.
+
+#### Explicit provisioning (large download; operator action required)
+
+Mint includes an opt-in, pinned upstream provisioner,
+[`deploy/docker/musicbrainz.mjs`](../deploy/docker/musicbrainz.mjs), and the checked
+[`docker-compose.musicbrainz.yml`](../docker-compose.musicbrainz.yml) connection
+overlay. These manage actual upstream containers, not a metadata proxy/cache.
+Requirements: Node.js 22+, Git, Bash, Docker Compose 2.24+ and the capacity/license
+review above. Upstream revision is pinned to
+`7536deb1d528508d5ec3ee2f710f9c98c764fb01`; upgrading that pin requires reviewing
+upstream schema and migration guidance.
+
+Run these **from the Mint checkout**, choosing a new, permanent project-relative
+directory (the example under `data` is ignored by Git):
+
+```bash
+# Source checkout and Compose configuration only. No image build, dataset fetch or startup.
+node deploy/docker/musicbrainz.mjs prepare data/musicbrainz-upstream
+node deploy/docker/musicbrainz.mjs config data/musicbrainz-upstream
+# Explicit image build; still no metadata database download.
+node deploy/docker/musicbrainz.mjs build data/musicbrainz-upstream
+# LARGE metadata download/import. Run only after reviewing resources and CC BY-NC-SA terms.
+node deploy/docker/musicbrainz.mjs import data/musicbrainz-upstream --accept-large-download-and-license
+# Start the imported upstream stack, then explicitly build search indexes.
+node deploy/docker/musicbrainz.mjs start data/musicbrainz-upstream
+node deploy/docker/musicbrainz.mjs index data/musicbrainz-upstream
+```
+
+The provisioner refuses an existing preparation directory, a changed upstream
+revision, starting before successful import, and repeating a completed import.
+A failed import does not get a success marker: inspect upstream logs and any
+partially imported database before retrying. It never deletes or resets data
+to repair failures. Do not rerun import as an update mechanism.
+
+Import/indexing may take hours. Upstream's alternative prebuilt indexes
+(approximately 60 GB compressed) remain a separate explicit large download.
+No import or indexing happens during Mint startup, updates, `prepare`, `config`,
+or `start`. The upstream project uses the distinct Compose name `mint-musicbrainz`
+and its own named stores. Retain its directory, volumes and replication secrets
+through updates and back up deliberately.
+
+The supplied upstream override removes **all** API host ports and attaches only
+the MusicBrainz API to the internal `mint_metadata` bridge; its database, Solr and
+Valkey remain on its own network. The provisioner creates that bridge if absent
+and refuses an existing non-internal bridge. Do **not** enable upstream's
+`publishing-all-ports`: its README warns that internal services are unsafe to expose.
+
+Verify lookup **and indexed search** in the imported stack before connecting Mint.
+Then use the checked overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml up -d worker
+```
+
+Use both files on subsequent updates, together with any existing Plex override.
+For the NAS template, use `docker-compose.nas.yml` instead of `docker-compose.yml`;
+project editors may merge the worker attachment and external-network declaration
+from the overlay into their private compose text. Advanced provisioning still
+requires the commands above; this is **not** a one-paste NAS installation. Without
+Git/Bash/build support, use a separately managed upstream installation instead.
+No public service joins `mint_metadata`, and original music mounts remain unchanged.
+Never publish mirror internals through Mint's tunnel.
+
+Optionally enable replication **in the upstream directory**, following its README:
+   `admin/set-replication-token`, `admin/configure add replication-token`, then
+   recreate its services. Run `docker compose exec -T musicbrainz replication.sh`
+   to catch up, and explicitly enable `admin/configure add replication-cron` if
+   desired. Keep that token only in the upstream project's secrets; Mint never needs
+   it. Use `docker compose --project-name mint-musicbrainz` for manual commands in
+   that directory so they operate on the provisioned project's existing stores.
+   Plan search-index refreshes and upstream schema upgrades separately; do not
+   remove the supplied network override when enabling replication.
+
+For a different host, use a trusted private/VPN API endpoint ending in `/ws/2`,
+with firewall/TLS appropriate to that connection; `localhost` inside Mint's worker
+is not the other host. No username/password, query or fragment is accepted in the
+configured API base.
+
+#### Runtime behavior and verification
+
+Only worker `musicBrainzJson` consumers use this setting: recording acquisition,
+artist metadata and album-art identity matching. Web missing-music resolution
+currently still uses public MusicBrainz; Cover Art Archive, Wikidata, Wikipedia
+and ListenBrainz also remain separate public services.
+
+Mirror requests preserve the query and user-agent, allow at most **3 seconds per
+attempt** (or the caller's shorter timeout), do not retry and reject redirects.
+Transport/HTTP/invalid-JSON or malformed endpoint-response failures log a warning and fall back to the original
+public API with its existing timeout/retry settings. The per-worker serialized
+1.1-second MusicBrainz throttle remains in place, including public fallback.
+There is no guaranteed speedup, global fleet-wide throttle or catalog freshness
+check. A valid empty or outdated mirror result is not an outage and does not trigger
+public fallback or silently substitute a different recording. A broken mirror can
+add up to three seconds before the existing public request budget.
+Recording, artist and release-group searches require their expected result arrays
+(including valid empty arrays); lookups require entity identity and title/name.
+An arbitrary `{}` or malformed entries are not accepted as empty successful searches.
+
+Verify a `/ws/2/artist?query=artist:Queen&fmt=json&limit=1` search and a recording
+lookup from the **worker's** network, inspect upstream import/index/replication
+logs, then confirm an explicit missing-recording match. With the mirror stopped,
+confirm the warning and public fallback; if both services fail, the existing
+failure behavior remains. Mint's Compose validation and mocked tests do not prove
+an actual database import, NAS connectivity or replication. The pinned upstream
+checkout/config and Mint overlay were validated without building upstream images
+or importing its database; import, indexed performance and replication remain
+operator verification steps. To disable, remove the connection overlay (or clear
+`MUSICBRAINZ_MIRROR_URL` in your private compose text) and recreate the worker;
+preserve mirror data/backups.
+
+### Optional standalone chart metadata API
+
+The default stacks keep chart fetching in the web server. For a separate
+metadata-only API, both templates include an **opt-in** `chart-source` profile
+and the Dockerfile has a `chart-source` target. The Release workflow builds
+`mint-chart-source` alongside the existing images; verify that workflow published
+your chosen tag before using GHCR. A source change or successful local build
+does not establish image availability.
+
+For the CLI stack, add to your private `.env`:
+
+```dotenv
+COMPOSE_PROFILES=chart-source
+MINT_CHART_SOURCE_URL=http://chart-source:3090
+```
+
+Run `docker compose config --quiet`, pull the available image, then
+`docker compose up -d chart-source web`. To build locally from a checkout before
+publication: `docker build --target chart-source -t mint-chart-source:local .`,
+then use a private Compose override selecting that local image. The packaged
+service bundles its TypeScript and dependencies; it does not need `tsx` at runtime
+or the application/media mounts.
+
+NAS users must enable the `chart-source` profile in their project editor (or
+remove only that service's `profiles: [chart-source]` line in their private copy),
+then set the top-level `MINT_CHART_SOURCE_URL` setting to
+`http://chart-source:3090`. Keep it blank until the service is running; an editor
+without profile controls must not leave a disabled service configured as the
+web upstream. Default NAS deployment still starts the original 13 services.
+
+The service gets only `REDIS_URL`, `PORT=3090` and `MINT_CHARTS_ENABLED`. It runs
+as a non-root user with a read-only filesystem, no secret/media volumes and no
+published ports, on the private `data` network. It requires outbound HTTPS to
+its public metadata providers. `/healthz` checks Redis; `/v1/charts` lists the
+catalog without fetching providers. Check health and a bounded chart request
+from the web container's network. Redis/provider failures remain explicit; an
+unreachable configured API does not silently fall back to direct fetching.
+
+For Vercel, `http://chart-source:3090` is **not reachable** outside Docker. Leave
+the Vercel setting unset unless you separately design and secure connectivity
+to an independently hosted API. Do not expose this unauthenticated internal
+service through Mint's Caddy/Cloudflare routes as a workaround. To disable,
+clear the web setting and recreate web before disabling the profile; preserve
+Redis and all existing application data.
 
 ## Architecture
 

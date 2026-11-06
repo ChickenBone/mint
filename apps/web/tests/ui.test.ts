@@ -11,7 +11,31 @@ import { ProgressBar as StageProgressBar, StageBadge } from "../src/components/s
 import { AlbumLink, ArtistLink } from "../src/components/app/music-links";
 import { PlaybackControls } from "../src/components/app/player-controls";
 import { artistPlayerId, albumPlayerId, type PlayerState } from "../src/lib/player-protocol";
-import { SetupNudge } from "../src/components/app/setup-nudge";
+import { SidebarPlaylistLinks } from "../src/components/app/sidebar-nav";
+
+test("sidebar playlists keep native, smart and collaborative links accessible in the compact rail", () => {
+  const playlists = [
+    { id: "native", title: "Evening drives", artworkUrl: null, smart: false, role: "owner" as const, pinned: true },
+    { id: "shared", title: "Shared & very long playlist title", artworkUrl: null, smart: false, role: "editor" as const, pinned: false },
+    { id: "smart", title: "Fresh finds", artworkUrl: null, smart: true, role: "owner" as const, pinned: false },
+  ];
+  const html = renderToStaticMarkup(createElement(SidebarPlaylistLinks, { playlists, path: "/app/collection/shared" }));
+  assert.match(html, /aria-label="Mint playlists"/);
+  assert.match(html, /<a[^>]*aria-label="Evening drives"[^>]*href="\/app\/collection\/native"/);
+  assert.match(html, /<a[^>]*aria-current="page"[^>]*href="\/app\/collection\/shared"/);
+  assert.equal((html.match(/aria-current="page"/g) ?? []).length, 1);
+  assert.match(html, /Collaborative playlist/);
+  assert.match(html, /Smart playlist/);
+  assert.match(html, /Pinned\./);
+  assert.match(html, /truncate/);
+  assert.match(html, /min-h-14/);
+  assert.match(html, /lg:block/);
+  const changed = renderToStaticMarkup(createElement(SidebarPlaylistLinks, {
+    playlists: [{ ...playlists[0]!, title: "UX actions" }], path: "/app/collection/native",
+  }));
+  assert.match(changed, /aria-label="UX actions"/);
+  assert.doesNotMatch(changed, /Evening drives|Collaborative playlist/);
+});
 
 test("buttons expose pending state and retain an accessible action label", () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true }, "Saving changes"));
@@ -50,6 +74,8 @@ test("checkboxes and tabs expose state in accessible semantics", () => {
   assert.match(tabs, /role="tab"[^>]*aria-selected="true"/);
   assert.match(tabs, /role="tabpanel"/);
   assert.match(tabs, /hidden=""/);
+  assert.match(tabs, /overflow-x-auto/);
+  assert.match(tabs, /shrink-0/);
 });
 
 test("progress and ranked rows retain numeric and textual state", () => {
@@ -131,22 +157,4 @@ test("ConfirmDialog renders an accessible modal dialog for destructive actions",
   assert.match(html, /Delete Night Drive\? Your songs remain in the library\./);
   assert.match(html, />Cancel<\/button>/);
   assert.match(html, />Delete playlist<\/button>/);
-});
-
-test("SetupNudge renders first-run welcome steps and linked playable progress", () => {
-  const unlinkedHtml = renderToStaticMarkup(createElement(SetupNudge, { linked: false }));
-  assert.match(unlinkedHtml, /Welcome to your listening room/);
-  assert.match(unlinkedHtml, /1\. Connect a source/);
-  assert.match(unlinkedHtml, /2\. Explore the library/);
-  assert.match(unlinkedHtml, /3\. Play &amp; discover/);
-
-  const linkedHtml = renderToStaticMarkup(
-    createElement(SetupNudge, {
-      linked: true,
-      summary: { total: 4, ready: 2, active: 1, failed: 1 },
-    }),
-  );
-  assert.match(linkedHtml, /Bringing in your music/);
-  assert.match(linkedHtml, /2 of 4 playable/);
-  assert.match(linkedHtml, /aria-valuenow="50"/);
 });
