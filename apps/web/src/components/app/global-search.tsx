@@ -1,13 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { Disc3, ListMusic, MicVocal, Play, Search, TrendingUp, X } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { ArrowDownToLine, Disc3, ListMusic, Loader2, MicVocal, Play, Search, TrendingUp } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { MissingMusic } from "@/components/app/missing-music";
+import { ReportIssueButton } from "@/components/app/report-issue";
 import { fetchCatalog } from "@/lib/browser-catalog";
+import { CHARTS } from "@/lib/charts";
 import { formatDuration } from "@/lib/format";
-import type { PlayerItem } from "@/lib/player-protocol";
+import type { RecordingSearchItem } from "@/lib/music-requests";
+import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
+import { searchResponseIsCurrent, uniqueExternalResults } from "@/lib/unified-search";
+import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
@@ -21,7 +26,12 @@ const browseTiles = [
 ];
 const emptyRecent: string[] = [];
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };
-type SearchResult = { query: string; retry: number; groups: ResultGroup[]; error: string };
+type LocalResult = { query: string; groups: ResultGroup[]; errors: number; loading: boolean };
+type RecordingResult = RecordingSearchItem;
+type ExternalResult = { query: string; items: RecordingResult[]; loading: boolean; error: string };
+type RequestState = { trackId: string; stage: string; progress: number; error: string | null };
+const emptyGroups: ResultGroup[] = [];
+const emptyRecordings: RecordingResult[] = [];
 let recentRaw: string | null = null;
 let recentValue: string[] = emptyRecent;
 
@@ -37,16 +47,6 @@ function getRecentSearches() {
   return recentValue;
 }
 
-function getPhoneViewport() {
-  return window.matchMedia("(max-width: 767px)").matches;
-}
-
-function subscribeViewport(listener: () => void) {
-  const media = window.matchMedia("(max-width: 767px)");
-  media.addEventListener("change", listener);
-  return () => media.removeEventListener("change", listener);
-}
-
 function subscribeRecent(listener: () => void) {
   window.addEventListener("storage", listener);
   window.addEventListener("mint:recent-searches", listener);
@@ -56,18 +56,25 @@ function subscribeRecent(listener: () => void) {
   };
 }
 
-function isEditable(target: EventTarget | null) {
-  return target instanceof HTMLElement && (target.isContentEditable || target.matches("input,textarea,select,button,a,[role=button],[role=menuitem]"));
-}
-
-export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage?: boolean; initialQuery?: string }) {
-  const [open, setOpen] = useState(fullPage), [query, setQuery] = useState(initialQuery);
-  const [result, setResult] = useState<SearchResult | null>(null), [retry, setRetry] = useState(0);
+export function GlobalSearch() {
+  const params = useSearchParams();
+  const urlQuery = params.get("q") ?? "";
+  const query = urlQuery.slice(0, 100);
+  const [local, setLocal] = useState<LocalResult | null>(null);
+  const [external, setExternal] = useState<ExternalResult | null>(null);
+  const [retry, setRetry] = useState(0);
+  const [requests, setRequests] = useState<Record<string, RequestState>>({});
+  const [playable, setPlayable] = useState<Record<string, PlayerItem>>({});
   const [online, setOnline] = useState(true);
+  const normalized = query.trim();
+  const input = useRef<HTMLInputElement>(null), player = usePlayer(), requestGeneration = useRef(0);
   const recent = useSyncExternalStore(subscribeRecent, getRecentSearches, () => emptyRecent);
-  const phone = useSyncExternalStore(subscribeViewport, getPhoneViewport, () => false);
-  const trigger = useRef<HTMLButtonElement>(null), input = useRef<HTMLInputElement>(null), panel = useRef<HTMLDivElement>(null);
-  const pushedHistory = useRef(false), restoreFocus = useRef(false), player = usePlayer();
+  const activeLocal = local?.query === normalized ? local : null;
+  const activeExternal = external?.query === normalized ? external : null;
+  const groups = activeLocal?.groups ?? emptyGroups;
+  const catalogMatches = useMemo(() => groups.find((group) => group.type === "track")?.items ?? [], [groups]);
+  const externalItems = activeExternal?.items ?? emptyRecordings;
+  const visibleExternal = uniqueExternalResults(catalogMatches, externalItems);
   const remember = useCallback((value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -77,14 +84,19 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
     window.dispatchEvent(new Event("mint:recent-searches"));
   }, []);
 
-  const close = useCallback((restore = true) => {
-    restoreFocus.current = restore;
-    setOpen(false);
-    if (pushedHistory.current && history.state?.mintSearch) {
-      pushedHistory.current = false;
-      history.back();
+  const hydratePlayable = useCallback(async (trackId: string) => {
+    try {
+      const response = await fetch("/api/player/items", { method: "POST", cache: "no-store",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [trackId] }) });
+      if (!response.ok) return;
+      const body: unknown = await response.json();
+      if (!body || typeof body !== "object" || !("items" in body) || !Array.isArray(body.items)) return;
+      const item = playerItemSchema.parse(body.items[0]);
+      if (item.type === "track" && item.id === trackId) setPlayable((current) => ({ ...current, [trackId]: item }));
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) console.error("Search result playback lookup failed", error);
     }
-  }, []);
+  }, [setPlayable]);
 
   useEffect(() => {
     const updateOnline = () => setOnline(navigator.onLine);
@@ -95,140 +107,247 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
   }, []);
 
   useEffect(() => {
-    if (!open && restoreFocus.current) {
-      restoreFocus.current = false;
-      trigger.current?.focus();
+    input.current?.focus({ preventScroll: true });
+    const focusSearch = () => input.current?.focus({ preventScroll: true });
+    window.addEventListener("mint:focus-search", focusSearch);
+    return () => window.removeEventListener("mint:focus-search", focusSearch);
+  }, []);
+
+  useEffect(() => {
+    if (normalized.length < 2) {
       return;
     }
-    if (!open || fullPage) return;
-    input.current?.focus();
-    const escape = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      close();
-    };
-    const back = () => {
-      if (pushedHistory.current) {
-        pushedHistory.current = false;
-        restoreFocus.current = true;
-        setOpen(false);
-        window.setTimeout(() => trigger.current?.focus(), 50);
-      }
-    };
-    window.addEventListener("keydown", escape);
-    window.addEventListener("popstate", back);
-    return () => {
-      window.removeEventListener("keydown", escape);
-      window.removeEventListener("popstate", back);
-    };
-  }, [open, fullPage, close]);
-
-  useEffect(() => {
-    if (!fullPage) return;
-    input.current?.focus();
-  }, [fullPage]);
-
-  useEffect(() => {
-    const keydown = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey || isEditable(event.target) || phone) return;
-      event.preventDefault();
-      trigger.current?.click();
-    };
-    window.addEventListener("keydown", keydown);
-    return () => window.removeEventListener("keydown", keydown);
-  }, [phone]);
-
-  useEffect(() => {
-    const normalized = query.trim();
-    if (!open || normalized.length < 2) return;
+    const generation = requestGeneration.current;
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      void Promise.all((["track", "artist", "album"] as const).map(async (type) => {
-        const params = new URLSearchParams({ kind: "library", type, q: normalized, size: "8", start: "0" });
-        return { label: type === "track" ? "Songs" : type === "artist" ? "Artists" : "Albums", type,
-          items: (await fetchCatalog(params, controller.signal)).items };
-      })).then((result) => {
-        if (!controller.signal.aborted) setResult({ query: normalized, retry, groups: result.filter((group) => group.items.length), error: "" });
-      }).catch((reason: unknown) => {
-        if (!controller.signal.aborted) setResult({ query: normalized, retry, groups: [], error: reason instanceof Error ? reason.message : "Search results could not load. Try again." });
+    const types = ["track", "artist", "album"] as const;
+    const localTimer = window.setTimeout(() => {
+      void Promise.allSettled(types.map(async (type) => {
+        const catalogParams = new URLSearchParams({ kind: "library", type, q: normalized, size: "8", start: "0" });
+        const page = await fetchCatalog(catalogParams, controller.signal);
+        return { label: type === "track" ? "Songs" : type === "artist" ? "Artists" : "Albums", type, items: page.items };
+      })).then((settled) => {
+        if (!searchResponseIsCurrent(normalized, input.current?.value.trim().slice(0, 100) ?? "", controller.signal.aborted) ||
+            generation !== requestGeneration.current) return;
+        const nextGroups: ResultGroup[] = [];
+        let errors = 0;
+        for (const result of settled) {
+          if (result.status === "fulfilled") {
+            if (result.value.items.length) nextGroups.push(result.value);
+          } else if (!(result.reason instanceof DOMException && result.reason.name === "AbortError")) errors++;
+        }
+        setLocal({ query: normalized, groups: nextGroups, errors, loading: false });
       });
-    }, 180);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [open, query, retry, setResult]);
+    }, 90);
+    const externalTimer = window.setTimeout(() => {
+      void fetch(`/api/music/search?${new URLSearchParams({ q: normalized })}`, {
+        cache: "no-store", credentials: "same-origin", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(12_000)]),
+      }).then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The music catalog could not be reached.");
+        if (!Array.isArray(body.items)) throw new Error("The music catalog returned an invalid response.");
+        return body.items as RecordingResult[];
+      }).then((items) => {
+        if (!searchResponseIsCurrent(normalized, input.current?.value.trim().slice(0, 100) ?? "", controller.signal.aborted) ||
+            generation !== requestGeneration.current) return;
+        setExternal({ query: normalized, items, loading: false, error: "" });
+        for (const item of items) {
+          if (item.existing?.playable) void hydratePlayable(item.existing.id);
+        }
+        setRequests((current) => {
+          const next = { ...current };
+          for (const item of items) {
+            if (item.existing && !next[item.id] && !item.existing.playable) next[item.id] = {
+              trackId: item.existing.id, stage: item.existing.stage, progress: 0,
+              error: item.existing.stage === "failed" ? "Couldn’t add this song." : null,
+            };
+          }
+          return next;
+        });
+      }).catch((error: unknown) => {
+        if (searchResponseIsCurrent(normalized, input.current?.value.trim().slice(0, 100) ?? "", controller.signal.aborted) &&
+            generation === requestGeneration.current) setExternal({ query: normalized, items: [], loading: false,
+          error: error instanceof Error ? error.message : "The music catalog could not be reached." });
+      });
+    }, 300);
+    return () => { controller.abort(); window.clearTimeout(localTimer); window.clearTimeout(externalTimer); };
+  }, [normalized, retry, hydratePlayable]);
 
-  const show = () => {
-    if (fullPage) return;
-    pushedHistory.current = true;
-    history.pushState({ ...(history.state ?? {}), mintSearch: true }, "");
-    setOpen(true);
+  useEffect(() => {
+    const active = externalItems.filter((item) => {
+      const request = requests[item.id];
+      return request && request.stage !== "failed" && !playable[request.trackId] &&
+        (request.stage === "ready" || request.stage === "analyzing");
+    });
+    if (!active.length) return;
+    const timer = window.setInterval(() => {
+      for (const item of active) {
+        const request = requests[item.id];
+        if (request) void hydratePlayable(request.trackId);
+      }
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [externalItems, hydratePlayable, playable, requests]);
+
+  useRealtime((event) => {
+    if (event.type !== "track") return;
+    const track = event.data;
+    setRequests((current) => {
+      const matches = Object.entries(current).filter(([, request]) => request.trackId === track.id);
+      if (!matches.length) return current;
+      const next = { ...current };
+      for (const [recordingId] of matches) next[recordingId] = {
+        trackId: track.id, stage: track.stage, progress: track.progress,
+        error: track.stage === "failed" ? "Couldn’t add this song." : null,
+      };
+      return next;
+    });
+    if (track.stage === "ready" || track.stage === "analyzing") void hydratePlayable(track.id);
+  });
+
+  const addToLibrary = async (item: RecordingResult, youtubeUrl?: string) => {
+    if (requests[item.id] && requests[item.id]!.stage !== "failed") return;
+    setRequests((current) => ({ ...current, [item.id]: { trackId: item.existing?.id ?? "", stage: "matching", progress: 0, error: null } }));
+    try {
+      const response = await fetch("/api/music/search", { method: "POST", cache: "no-store", credentials: "same-origin",
+        headers: { "content-type": "application/json" }, body: JSON.stringify({ token: item.token, ...(youtubeUrl?.trim() ? { youtubeUrl: youtubeUrl.trim() } : {}) }) });
+      const body = await response.json();
+      if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The request could not be completed.");
+      if (typeof body.trackId !== "string" || typeof body.stage !== "string") throw new Error("The request could not be confirmed.");
+      setRequests((current) => ({ ...current, [item.id]: { trackId: body.trackId, stage: body.stage, progress: 0, error: null } }));
+      if (body.stage === "ready" || body.stage === "analyzing") void hydratePlayable(body.trackId);
+    } catch (error) {
+      console.error("Search recording request failed", error);
+      setRequests((current) => ({ ...current, [item.id]: { trackId: item.existing?.id ?? "", stage: "failed", progress: 0, error: "Couldn’t add this song. Try again." } }));
+    }
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" && event.target === input.current) remember(query);
+  };
+  const updateQuery = (value: string) => {
+    requestGeneration.current++;
+    const next = new URL(window.location.href);
+    if (value) next.searchParams.set("q", value.slice(0, 100)); else next.searchParams.delete("q");
+    window.history.replaceState(window.history.state, "", `${next.pathname}${next.search}${next.hash}`);
+  };
+  const retrySearch = () => {
+    setLocal({ query: normalized, groups: [], errors: 0, loading: true });
+    setExternal({ query: normalized, items: [], loading: true, error: "" });
+    requestGeneration.current++;
+    setRetry((value) => value + 1);
   };
   const chooseTrack = (item: PlayerItem) => {
     remember(query);
-    close(false);
     if (player) void player.command({ action: "play", item });
   };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "Escape" && !fullPage) {
-      event.preventDefault();
-      close();
-    } else if (event.key === "Enter" && event.target === input.current) {
-      remember(query);
-    } else if (event.key === "Tab" && !fullPage && panel.current && phone) {
-      const targets = Array.from(panel.current.querySelectorAll<HTMLElement>("button:not(:disabled),a[href],input:not(:disabled)"))
-        .filter((element) => element.offsetParent !== null);
-      const first = targets[0], last = targets.at(-1);
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
-    }
-  };
-  const visible = fullPage || open;
-  const activeResult = result?.query === query.trim() && result.retry === retry ? result : null;
-  const groups = activeResult?.groups ?? [];
-  const loading = open && query.trim().length >= 2 && !activeResult;
-  const error = activeResult?.error ?? "";
+  const localLoading = normalized.length >= 2 && activeLocal?.loading !== false;
+  const externalLoading = normalized.length >= 2 && activeExternal?.loading !== false;
+  const isEmpty = !localLoading && !externalLoading && !groups.length && !visibleExternal.length &&
+    !activeExternal?.error && !activeLocal?.errors;
 
-  return <div className={fullPage ? "w-full" : "relative min-w-0 flex-1"}>
-    {!fullPage && <button ref={trigger} type="button" aria-label="Search your music" aria-haspopup="dialog" aria-expanded={open}
-      onClick={show} className="flex min-h-11 items-center gap-3 rounded-full px-3 text-sm text-muted hover:bg-elevated hover:text-fg focus-visible:outline-action sm:w-full sm:max-w-sm sm:bg-elevated sm:px-5">
-      <Search className="size-4 shrink-0" aria-hidden /><span className="hidden sm:inline">Search your music</span><span className="sr-only sm:hidden">Search your music</span>
-      <kbd className="ml-auto hidden rounded bg-hover px-1.5 py-0.5 text-xs text-faint md:inline">/</kbd>
-    </button>}
-    {visible && <div ref={panel} role="dialog" aria-label="Search your music" aria-modal={!fullPage && phone || undefined}
-      onKeyDown={onKeyDown} onMouseDown={(event) => {
-        if (!fullPage && event.target === event.currentTarget && phone) close();
-      }}
-      className={fullPage ? "mx-auto max-w-6xl" : "search-panel fixed inset-0 z-[var(--z-overlay)] overflow-y-auto bg-surface p-5 pt-[max(1.25rem,var(--safe-area-top))] md:absolute md:inset-auto md:right-0 md:top-[calc(100%+0.75rem)] md:max-h-[min(75dvh,48rem)] md:w-[min(44rem,calc(100vw-6rem))] md:rounded-surface md:border md:border-line md:bg-elevated md:p-6 md:shadow-floating"}>
-      <div className="flex items-center gap-3">
-        <label className="relative min-w-0 flex-1">
-          <span className="sr-only">Search songs, artists or albums</span>
-          <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted" aria-hidden />
-          <input ref={input} type="search" role="searchbox" value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search songs, artists or albums" className="min-h-12 w-full rounded-full bg-hover pl-12 pr-4 text-sm text-fg placeholder:text-faint outline-none focus-visible:ring-2 focus-visible:ring-mint" />
-        </label>
-        {!fullPage && <button type="button" aria-label="Close search" onClick={() => close()} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><X className="size-5" /></button>}
-      </div>
-      {online === false && <p role="status" className="mt-4 text-sm text-warn">You’re offline. Search needs a connection; downloaded songs remain available in Downloads.</p>}
-      {error && <p role="alert" className="mt-4 text-sm text-danger">{error} <button type="button" className="underline" onClick={() => setRetry((value) => value + 1)}>Retry</button></p>}
-      {!query.trim() && !!recent.length && <section className="mt-6" aria-label="Recent searches"><h2 className="mb-2 text-base font-bold">Recent searches</h2>
-        <ul className="flex flex-wrap gap-2">{recent.map((item) => <li key={item}><button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-hover px-4 text-sm text-fg hover:bg-line" onClick={() => setQuery(item)}><Search className="size-4 text-muted" aria-hidden />{item}</button></li>)}</ul>
+  return <div onKeyDown={onKeyDown} className="w-full">
+    <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">Search</h1>
+    <label className="relative mt-6 block max-w-3xl">
+      <span className="sr-only">Search songs, artists or albums</span>
+      <Search className="pointer-events-none absolute left-4 top-1/2 size-5 -translate-y-1/2 text-muted" aria-hidden />
+      <input ref={input} type="search" role="searchbox" value={query} maxLength={100}
+        onChange={(event) => updateQuery(event.currentTarget.value)} placeholder="Songs, artists or albums"
+        className="min-h-14 w-full rounded-full bg-elevated pl-12 pr-5 text-base text-fg placeholder:text-faint ring-1 ring-line outline-none focus-visible:ring-2 focus-visible:ring-mint" />
+    </label>
+    {!online && <p role="status" className="mt-4 text-sm text-warn">You’re offline. Connect to search and add songs.</p>}
+
+    {!normalized && <>
+      {!!recent.length && <section className="mt-7" aria-label="Recent searches"><h2 className="mb-3 text-lg font-bold">Recent searches</h2>
+        <ul className="flex flex-wrap gap-2">{recent.map((item) => <li key={item}><button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full bg-hover px-4 text-sm text-fg hover:bg-line" onClick={() => updateQuery(item)}><Search className="size-4 text-muted" aria-hidden />{item}</button></li>)}</ul>
       </section>}
-      {!query.trim() && <nav className="mt-8" aria-label="Browse">
-        <h2 className="mb-3 text-base font-bold">Browse all</h2>
+      <nav className="mt-8" aria-label="Browse all">
+        <h2 className="mb-3 text-lg font-bold">Browse all</h2>
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">{browseTiles.map((tile) => <li key={tile.href}>
-          <Link href={tile.href} onClick={() => close(false)} className={`relative flex aspect-[16/10] min-h-24 overflow-hidden rounded-lg p-4 text-lg font-bold text-fg transition hover:brightness-110 ${tile.className}`}>
+          <Link href={tile.href} className={`relative flex aspect-[16/10] min-h-24 overflow-hidden rounded-lg p-4 text-lg font-bold text-fg transition hover:brightness-110 ${tile.className}`}>
             {tile.label}<tile.icon className="absolute -bottom-2 -right-2 size-16 rotate-12 opacity-30" aria-hidden />
           </Link>
         </li>)}</ul>
-      </nav>}
-      {loading && <p role="status" className="mt-6 text-sm text-muted">Searching…</p>}
-      {!loading && !!groups.length && <SearchResults groups={groups} fullPage={fullPage} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
-        onPlay={chooseTrack} onNavigate={() => { remember(query); close(false); }} />}
-      {!loading && query.trim().length >= 2 && !groups.length && !error && <>
-        <p className="mt-6 text-sm text-muted">No songs, artists or albums match “{query}”.</p>
-        <MissingMusic query={query.trim()} />
-      </>}
-    </div>}
+      </nav>
+      <section className="mt-8" aria-labelledby="search-charts-heading">
+        <h2 id="search-charts-heading" className="mb-3 text-xl font-bold">Charts</h2>
+        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {CHARTS.map((chart) => <li key={chart.id}>
+            <Link href={`/app/discover/charts/${encodeURIComponent(chart.id)}`}
+              className="flex min-h-16 items-center justify-between gap-4 rounded-control px-4 py-3 hover:bg-elevated focus-visible:outline-action">
+              <span className="min-w-0"><span className="block truncate font-semibold">{chart.title}</span>
+                <span className="block truncate text-sm text-muted">{chart.territory} · {chart.providerName}</span></span>
+              <span aria-hidden className="text-muted">→</span>
+            </Link>
+          </li>)}
+        </ul>
+      </section>
+    </>}
+
+    {normalized.length === 1 && <p className="mt-6 text-sm text-muted">Type at least two characters to search.</p>}
+    {normalized.length >= 2 && activeLocal?.errors ? <p role="status" className="mt-5 text-sm text-warn">
+      Some library results couldn’t load. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
+    </p> : null}
+    {normalized.length >= 2 && localLoading && !groups.length && <p role="status" className="mt-6 text-sm text-muted">Searching your library…</p>}
+    {!localLoading && !!groups.length && <SearchResults groups={groups} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
+      onPlay={chooseTrack} onNavigate={() => remember(query)} />}
+    {normalized.length >= 2 && <section className="mt-8" aria-labelledby="external-results-heading">
+      <h2 id="external-results-heading" className="mb-3 text-xl font-bold">More songs</h2>
+      {externalLoading && <p role="status" className="text-sm text-muted">Searching more songs…</p>}
+      {activeExternal?.error && <p role="alert" className="text-sm text-warn">
+        Couldn’t search more songs. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
+      </p>}
+      {!externalLoading && !activeExternal?.error && visibleExternal.length > 0 && <ol className="divide-y divide-line">
+        {visibleExternal.map((item) => <ExternalRecording key={item.id} item={item}
+          request={requests[item.id]} playable={playable[item.existing?.id ?? ""] ?? (requests[item.id] ? playable[requests[item.id]!.trackId] : undefined)}
+          busy={!online} playDisabled={!player?.ready || !!player?.busy} onPlay={chooseTrack} onAdd={(youtubeUrl) => void addToLibrary(item, youtubeUrl)} />)}
+      </ol>}
+      {isEmpty && <p className="text-sm text-muted">No matches. Try another spelling.</p>}
+    </section>}
   </div>;
+}
+
+function ExternalRecording({ item, request, playable, busy, playDisabled, onPlay, onAdd }: {
+  item: RecordingResult; request?: RequestState; playable?: PlayerItem; busy: boolean; playDisabled: boolean;
+  onPlay: (item: PlayerItem) => void; onAdd: (youtubeUrl?: string) => void;
+}) {
+  const current = request ?? (item.existing ? { trackId: item.existing.id, stage: item.existing.stage,
+    progress: 0, error: item.existing.stage === "failed" ? "Couldn’t add this song." : null } : undefined);
+  const failed = current?.stage === "failed" || !!current?.error;
+  const processing = !!current && !failed && !playable;
+  const [youtubeUrl, setYoutubeUrl] = useState("");
+  return <li className="flex min-h-20 items-center gap-3 py-3">
+    <Artwork track={{ artworkUrl: playable?.thumb ?? "" }} className="size-12 shrink-0 rounded" />
+    <div className="min-w-0 flex-1">
+      <p className="truncate font-semibold">{item.title}</p>
+      <p className="truncate text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}{item.durationSec ? ` · ${formatDuration(item.durationSec)}` : ""}</p>
+      {processing && <p className="mt-1 text-xs text-muted">{current.stage === "ready" || current.stage === "analyzing"
+        ? "Checking availability…" : current.progress > 0 ? `Adding · ${Math.round(current.progress * 100)}%` : "Adding to your library…"}</p>}
+      {failed && <p role="alert" className="mt-1 text-xs text-warn">Couldn’t add this song.</p>}
+    </div>
+    {playable ? <button type="button" disabled={playDisabled} onClick={() => onPlay(playable)}
+      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-mint px-4 text-sm font-semibold text-mint-ink disabled:opacity-40">
+      <Play className="size-4 fill-current" aria-hidden />Play
+    </button> : processing ? <span className="inline-flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm text-muted" role="status">
+      <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />Adding
+    </span> : <button type="button" disabled={busy} onClick={() => onAdd()}
+      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-mint px-4 text-sm font-semibold text-mint-ink disabled:opacity-40">
+      <ArrowDownToLine className="size-4" aria-hidden />{failed ? "Retry" : "Add to library"}
+    </button>}
+    {failed && <ReportIssueButton className="min-h-11 rounded-control px-2 text-sm text-muted hover:bg-hover hover:text-fg"
+      context={`${item.title} — ${item.artist}`} icon={false} />}
+    {!processing && !playable && <details className="basis-full pl-14">
+      <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-muted hover:text-fg">Advanced source option</summary>
+      <label className="mt-1 block max-w-lg text-xs text-muted">YouTube video URL
+        <input type="url" maxLength={2048} value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)}
+          placeholder="https://music.youtube.com/watch?v=…"
+          className="mt-2 min-h-11 w-full rounded-control bg-elevated px-3 text-sm text-fg ring-1 ring-line focus-visible:ring-2 focus-visible:ring-mint" />
+      </label>
+      <button type="button" disabled={busy || !youtubeUrl.trim()} onClick={() => onAdd(youtubeUrl)}
+        className="mt-2 inline-flex min-h-11 items-center rounded-full bg-elevated px-4 text-sm font-semibold text-fg ring-1 ring-line hover:bg-hover disabled:opacity-40">
+        Add using this source
+      </button>
+    </details>}
+  </li>;
 }
 
 const albumHref = (id: string) => `/app/library/albums/${encodeURIComponent(id)}`;
@@ -241,17 +360,17 @@ function topResult(groups: ResultGroup[]) {
   return artist ?? track ?? album ?? null;
 }
 
-function SearchResults({ groups, fullPage, canPlay, playDisabled, onPlay, onNavigate }: {
-  groups: ResultGroup[]; fullPage: boolean; canPlay: boolean; playDisabled: boolean;
+function SearchResults({ groups, canPlay, playDisabled, onPlay, onNavigate }: {
+  groups: ResultGroup[]; canPlay: boolean; playDisabled: boolean;
   onPlay: (item: PlayerItem) => void; onNavigate: () => void;
 }) {
   const top = topResult(groups);
-  const songs = groups.find((group) => group.type === "track")?.items.slice(0, fullPage ? 6 : 4) ?? [];
+  const songs = groups.find((group) => group.type === "track")?.items.slice(0, 6) ?? [];
   const artists = groups.find((group) => group.type === "artist")?.items ?? [];
   const albums = groups.find((group) => group.type === "album")?.items ?? [];
   const typeLabel = (item: PlayerItem) => item.type === "artist" ? "Artist" : item.type === "album" ? "Album" : "Song";
   return <>
-    <div className={`mt-6 grid gap-6 ${fullPage ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : "md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"}`}>
+    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
       {top && <section aria-label="Top result">
         <h2 className="mb-3 text-xl font-bold">Top result</h2>
         <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
@@ -274,9 +393,7 @@ function SearchResults({ groups, fullPage, canPlay, playDisabled, onPlay, onNavi
       {!!songs.length && <section aria-label="Songs">
         <h2 className="mb-3 text-xl font-bold">Songs</h2>
         <ul>{songs.map((item) => <MusicItem as="li" item={item} key={item.id} className="group flex min-h-14 items-center gap-3 rounded-control px-2 py-1 hover:bg-hover">
-          <span className="relative shrink-0">
-            <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 rounded" />
-          </span>
+          <span className="relative shrink-0"><Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 rounded" /></span>
           <div className="min-w-0 flex-1">
             <button type="button" onClick={() => onPlay(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{item.title}</button>
             <p onClick={onNavigate} className="mt-0.5 truncate text-xs text-muted"><ArtistLink item={item} /></p>
@@ -293,7 +410,9 @@ function SearchResults({ groups, fullPage, canPlay, playDisabled, onPlay, onNavi
   </>;
 }
 
-function CardShelf({ label, items, round = false, canMenu, onNavigate }: { label: string; items: PlayerItem[]; round?: boolean; canMenu: boolean; onNavigate: () => void }) {
+function CardShelf({ label, items, round = false, canMenu, onNavigate }: {
+  label: string; items: PlayerItem[]; round?: boolean; canMenu: boolean; onNavigate: () => void;
+}) {
   return <section className="mt-8" aria-label={label}>
     <h2 className="mb-3 text-xl font-bold">{label}</h2>
     <ul className="-mx-2 flex snap-x gap-2 overflow-x-auto pb-2">{items.map((item) => <MusicItem as="li" item={item} key={item.id}

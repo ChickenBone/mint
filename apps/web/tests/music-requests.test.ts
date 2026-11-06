@@ -7,7 +7,195 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, eq } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
-import { requestRecording, searchRecordings, youtubeSource } from "../src/lib/music-requests";
+import { readRequestRecording, requestRecording, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
+
+const catalogFixture = () => ({ recordings: [{
+  id: randomUUID(), title: "First Light", length: 90000, score: 100,
+  "artist-credit": [{ name: "Mint Fixture" }], releases: [{ title: "Browser Sessions" }],
+}] });
+
+test("recording tokens validate owner, signature, purpose, expiry and signed metadata without a database", () => {
+  const secret = process.env.MINT_SIGNING_SECRET;
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const item = { id: randomUUID(), title: "First Light", artist: "Mint Fixture", album: null, durationSec: 90 };
+    const token = signToken("music-request", { userId: "owner", recording: item }, 60000);
+    assert.deepEqual(readRequestRecording("owner", token), item);
+    assert.throws(() => readRequestRecording("other", token), /expired/);
+    assert.throws(() => readRequestRecording("owner", `${token}broken`), /expired/);
+    assert.throws(() => readRequestRecording("owner", signToken("other-purpose", { userId: "owner", recording: item }, 60000)), /expired/);
+    assert.throws(() => readRequestRecording("owner", signToken("music-request", { userId: "owner", recording: item }, -1000)), /expired/);
+    assert.throws(() => readRequestRecording("owner", signToken("music-request", { userId: "owner", recording: { ...item, id: "invalid" } }, 60000)));
+  } finally {
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
+
+test("recording metadata prefers the validated mirror and keeps queries bounded and escaped", async () => {
+  const fixture = catalogFixture();
+  const calls: URL[] = [];
+  const fetcher: typeof fetch = async (input, init) => {
+    const target = new URL(String(input)); calls.push(target);
+    assert.equal(init?.redirect, "error");
+    assert.ok(init?.signal);
+    assert.ok(new Headers(init?.headers).get("user-agent")?.startsWith("Mint/"));
+    assert.equal(new Headers(init?.headers).get("accept"), "application/json");
+    assert.equal(target.searchParams.get("limit"), "10");
+    assert.equal(target.searchParams.get("fmt"), "json");
+    return Response.json(fixture);
+  };
+  const items = await searchRecordingMetadata('  First "Light"*  ', fetcher, undefined, { mirrorUrl: "http://mirror.test:5000/ws/2/" });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]!.href.split("?")[0], "http://mirror.test:5000/ws/2/recording");
+  assert.equal(calls[0]!.searchParams.get("query"), 'First \\"Light\\"\\*');
+  assert.equal(items[0]!.durationSec, 90);
+  assert.equal(items[0]!.artist, "Mint Fixture");
+  assert.equal("token" in items[0]!, false);
+  assert.equal("existing" in items[0]!, false);
+  await searchRecordingMetadata("fixture", fetcher, "US-ABC-12-34567", { mirrorUrl: "" });
+  assert.equal(calls[1]!.searchParams.get("query"), "isrc:USABC1234567");
+  for (const query of ["a", " ".repeat(10), "x".repeat(101)]) await assert.rejects(searchRecordingMetadata(query, fetcher));
+  assert.equal(calls.length, 2, "invalid queries must never reach a provider");
+});
+
+test("web recording search reads the server mirror configuration", async () => {
+  const previous = process.env.MUSICBRAINZ_MIRROR_URL;
+  process.env.MUSICBRAINZ_MIRROR_URL = "https://mirror.test/ws/2";
+  try {
+    await searchRecordingMetadata("fixture", async (input) => {
+      assert.equal(new URL(String(input)).origin, "https://mirror.test");
+      return Response.json(catalogFixture());
+    });
+  } finally {
+    if (previous === undefined) delete process.env.MUSICBRAINZ_MIRROR_URL; else process.env.MUSICBRAINZ_MIRROR_URL = previous;
+  }
+});
+
+test("invalid mirror bases never receive a fetch and fall back to canonical public search", async () => {
+  for (const mirrorUrl of ["not a URL", "ftp://mirror.test/ws/2", "https://user:secret@mirror.test/ws/2",
+    "https://mirror.test/ws/2?query=other", "https://mirror.test/ws/2#fragment", "https://mirror.test/arbitrary",
+    "https://mirror.test/prefix/ws/2", "https://musicbrainz.org/ws/2"]) {
+    let calls = 0;
+    await searchRecordingMetadata("fixture", async (input) => {
+      calls++;
+      assert.equal(new URL(String(input)).origin, "https://musicbrainz.org");
+      assert.equal(new URL(String(input)).pathname, "/ws/2/recording");
+      return Response.json(catalogFixture());
+    }, undefined, { mirrorUrl });
+    assert.equal(calls, 1);
+  }
+});
+
+test("unavailable, malformed and oversized mirror responses fall back without hiding public failures", async () => {
+  const badMirrors = [
+    () => { throw new Error("offline"); },
+    () => new Response(null, { status: 503 }),
+    () => new Response(null, { status: 302, headers: { location: "http://other.test/" } }),
+    () => new Response("not JSON"),
+    () => Response.json({ error: "unavailable", recordings: [] }),
+    () => Response.json({ recordings: [{}] }),
+    () => Response.json({ recordings: [{ ...catalogFixture().recordings[0], length: -1 }] }),
+    () => Response.json({ recordings: [{ ...catalogFixture().recordings[0], "artist-credit": [] }] }),
+    () => Response.json({ recordings: Array.from({ length: 11 }, () => catalogFixture().recordings[0]) }),
+    () => new Response("x".repeat(1_000_001)),
+  ];
+  for (const bad of badMirrors) {
+    const calls: string[] = [];
+    const results = await searchRecordingMetadata("fixture", async (input) => {
+      const host = new URL(String(input)).hostname; calls.push(host);
+      return host === "mirror.test" ? bad() : Response.json(catalogFixture());
+    }, undefined, { mirrorUrl: "https://mirror.test/ws/2" });
+    assert.equal(results.length, 1);
+    assert.deepEqual(calls, ["mirror.test", "musicbrainz.org"]);
+  }
+  for (const status of [429, 503]) await assert.rejects(searchRecordingMetadata("fixture", async () => new Response(null, { status }), undefined, { mirrorUrl: "" }), /busy/);
+  await assert.rejects(searchRecordingMetadata("fixture", async () => new Response("x".repeat(1_000_001)), undefined, { mirrorUrl: "" }), /too large/);
+  await assert.rejects(searchRecordingMetadata("fixture", async () => Response.json({ recordings: [{}] }), undefined, { mirrorUrl: "" }), /invalid response/);
+  assert.deepEqual(await searchRecordingMetadata("fixture", async () => Response.json({ recordings: [] }), undefined, { mirrorUrl: "" }), []);
+});
+
+test("client cancellation stops mirror fallback, body reads and cached responses", async () => {
+  const before = new AbortController(); before.abort();
+  let calls = 0;
+  await assert.rejects(searchRecordingMetadata("fixture", async () => { calls++; return Response.json(catalogFixture()); }, undefined, { signal: before.signal }));
+  assert.equal(calls, 0);
+  const during = new AbortController();
+  await assert.rejects(searchRecordingMetadata("fixture", async (_input, init) => {
+    calls++;
+    during.abort();
+    assert.equal(init?.signal?.aborted, true);
+    throw during.signal.reason;
+  }, undefined, { mirrorUrl: "https://mirror.test/ws/2", signal: during.signal }), { name: "AbortError" });
+  assert.equal(calls, 1, "an aborted mirror request must not fall back");
+  for (const highWaterMark of [0, 1]) {
+    const bodyAbort = new AbortController();
+    let cancelled = false;
+    await assert.rejects(searchRecordingMetadata("fixture", async () => new Response(new ReadableStream({
+      pull() { bodyAbort.abort(); },
+      cancel() { cancelled = true; },
+    }, { highWaterMark })), undefined, { mirrorUrl: "", signal: bodyAbort.signal }), { name: "AbortError" });
+    assert.equal(cancelled, true);
+  }
+});
+
+test("metadata cache is bounded, expires, isolates configuration and never stores failed responses", async () => {
+  let calls = 0;
+  const fixture = catalogFixture();
+  const fetcher: typeof fetch = async () => { calls++; return Response.json(fixture); };
+  const options = { mirrorUrl: "", cache: true };
+  const first = await searchRecordingMetadata("fixture", fetcher, undefined, options);
+  first[0]!.title = "changed";
+  assert.equal((await searchRecordingMetadata("fixture", fetcher, undefined, options))[0]!.title, "First Light");
+  assert.equal(calls, 1, "cached results are defensive metadata copies");
+  const cancelled = new AbortController(); cancelled.abort();
+  await assert.rejects(searchRecordingMetadata("fixture", fetcher, undefined, { ...options, signal: cancelled.signal }));
+  assert.equal(calls, 1);
+  const originalNow = Date.now;
+  try {
+    const later = originalNow() + 61_000;
+    Date.now = () => later;
+    await searchRecordingMetadata("fixture", fetcher, undefined, options);
+    assert.equal(calls, 2);
+  } finally { Date.now = originalNow; }
+  for (let i = 0; i < 128; i++) await searchRecordingMetadata(`fixture ${i}`, fetcher, undefined, options);
+  await searchRecordingMetadata("fixture", fetcher, undefined, options);
+  assert.equal(calls, 131, "old entries are evicted at the 128-entry budget");
+  await searchRecordingMetadata("fixture", fetcher, undefined, { ...options, mirrorUrl: "https://mirror.test/ws/2" });
+  assert.equal(calls, 132);
+  let failures = 0;
+  const failing: typeof fetch = async () => { failures++; return new Response(null, { status: 503 }); };
+  for (let i = 0; i < 2; i++) await assert.rejects(searchRecordingMetadata("fixture", failing, undefined, options), /busy/);
+  assert.equal(failures, 2);
+});
+
+test("cached metadata still resolves local status and signs for each searching account without acquiring tracks", async () => {
+  const fixture = catalogFixture(), globalDb = globalThis as unknown as { __mintDb?: unknown };
+  const previous = globalDb.__mintDb, secret = process.env.MINT_SIGNING_SECRET;
+  let local: Array<{ id: string; recordingId: string; stage: "ready"; error: null; detail: null; playable: boolean }> = [];
+  let reads = 0, fetches = 0;
+  globalDb.__mintDb = { db: {
+    select: () => ({ from: () => ({ where: () => ({ limit: async () => { reads++; return local; } }) }) }),
+  } };
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const fetcher: typeof fetch = async () => { fetches++; return Response.json(fixture); };
+    const options = { mirrorUrl: "", cache: true };
+    const first = await searchRecordings("owner", "fixture", fetcher, undefined, options);
+    assert.equal(first[0]!.existing, null);
+    assert.equal(readRequestRecording("owner", first[0]!.token).id, fixture.recordings[0]!.id);
+    local = [{ id: randomUUID(), recordingId: fixture.recordings[0]!.id, stage: "ready", error: null, detail: null, playable: false }];
+    const second = await searchRecordings("other", "fixture", fetcher, undefined, options);
+    assert.equal(second[0]!.existing?.playable, false);
+    assert.equal(readRequestRecording("other", second[0]!.token).id, fixture.recordings[0]!.id);
+    assert.throws(() => readRequestRecording("owner", second[0]!.token), /expired/);
+    local = [{ ...local[0]!, playable: true }];
+    assert.equal((await searchRecordings("owner", "fixture", fetcher, undefined, options))[0]!.existing?.playable, true);
+    assert.equal(fetches, 1); assert.equal(reads, 3);
+  } finally {
+    globalDb.__mintDb = previous;
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
 
 test("manual sources accept only HTTPS video identities", () => {
   assert.equal(youtubeSource("https://music.youtube.com/watch?v=abcdefghijk&list=example"), "abcdefghijk");
@@ -35,12 +223,17 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     const [owner, other] = await db.insert(schema.users).values(["owner", "other"].map((name) =>
       ({ email: `${name}@requests.test`, name, status: "active" as const, passwordHash: "fixture" }))).returning();
     const id = randomUUID(), item = { id, title: "First Light", artist: "Mint Fixture", album: "Browser Sessions", durationSec: 90 };
-    const results = await searchRecordings(owner!.id, "first light", async (input, init) => {
+    let catalogCalls = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      catalogCalls++;
       assert.equal(new URL(String(input)).hostname, "musicbrainz.org");
       assert.ok(new Headers(init?.headers).get("user-agent")?.startsWith("Mint/"));
       return Response.json({ recordings: [{ id, title: item.title, length: 90000, "artist-credit": [{ name: item.artist }], releases: [{ title: item.album }] }] });
-    });
+    };
+    const results = await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true });
     assert.equal(results.length, 1); assert.equal(results[0]!.existing, null);
+    assert.equal(await db.$count(schema.tracks), 0, "metadata search must not create library tracks");
+    assert.equal(await db.$count(schema.userTracks), 0, "metadata search must not grant ownership");
     const token = results[0]!.token;
     await assert.rejects(requestRecording(other!.id, token), /expired/);
     await assert.rejects(requestRecording(owner!.id, `${token}broken`), /expired/);
@@ -58,7 +251,15 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     assert.equal(retried.stage, "queued"); assert.equal(retried.needsQueue, true);
     const [stored] = await db.select().from(schema.tracks).where(eq(schema.tracks.id, trackId));
     assert.equal(stored!.youtubeVideoId, "abcdefghijk"); assert.equal(stored!.error, null);
-    await db.update(schema.tracks).set({ stage: "ready", filePath: "/fixture/audio.flac" }).where(eq(schema.tracks.id, trackId));
+    await db.update(schema.tracks).set({ stage: "ready" }).where(eq(schema.tracks.id, trackId));
+    const readyWithoutFile = await searchRecordings(other!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true });
+    assert.equal(readyWithoutFile[0]!.existing?.playable, false, "a ready-looking stage is not proof of playable audio");
+    assert.equal(readRequestRecording(other!.id, readyWithoutFile[0]!.token).id, id);
+    assert.throws(() => readRequestRecording(owner!.id, readyWithoutFile[0]!.token), /expired/);
+    assert.equal(await db.$count(schema.userTracks), 1, "cached metadata does not become owned by the searching account");
+    await db.update(schema.tracks).set({ filePath: "/fixture/audio.flac" }).where(eq(schema.tracks.id, trackId));
+    assert.equal((await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true }))[0]!.existing?.playable, true);
+    assert.equal(catalogCalls, 1, "local playability and signing are refreshed independently of cached metadata");
     const secondToken = signToken("music-request", { userId: other!.id, recording: item }, 60000);
     assert.equal((await requestRecording(other!.id, secondToken)).needsQueue, false);
     const wrongRecording = signToken("music-request", { userId: owner!.id, recording: { ...item, id: randomUUID(), title: "Other Recording" } }, 60000);

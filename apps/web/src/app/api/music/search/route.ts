@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { boundedJson, publicUrl, RequestInputError } from "@/lib/request";
 import { MusicError } from "@mint/core/music";
-import { searchRecordings, requestRecording } from "@/lib/music-requests";
+import { searchRecordings, requestRecording, type RecordingSearchResponse } from "@/lib/music-requests";
 import { rateLimit } from "@/lib/rate-limit";
 import { enqueueRequested } from "@/lib/queues";
 export const runtime = "nodejs";
@@ -16,7 +16,7 @@ async function handle(request: Request) {
     if (request.method === "GET") {
       const q = z.string().trim().min(2).max(100).parse(new URL(request.url).searchParams.get("q"));
       if (!(await rateLimit(`recordings:${user.id}`, 20, 60)) || !(await rateLimit("recording-catalog", 1, 1))) return json({ error: "Wait a second before searching the recording catalog again." }, 429);
-      return json({ items: await searchRecordings(user.id, q) });
+      return json({ items: await searchRecordings(user.id, q, fetch, undefined, { signal: request.signal }) } satisfies RecordingSearchResponse);
     }
     if (request.headers.get("origin") !== new URL(publicUrl()).origin) return json({ error: "Request origin not allowed." }, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return json({ error: "Send a JSON request." }, 400);
@@ -26,6 +26,7 @@ async function handle(request: Request) {
     if (result.needsQueue) await enqueueRequested(result.trackId, user.id);
     return json(result);
   } catch (error) {
+    if (request.method === "GET" && request.signal.aborted) return json({ error: "Search cancelled." }, 499);
     if (error instanceof MusicError) return json({ error: error.message }, error.status);
     if (error instanceof RequestInputError) return json({ error: error.message }, error.status);
     if (error instanceof z.ZodError || error instanceof SyntaxError) return json({ error: "Invalid request or recording catalog response." }, 400);

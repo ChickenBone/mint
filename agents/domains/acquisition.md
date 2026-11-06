@@ -34,11 +34,11 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Imported by:** [`analysis`](analysis.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map acquisition` (exports, line counts, cross-domain import edges).
 
-### Owned files (33)
+### Owned files (32)
 
 - `apps/web/src/app/app/` `downloads/page.tsx`, `jobs/page.tsx`
 - `apps/web/src/components/` `pipeline-board.tsx`, `stage-badge.tsx`
-- `apps/web/src/components/app/` `downloads.tsx`, `missing-music.tsx`, `retry-button.tsx`
+- `apps/web/src/components/app/` `downloads.tsx`, `retry-button.tsx`
 - `apps/web/src/lib/` `backlog.ts`, `music-requests.ts`
 - `apps/web/tests/` `backlog.test.ts`, `music-requests.test.ts`
 - `apps/worker/src/` `existing-track.ts`, `integrations.ts`, `media.ts`, `music-requests.test.ts`, `parse.test.ts`, `parse.ts`, `track-state.ts`

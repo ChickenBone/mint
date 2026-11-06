@@ -10,7 +10,6 @@ import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKey
 import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
 import { TrackMenuButton, usePlayer } from "./player";
-import { MissingMusic } from "./missing-music";
 import { AlbumLink, ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
 
@@ -102,10 +101,11 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
   if (!collection) return <div role="alert" className="py-12"><h1 className="text-3xl font-bold">This collection link isn&apos;t valid.</h1><Link href="/app/library" className="mt-4 inline-block text-mint underline">Open your library</Link></div>;
   if (!listing) return <div className="mx-auto max-w-4xl py-5">
     <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">Find your next song.</h1>
-    <p className="my-5 max-w-xl text-sm leading-relaxed text-muted">Search for a song, artist or album.</p>
-    <div className="mb-6"><CatalogSearch key="backlog-search" query={q} label="Search all music" /></div>
-    <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/app" className="inline-flex min-h-11 items-center text-mint hover:underline">Your daily recommendations</Link><Link href="/app/library" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Browse the catalog</Link></div>
-    <MissingMusic key={q} query={q} />
+    <p className="my-5 max-w-xl text-sm leading-relaxed text-muted">Search your library and the wider music catalog.</p>
+    <div className="flex flex-wrap gap-3 text-sm font-semibold">
+      <Link href="/app/search" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-mint-ink hover:bg-mint-strong">Open Search</Link>
+      <Link href="/app/library" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Browse your library</Link>
+    </div>
   </div>;
   const detail = identity?.key === identityKey ? identity.page : undefined;
   const first = detail?.items[0] ?? page?.items[0];
@@ -254,7 +254,8 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
           : collection.kind === "artist" ? `No ${type === "track" ? "songs" : "albums"} from this artist are available yet.`
           : activeFilters.length ? "No music matches these filters."
           : "Music appears here as it’s added."}
-      </p>{!q && <div className="mt-5 flex flex-wrap gap-3"><Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Go to Home</Link><Link href="/app/collection" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Your Library</Link></div>}</div>
+      </p>{q ? <Link href={`/app/search?q=${encodeURIComponent(q)}`} className="mt-4 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Search all music</Link>
+        : <div className="mt-5 flex flex-wrap gap-3"><Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Go to Home</Link><Link href="/app/collection" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Your Library</Link></div>}</div>
       : type === "track" ? <CatalogTracks items={page.items} collection={collection} offset={start} album={collection.kind === "album"} />
       : <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">{page.items.map((item) => <CollectionCard key={item.id} item={item} />)}</div>}
     {page && page.total > 100 && <nav aria-label="Library pages" className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">
@@ -264,7 +265,6 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
       </div>
     </nav>}
     {collection.kind === "artist" && <ArtistAbout artistProfile={artistProfile} name={title} />}
-    {collection.kind === "library" && q.trim().length >= 2 && <MissingMusic key={q} query={q} />}
   </div>;
 }
 

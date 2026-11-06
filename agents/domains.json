@@ -332,7 +332,6 @@
         "apps/web/src/lib/music-requests.ts",
         "apps/web/src/lib/backlog.ts",
         "apps/web/src/components/app/downloads.tsx",
-        "apps/web/src/components/app/missing-music.tsx",
         "apps/web/src/components/app/retry-button.tsx",
         "apps/web/src/components/pipeline-board.tsx",
         "apps/web/src/components/stage-badge.tsx",

@@ -229,12 +229,12 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).click();
     await page.getByRole("link", { name: "Search", exact: true }).first().click();
     await page.getByRole("searchbox", { name: "Search songs, artists or albums" }).fill(searchRecording.title);
-    await page.getByRole("button", { name: `Find “${searchRecording.title}”` }).click();
-    await page.getByRole("heading", { name: searchRecording.title, exact: true }).waitFor();
+    await page.getByText(searchRecording.title, { exact: true }).waitFor();
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 0, "Searching must not request a song");
     await shot("search-missing");
     await page.getByRole("button", { name: "Add to library", exact: true }).click();
-    await page.getByText("Requested · view progress").waitFor();
+    await page.getByText("Adding to your library…", { exact: true }).waitFor();
+    await shot("search-requested");
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 1, "The selected fictional recording is requested once");
     await page.getByRole("link", { name: "Home", exact: true }).first().click();
     await page.waitForURL((url) => url.pathname === "/app");
@@ -245,13 +245,12 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
 
     await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
     await page.keyboard.press("/");
-    const searchDialog = page.getByRole("dialog", { name: "Search your music" });
-    const searchbox = searchDialog.getByRole("searchbox", { name: "Search songs, artists or albums" });
+    await page.waitForURL((url) => url.pathname === "/app/search");
+    const searchbox = page.getByRole("searchbox", { name: "Search songs, artists or albums" });
     await searchbox.fill("Quiet Orbit");
-    const searchPlayButton = searchDialog.getByRole("button", { name: "Play Quiet Orbit", exact: true });
+    const searchPlayButton = page.getByRole("button", { name: "Play Quiet Orbit", exact: true });
     await searchPlayButton.waitFor();
     await searchPlayButton.click();
-    await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Search your music"]'));
     try {
       await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).some((audio) => !audio.paused && audio.currentTime > .1));
     } catch (error) {
@@ -259,11 +258,6 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
         await page.locator('[role="alert"]').allTextContents());
       throw error;
     }
-    await page.getByRole("button", { name: "Search your music" }).click();
-    await searchDialog.waitFor();
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector('[role="dialog"][aria-label="Search your music"]'));
-    await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Search your music");
     await page.evaluate(() => {
       document.querySelectorAll("audio").forEach((audio) => { delete audio.dataset.previewIdentity; });
       const active = Array.from(document.querySelectorAll("audio")).find((audio) => !audio.paused);
@@ -336,10 +330,12 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("link", { name: "Close now playing" }).click();
     await page.getByRole("link", { name: "Search", exact: true }).click();
     await page.waitForURL((url) => url.pathname === "/app/search");
-    await page.getByRole("dialog", { name: "Search your music" }).waitFor();
-    const mobileSearchbox = page.getByRole("dialog", { name: "Search your music" }).getByRole("searchbox", { name: "Search songs, artists or albums" });
+    const mobileSearchbox = page.getByRole("searchbox", { name: "Search songs, artists or albums" });
     await mobileSearchbox.waitFor();
     assert.equal(await mobileSearchbox.evaluate((element) => element === document.activeElement), true);
+    await page.goto(`${base}/app/search?q=${encodeURIComponent(searchRecording.title)}`);
+    await page.getByText(searchRecording.title, { exact: true }).waitFor();
+    await shot("mobile-search");
     await page.getByRole("link", { name: "Home", exact: true }).click();
     await page.waitForURL((url) => url.pathname === "/app");
     await page.goto(`${base}/app/music?view=search&q=Quiet%20Orbit`);

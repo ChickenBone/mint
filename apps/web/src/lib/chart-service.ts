@@ -4,7 +4,7 @@ import { PLAYABLE } from "@mint/core/playback";
 import { MusicError } from "@mint/core/music";
 import { toTrackView } from "@mint/core/views";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { CHARTS, chartIdentity, chartKey, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
+import { CHARTS, chartIdentity, chartKey, chartRecordingResolution, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
 import { cachedChart, type CachedChart, type ChartCacheStore } from "./chart-cache";
 import { fetchChartSource } from "./chart-source";
 import { readRequestRecording, requestRecording, searchRecordings } from "./music-requests";
@@ -89,15 +89,13 @@ export async function chartAcquisition(userId: string, input: { chart: string; e
   if (local?.availability === "available") return { status: "available" as const };
   let token = input.token;
   if (!token) {
-    const results = await searchRecordings(userId, `${entry.artist} ${entry.title}`.slice(0, 100), fetch, entry.isrc);
-    const safe = results.filter((result) => compatibleChartRecording(entry, result) &&
-      (entry.recordingId === result.id || entry.durationSec && result.durationSec) &&
-      (!entry.isrc || result.isrcs?.includes(entry.isrc)) &&
-      (!entry.album || result.album && chartKey(entry.album) === chartKey(result.album)));
-    if (safe.length !== 1 || local?.availability === "ambiguous") return { status: "resolve" as const,
+    const { results, automatic } = chartRecordingResolution(entry,
+      await searchRecordings(userId, `${entry.artist} ${entry.title}`.slice(0, 100), fetch, entry.isrc),
+      local?.availability === "ambiguous");
+    if (!automatic) return { status: "resolve" as const,
       message: "Choose the exact recording and, if needed, a source video. Nothing has been requested yet.",
       query: `${entry.artist} ${entry.title}`.slice(0, 100), results };
-    token = safe[0]!.token;
+    token = automatic.token;
   }
   const recording = readRequestRecording(userId, token);
   if (!compatibleChartRecording(entry, recording)) throw new MusicError("That recording differs in artist, title, version or duration. Choose the chart's exact recording; nothing was requested.", 409);

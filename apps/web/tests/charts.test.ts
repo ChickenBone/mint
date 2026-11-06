@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CHARTS, chartKey, chartRequestEffect, compatibleChartRecording, matchChartEntry, type ChartCandidate, type ChartRequestOutcome, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
+import { CHARTS, chartKey, chartRecordingResolution, chartRequestEffect, compatibleChartRecording, confidentChartRecording, matchChartEntry, type ChartCandidate, type ChartRequestOutcome, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
 import { boundedProviderJson, ChartProviderError, fetchChart } from "../src/lib/chart-providers";
 import { cachedChart, CHART_KEEP_SECONDS, type ChartCacheStore } from "../src/lib/chart-cache";
 
@@ -44,6 +44,77 @@ test("acquisition states never turn an absent file into playback; account select
   assert.equal(matchChartEntry({ ...entry, durationSec: null }, [local]).availability, "ambiguous");
   assert.equal(matchChartEntry({ ...entry, durationSec: null }, [local], local.id).availability, "available");
   assert.equal(matchChartEntry(entry, [{ ...local, title: "Distant Window (Live)" }], local.id).availability, "missing");
+});
+const recordingId = "9b16c594-19cd-4ac4-86b2-303114b97045";
+const recording = { id: recordingId, title: entry.title, artist: entry.artist, album: entry.album,
+  durationSec: entry.durationSec, isrcs: ["USFI12600001"], token: "existing-account-bound-signature",
+  existing: null };
+test("resolution exposes only compatible candidates and preserves their signed result objects", () => {
+  const uncertain = { ...recording, id: "bb48ac0a-adb0-4b9e-962e-d1591ed7f2e3", durationSec: null };
+  const results = chartRecordingResolution(entry, [uncertain, { ...recording, artist: "Cover Artist" },
+    { ...recording, title: `${entry.title} (Live)` }, { ...recording, title: `${entry.title} - Remix` },
+    { ...recording, durationSec: 200 }]);
+  assert.deepEqual(results.results, [uncertain]);
+  assert.equal(results.results[0], uncertain, "Filtering must retain the original signed metadata/token, not manufacture a replacement");
+  assert.equal(results.automatic, null, "Missing duration is compatible, not positive confidence");
+  assert.deepEqual(chartRecordingResolution(entry, [{ ...recording, artist: "Cover Artist" },
+    { ...recording, durationSec: 200 }]), { results: [], automatic: null });
+});
+test("explicit-request resolution automatically selects only a uniquely confident recording", () => {
+  assert.equal(chartRecordingResolution(entry, [recording]).automatic, recording);
+  const unknownDuration = { ...recording, id: "bb48ac0a-adb0-4b9e-962e-d1591ed7f2e3", durationSec: null };
+  assert.equal(chartRecordingResolution(entry, [unknownDuration, recording]).automatic, recording);
+  const alternate = { ...recording, id: "bb48ac0a-adb0-4b9e-962e-d1591ed7f2e3" };
+  const ambiguous = chartRecordingResolution(entry, [recording, alternate]);
+  assert.equal(ambiguous.automatic, null);
+  assert.deepEqual(ambiguous.results, [recording, alternate], "Genuine ambiguity retains both usable choices");
+  assert.equal(chartRecordingResolution(entry, [recording], true).automatic, null,
+    "A unique search match must not override ambiguous local editions");
+  assert.equal(chartRecordingResolution({ ...entry, durationSec: null }, [recording]).automatic, null);
+  assert.equal(chartRecordingResolution(entry, [{ ...recording, album: null }]).automatic, null,
+    "Duration alone cannot resolve missing edition metadata");
+});
+test("matching recording identity corrects missing album and duration false negatives without invented confidence", () => {
+  const identified = { ...entry, recordingId };
+  const incomplete = { ...recording, album: null, durationSec: null };
+  assert.equal(confidentChartRecording(identified, incomplete), true,
+    "The recording ID, not absent album/duration metadata, supplies identity evidence");
+  assert.equal(chartRecordingResolution(identified, [incomplete]).automatic, incomplete);
+  assert.equal(matchChartEntry(identified, [{ ...local, mbRecordingId: recordingId, album: null, durationSec: null }]).availability, "available");
+  assert.equal(matchChartEntry(identified, [{ ...local, mbRecordingId: null, album: null }]).availability, "ambiguous");
+  assert.equal(matchChartEntry({ ...entry, isrc: recording.isrcs[0]! }, [local]).availability, "available",
+    "Local duration/album matching is unchanged; the index does not pretend to verify ISRC");
+  const isrcEntry = { ...entry, isrc: recording.isrcs[0]!, durationSec: null };
+  assert.equal(chartRecordingResolution(isrcEntry, [incomplete]).automatic, incomplete,
+    "An actual matching ISRC is an identity anchor even when MusicBrainz omits duration and album");
+  assert.equal(chartRecordingResolution(isrcEntry, [{ ...incomplete, isrcs: [] }]).automatic, null);
+  assert.equal(chartRecordingResolution({ ...entry, durationSec: null }, [incomplete]).automatic, null,
+    "Absent identifiers, album and duration never become confidence");
+  assert.equal(chartRecordingResolution(identified, [{ ...recording, album: "Different Release" }]).automatic, null,
+    "Known album conflicts remain edition ambiguity, even with a matching recording ID");
+});
+test("strong recording identities never override artist, cover, version, identifier or duration conflicts", () => {
+  const identified = { ...entry, recordingId, isrc: recording.isrcs[0]! };
+  for (const incompatible of [
+    { ...recording, artist: "The Cover Moons" },
+    { ...recording, title: `${entry.title} (Cover)` },
+    { ...recording, title: `${entry.title} (Live)` },
+    { ...recording, title: `${entry.title} - Remix` },
+    { ...recording, title: `${entry.title} (Remastered)` },
+    { ...recording, id: "bb48ac0a-adb0-4b9e-962e-d1591ed7f2e3" },
+    { ...recording, isrcs: ["USFI12600002"] },
+    { ...recording, durationSec: 183 },
+    { ...recording, durationSec: 177 },
+  ]) {
+    assert.equal(compatibleChartRecording(identified, incompatible), false);
+    assert.equal(confidentChartRecording(identified, incompatible), false);
+    assert.deepEqual(chartRecordingResolution(identified, [incompatible]), { results: [], automatic: null });
+  }
+  assert.equal(compatibleChartRecording(entry, { ...recording, durationSec: 182.5 }), true);
+  assert.equal(compatibleChartRecording(entry, { ...recording, durationSec: 177.5 }), true);
+  assert.equal(chartRecordingResolution(identified, [{ ...recording, album: "Night Letters (2025 Remaster)" }]).automatic, null);
+  assert.equal(chartRecordingResolution(identified, [{ ...recording, isrcs: [] }]).automatic, null,
+    "A supplied chart ISRC must still be verified for automatic selection");
 });
 test("Apple uses a real storefront feed plus one bounded metadata lookup, never a global alias or preview", async () => {
   const calls: URL[] = [];

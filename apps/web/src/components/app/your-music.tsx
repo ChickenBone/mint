@@ -24,7 +24,6 @@ import { Downloads } from "./downloads";
 import { ListeningHistory } from "./listening-history";
 import { LiveTrackList } from "./live-track-list";
 import { NativeLikes } from "./native-likes";
-import { MissingMusic } from "./missing-music";
 import { PageHeader } from "./page-header";
 import { TrackMenuButton } from "./player";
 import { MusicItem } from "./music-item";
@@ -71,7 +70,6 @@ export function YourMusic({
   const [folder, setFolder] = useState("all");
   const [backlogFilter, setBacklogFilter] = useState<BacklogFilter>("all");
   const [backlogPage, setBacklogPage] = useState(0);
-  const [missingQuery, setMissingQuery] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [confirmDeleteFolderOpen, setConfirmDeleteFolderOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -399,8 +397,8 @@ export function YourMusic({
         empty={
           <div className="py-6">
             <p className="text-sm text-muted">{backlogFilter === "attention" ? "Nothing needs attention." : backlogFilter === "on-the-way" ? "Nothing is on the way right now." : backlogFilter === "playable" ? "No linked songs are playable yet." : "Your Mint-linked songs are up to date."}</p>
-            <Link href="#missing-music-search" className="mt-3 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">
-              Find music to add
+            <Link href="/app/search" className="mt-3 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">
+              Search for music
             </Link>
           </div>
         }
@@ -416,13 +414,6 @@ export function YourMusic({
         </div>
       </nav>}
       {backlogTracks.length >= 500 && <p className="mt-4 text-xs text-faint">Showing the 500 most recently updated songs linked to Mint.</p>}
-      <label id="missing-music-search" className="mt-10 block max-w-lg text-sm font-semibold">
-        Find a song to add
-        <input type="search" value={missingQuery} maxLength={100} onChange={(event) => setMissingQuery(event.target.value)}
-          placeholder="Search title and artist"
-          className="mt-2 min-h-11 w-full rounded-control bg-elevated px-4 text-fg placeholder:text-faint ring-1 ring-line focus-visible:ring-2 focus-visible:ring-action" />
-      </label>
-      {missingQuery.trim().length >= 2 && <MissingMusic query={missingQuery.trim()} />}
     </div>
   );
 

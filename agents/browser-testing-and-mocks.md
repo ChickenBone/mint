@@ -8,6 +8,8 @@ The reproducible listening-room fixture is:
 - `apps/web/tests/fixtures/redesign-network.mjs`: explicitly preloaded test-only MusicBrainz transport adapter.
 - [Fixture setup](../docs/charts.md#upgrading-and-validation): current supported prerequisites.
 
+The browser flow exercises the route-based Search page: local and intercepted external metadata results, no acquisition before an explicit action, request state in place, and the legacy search redirect. It captures fictional desktop Search/request views and a mobile Search view alongside chart screenshots.
+
 Do not depend on a prior agent's home directory, browser cache path, session state, installed services or ephemeral screenshots. Those are not portable repository tools.
 
 The preview enforces `MINT_REDESIGN_FIXTURE=true`, a database named `mint_demo` or `mint_redesign_demo`, and loopback Redis. Use a fresh migrated database and a dedicated Redis process/port; queue/cache writes share that instance. Never relax its guards to use a real library.

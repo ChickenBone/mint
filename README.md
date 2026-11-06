@@ -14,7 +14,7 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 
 | Feature | What it means for you |
 | --- | --- |
-| **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and forgiving search for large libraries. No embedded Plexamp required. |
+| **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and one route-based Search for your library and more recordings. No embedded Plexamp required. |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
 | **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
 | **Discover music** | Explore daily mixes, artist radio and real charts alongside your own library. |
@@ -108,8 +108,8 @@ Current desktop and mobile views, captured from a local demo instance. All names
 | **All music:** browse songs, albums and artists without loading everything at once. | **Audio analysis:** check coverage and queue full-library processing. |
 | ![Ranked chart discovery with provider attribution, local playback and explicit Add to library actions](docs/screenshots/charts.png) | ![Listener settings for playback, downloads and connected services](docs/screenshots/settings.png) |
 | **Charts:** provider rankings with local playback and song requests. The screenshot uses fictional chart data. | **Settings:** personal playback and account preferences. |
-| ![A fictional missing-song search result ready to add to the library](docs/screenshots/search-missing.png) | ![A fictional chart song after an explicit request](docs/screenshots/chart-requested.png) |
-| **Search:** find and add a missing song. | **Requests:** follow a song as it becomes available; the demo simulates completion. |
+| ![Unified Search with a fictional external recording and an explicit Add to library action](docs/screenshots/search-missing.png) | ![A fictional chart song after an explicit request](docs/screenshots/chart-requested.png) |
+| **Search:** browse local matches and add a missing recording only when you choose. | **Requests:** follow a chart song as it becomes available; the demo simulates completion. |
 
 ![Discover's generated playlist covers, daily mixes, artist radio and chart collections](docs/screenshots/discover.png)
 
@@ -119,6 +119,8 @@ Current desktop and mobile views, captured from a local demo instance. All names
   <img src="docs/screenshots/mobile-discover.png" alt="Swipeable Discover shelves with generated playlist covers, titles and descriptions" width="260">
   &nbsp;
   <img src="docs/screenshots/mobile-player.png" alt="Mint mobile Now playing screen with album cover and pinned playback controls" width="260">
+  &nbsp;
+  <img src="docs/screenshots/mobile-search.png" alt="Unified Search with a fictional recording request on a phone" width="260">
 </p>
 
 <details>

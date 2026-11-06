@@ -8,6 +8,7 @@ import type { RequestRecording } from "@/lib/music-requests";
 import { formatDuration } from "@/lib/format";
 import { Artwork } from "@/components/artwork";
 import { useRealtime } from "@/components/realtime";
+import { ReportIssueButton } from "@/components/app/report-issue";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
@@ -156,13 +157,16 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
         <p className="hidden text-sm text-faint tabular md:block">{row.durationSec ? formatDuration(row.durationSec) : "—"}</p>
         <div className="chart-row-actions flex items-center justify-end gap-1">
           {row.availability === "available" ? member ? <><Check className="size-4 text-muted" aria-label="In your library" /><TrackMenuButton item={row.item!} /></> : <span className="text-xs text-muted">In library</span>
-            : ["requested", "processing"].includes(row.availability) ? <Link className="inline-flex min-h-11 items-center gap-2 text-xs text-muted" href={member ? "/app/jobs" : "/login"}><Loader2 className="size-4" />{statusNames[row.availability as "requested" | "processing"]}</Link>
+            : ["requested", "processing"].includes(row.availability) ? <span className="inline-flex min-h-11 items-center gap-2 text-xs text-muted" role="status"><Loader2 className="size-4" />{statusNames[row.availability as "requested" | "processing"]}</span>
             : member ? <AddButton row={row} busy={busy} state={requesting?.view === view && requesting.id === row.id ? "checking" : waiting.some((job) => job.row.id === row.id) ? "waiting" : rowErrors[row.id] ? "error" : "idle"}
               open={resolution?.row.id === row.id} onClick={() => request({ row })} />
               : <Link className="inline-flex min-h-11 items-center text-xs text-muted underline" href="/request-access">Request access</Link>}
         </div>
-        {member && rowErrors[row.id] ? <p role="alert" className="chart-row-reason text-xs leading-relaxed text-danger">{rowErrors[row.id]}</p>
-          : ["ambiguous", "failed"].includes(row.availability) && <p className="chart-row-reason text-xs leading-relaxed text-muted">{row.availability === "failed" && member ? <Link className="underline" href="/app/jobs">See details</Link> : row.availability === "ambiguous" ? "Choose the exact version before adding." : row.reason}</p>}
+        {member && rowErrors[row.id] ? <div className="chart-row-reason flex flex-wrap items-center gap-x-3 text-xs leading-relaxed text-danger" role="alert">
+          <span>Couldn’t add this song.</span>
+          <ReportIssueButton className="min-h-11 rounded-control px-2 text-xs text-muted hover:bg-hover hover:text-fg"
+            context={`${row.title} — ${row.artist}`} icon={false} />
+        </div> : row.availability === "ambiguous" && <p className="chart-row-reason text-xs leading-relaxed text-muted">Choose the version to add.</p>}
         {member && resolution?.row.id === row.id && <div ref={resolutionRef} tabIndex={-1} role="group" aria-label={`Choose the recording for ${row.title}`}
           onKeyDown={(event) => { if (event.key === "Escape") setResolution(null); }} style={{ gridColumn: "1 / -1" }} className="mt-1 rounded-2xl bg-elevated p-4 sm:p-5">
           <ChartResolution row={row} results={resolution.results} disabled={requesting !== null || waiting.length > 0}
@@ -192,28 +196,22 @@ function AddButton({ row, busy, state, open, onClick }: { row: ChartRow; busy: b
 function ChartResolution({ row, results, disabled, onClose, onRequest }: {
   row: ChartRow; results: RecordingResult[]; disabled: boolean; onClose: () => void; onRequest: (token: string, youtubeUrl: string) => void;
 }) {
-  const ordered = [...results.filter((recording) => compatibleChartRecording(row, recording)), ...results.filter((recording) => !compatibleChartRecording(row, recording))];
-  const best = ordered[0] && compatibleChartRecording(row, ordered[0]) ? ordered[0].id : null;
+  const compatible = results.filter((recording) => compatibleChartRecording(row, recording));
   return <>
     <div className="flex items-start justify-between gap-3"><div>
-      <h3 className="font-bold">Which recording of {row.title}?</h3>
-      <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">Pick the version you want.</p>
+      <h3 className="font-bold">Choose a version</h3>
     </div><button aria-label="Close recording selection" className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-hover" onClick={onClose}><X className="size-5" /></button></div>
-    {!results.length && <p className="mt-4 text-sm text-warn">No matching recording was found. <Link className="underline" href={`/app/search?q=${encodeURIComponent(`${row.artist} ${row.title}`.slice(0, 100))}`}>Search with another spelling</Link>. Mint will not guess.</p>}
-    <ol className="mt-3 divide-y divide-line">{ordered.map((recording) => <li key={recording.id} className="py-4">
-      <div className="flex flex-wrap items-center gap-2"><h4 className="font-semibold">{recording.title}</h4>{recording.id === best && <span className="rounded-full bg-mint/15 px-2 py-0.5 text-xs font-semibold text-mint">Best match</span>}</div>
-      <p className="mt-1 text-sm text-muted">{recording.artist} · {recording.album ?? "Album unknown"} · {recording.durationSec ? formatDuration(recording.durationSec) : "Duration unknown"}
-        {" "}· <a className="inline-flex min-h-11 items-center gap-1 underline" href={`https://musicbrainz.org/recording/${recording.id}`} target="_blank" rel="noreferrer">Details<ExternalLink className="size-3" /></a></p>
-      {compatibleChartRecording(row, recording) ? <form className="mt-1 grid gap-2" onSubmit={(event) => {
-        event.preventDefault();
-        onRequest(recording.token, String(new FormData(event.currentTarget).get("youtubeUrl") ?? "").trim());
-      }}>
-        <button className={`${action} w-fit ${recording.id === best ? "bg-mint text-mint-ink ring-0 hover:bg-mint-strong" : ""}`} disabled={disabled}><ArrowDownToLine className="size-4" />Add this version</button>
-        <details className="text-xs text-muted"><summary className="inline-flex min-h-11 cursor-pointer items-center">Use a specific YouTube link</summary>
-          <label className="block">YouTube source URL
-            <input name="youtubeUrl" type="url" maxLength={2048} placeholder="https://music.youtube.com/watch?v=…" className="mt-2 min-h-11 w-full max-w-lg rounded-lg bg-surface px-3 text-sm text-fg ring-1 ring-line" /></label>
-        </details>
-      </form> : <p className="mt-1 text-sm text-warn">Different artist, version or duration. This recording can’t be requested for this chart entry.</p>}
-    </li>)}</ol>
+    {!compatible.length ? <p className="mt-3 text-sm text-muted">No matches. <Link className="underline underline-offset-4" href={`/app/search?q=${encodeURIComponent(`${row.artist} ${row.title}`.slice(0, 100))}`} onClick={onClose}>Try another spelling in Search</Link>.</p>
+      : <ol className="mt-2 divide-y divide-line">{compatible.map((recording) => <li key={recording.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+        <div className="min-w-0">
+          <h4 className="truncate font-semibold">{recording.title}</h4>
+          <p className="truncate text-sm text-muted">{recording.artist}
+            {recording.album ? ` · ${recording.album}` : ""}
+            {recording.durationSec ? ` · ${formatDuration(recording.durationSec)}` : ""}</p>
+        </div>
+        <button type="button" className={action} disabled={disabled} onClick={() => onRequest(recording.token, "")}>
+          <ArrowDownToLine className="size-4" />Add to library
+        </button>
+      </li>)}</ol>}
   </>;
 }
