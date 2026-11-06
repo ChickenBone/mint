@@ -92,6 +92,13 @@
       "when": 1793729600008,
       "tag": "0012_charts",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793729600009,
+      "tag": "0013_analysis_v2",
+      "breakpoints": true
     }
   ]
 }

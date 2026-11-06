@@ -40,14 +40,63 @@ function collectionFilter(collection: PlayerCollection, userId: string): SQL | u
 function catalogWhere(collection: PlayerCollection, userId: string, q?: string) {
   const conditions = [PLAYABLE, collectionFilter(collection, userId)];
   if (collection.kind === "library" && collection.filters) {
-    const { artist, album, codec, minYear, maxYear } = collection.filters;
+    const { artist, album, codec, minYear, maxYear, genre, mood, minBpm, maxBpm, camelotKey, vocalType } = collection.filters;
     if (minYear !== undefined && maxYear !== undefined && minYear > maxYear) throw new CatalogInputError("The year range is reversed.");
+    if (minBpm !== undefined && maxBpm !== undefined && minBpm > maxBpm) throw new CatalogInputError("The BPM range is reversed.");
     const contains = (value: string) => `%${value.trim().replace(/[%_\\]/g, "\\$&")}%`;
     if (artist?.trim()) conditions.push(ilike(t.artist, contains(artist)));
     if (album?.trim()) conditions.push(ilike(t.album, contains(album)));
     if (codec?.trim()) conditions.push(sql`lower(coalesce(${t.codec},${t.existingCodec},'')) = ${codec.trim().toLowerCase()}`);
     if (minYear !== undefined) conditions.push(sql`${t.year} >= ${minYear}`);
     if (maxYear !== undefined) conditions.push(sql`${t.year} <= ${maxYear}`);
+    if (genre?.trim()) {
+      const g = genre.trim().toLowerCase();
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta, jsonb_array_elements(coalesce(ta.result->'classification'->'genres', '[]'::jsonb)) item
+        where ta.track_id = ${t.id} and ta.result is not null
+          and (lower(coalesce(item->>'name', '')) = ${g} or lower(coalesce(item->>'subgenre', '')) = ${g})
+      )`);
+    }
+    if (mood?.trim()) {
+      const m = mood.trim().toLowerCase();
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta, jsonb_array_elements(coalesce(ta.result->'classification'->'moods', '[]'::jsonb)) item
+        where ta.track_id = ${t.id} and ta.result is not null
+          and lower(coalesce(item->>'name', '')) = ${m}
+      )`);
+    }
+    if (minBpm !== undefined) {
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta
+        where ta.track_id = ${t.id} and ta.result is not null
+          and (ta.result->'tempo'->>'bpm') is not null
+          and (ta.result->'tempo'->>'bpm')::double precision >= ${minBpm}
+      )`);
+    }
+    if (maxBpm !== undefined) {
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta
+        where ta.track_id = ${t.id} and ta.result is not null
+          and (ta.result->'tempo'->>'bpm') is not null
+          and (ta.result->'tempo'->>'bpm')::double precision <= ${maxBpm}
+      )`);
+    }
+    if (camelotKey?.trim()) {
+      const kUpper = camelotKey.trim().toUpperCase();
+      const kLower = camelotKey.trim().toLowerCase();
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta
+        where ta.track_id = ${t.id} and ta.result is not null
+          and (upper(coalesce(ta.result->'key'->>'camelot', '')) = ${kUpper} or lower(coalesce(ta.result->'key'->>'name', '')) = ${kLower})
+      )`);
+    }
+    if (vocalType) {
+      conditions.push(sql`exists (
+        select 1 from track_analysis ta
+        where ta.track_id = ${t.id} and ta.result is not null
+          and lower(coalesce(ta.result->'classification'->'voiceInstrumental'->>'label', '')) = ${vocalType.toLowerCase()}
+      )`);
+    }
   }
   conditions.push(catalogSearch(q ?? (collection.kind === "library" ? collection.query : undefined)).where);
   return and(...conditions);

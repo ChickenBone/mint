@@ -1,10 +1,17 @@
 import { z } from "zod";
+import { analysisMoodSchema, analysisVocalTypeSchema } from "./analysis";
 
 export const smartRulesSchema = z.object({
   artist: z.string().trim().max(200).optional(),
   album: z.string().trim().max(200).optional(),
   title: z.string().trim().max(200).optional(),
   codec: z.string().trim().max(100).optional(),
+  genre: z.string().trim().max(100).optional(),
+  mood: analysisMoodSchema.optional(),
+  minBpm: z.number().finite().min(40).max(220).optional(),
+  maxBpm: z.number().finite().min(40).max(220).optional(),
+  camelotKey: z.string().trim().max(20).optional(),
+  vocalType: analysisVocalTypeSchema.optional(),
   liked: z.boolean().optional(),
   neverPlayed: z.boolean().optional(),
   addedWithinDays: z.number().int().min(1).max(3650).optional(),
@@ -12,7 +19,8 @@ export const smartRulesSchema = z.object({
   maxYear: z.number().int().min(1000).max(3000).optional(),
   order: z.enum(["artist", "newest", "least-played"]).default("artist"),
   limit: z.number().int().min(1).max(1000).default(100),
-}).refine((value) => !value.minYear || !value.maxYear || value.minYear <= value.maxYear, "Year range is reversed");
+}).refine((value) => !value.minYear || !value.maxYear || value.minYear <= value.maxYear, "Year range is reversed")
+  .refine((value) => value.minBpm === undefined || value.maxBpm === undefined || value.minBpm <= value.maxBpm, "BPM range is reversed");
 export type SmartRules = z.infer<typeof smartRulesSchema>;
 export const createCollectionSchema = z.object({
   title: z.string().trim().min(1).max(200),

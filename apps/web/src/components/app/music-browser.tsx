@@ -114,14 +114,47 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         event.preventDefault(); const values = new FormData(event.currentTarget);
         change(Object.fromEntries(metadataFilterKeys.map((key) => [key, String(values.get(key) ?? "").trim()])));
       }}>
-        <p className="text-sm leading-relaxed text-muted sm:col-span-2 lg:col-span-3">Artist and album contain your text. Codec matches exactly. Play and Shuffle use these same filters across the full library.</p>
-        {metadataFilterKeys.map((key) => <label key={key} className="text-sm text-muted">
-          {{ artist: "Artist contains", album: "Album contains", codec: "Codec", minYear: "Year from", maxYear: "Year through" }[key]}
-          <input name={key} defaultValue={params.get(key) ?? ""} type={key === "minYear" || key === "maxYear" ? "number" : "text"}
-            min={key === "minYear" || key === "maxYear" ? 1000 : undefined} max={key === "minYear" || key === "maxYear" ? 3000 : undefined}
-            maxLength={key === "codec" ? 100 : 200} placeholder={key === "codec" ? "flac, opus, mp3…" : undefined}
+        <p className="text-sm leading-relaxed text-muted sm:col-span-2 lg:col-span-3">Artist and album contain your text. Codec, genre, mood, BPM, and Camelot key filter measured audio across the library. Play and Shuffle use these same filters.</p>
+        {(["artist", "album", "codec", "minYear", "maxYear", "genre", "mood", "minBpm", "maxBpm", "camelotKey"] as const).map((key) => <label key={key} className="text-sm text-muted">
+          {{
+            artist: "Artist contains",
+            album: "Album contains",
+            codec: "Codec",
+            minYear: "Year from",
+            maxYear: "Year through",
+            genre: "Genre or sub-style",
+            mood: "Mood / vibe",
+            minBpm: "BPM from",
+            maxBpm: "BPM through",
+            camelotKey: "Key or Camelot code",
+          }[key]}
+          <input name={key} defaultValue={params.get(key) ?? ""} type={key === "minYear" || key === "maxYear" || key === "minBpm" || key === "maxBpm" ? "number" : "text"}
+            min={key === "minYear" || key === "maxYear" ? 1000 : key === "minBpm" || key === "maxBpm" ? 40 : undefined}
+            max={key === "minYear" || key === "maxYear" ? 3000 : key === "minBpm" || key === "maxBpm" ? 240 : undefined}
+            maxLength={key === "codec" || key === "genre" || key === "mood" ? 100 : key === "camelotKey" ? 10 : 200}
+            placeholder={{
+              artist: undefined,
+              album: undefined,
+              codec: "flac, opus, mp3…",
+              minYear: undefined,
+              maxYear: undefined,
+              genre: "Electronic, House, Jazz…",
+              mood: "chill, energetic, focus…",
+              minBpm: "90",
+              maxBpm: "130",
+              camelotKey: "8A, 11B, F# minor…",
+            }[key]}
             className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg ring-1 ring-line focus:ring-mint" />
         </label>)}
+        <label className="text-sm text-muted">
+          Vocal / instrumental
+          <select name="vocalType" defaultValue={params.get("vocalType") ?? ""} className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg ring-1 ring-line focus:ring-mint">
+            <option value="">Any</option>
+            <option value="vocal">Vocal</option>
+            <option value="instrumental">Instrumental</option>
+            <option value="spoken-word">Spoken word</option>
+          </select>
+        </label>
         <div className="flex flex-wrap items-end gap-2">
           <button className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink">Apply filters</button>
           <button type="button" className="min-h-11 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover" onClick={() => change(Object.fromEntries(metadataFilterKeys.map((key) => [key, ""])))}>Clear filters</button>

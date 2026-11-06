@@ -29,6 +29,10 @@ const presets: Record<string, number[]> = {
   Warm: [3, 3, 2, 1, 0, 0, -1, -1, -2, -2],
   Vocal: [-2, -2, -1, 0, 2, 3, 3, 2, 0, -1],
   "Low listening": [4, 3, 1, 0, -1, 0, 1, 2, 3, 3],
+  "Bass boost": [5.5, 4.5, 3, 1, 0, 0, 0, 0.5, 1, 1],
+  Acoustic: [2, 1.5, 1, 0.5, 0, 1, 2, 2.5, 2, 1.5],
+  Electronic: [4.5, 3.5, 1, -1, -1.5, 0, 1.5, 3, 4, 4.5],
+  "Late night": [3.5, 2.5, 1, 0, 1, 1.5, 1, -0.5, -1.5, -2],
 };
 const labels = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 export function AudioPanel({ state, command, showPlayback = true }: { state: PlayerState; command: (command: PlayerCommand) => Promise<boolean>; showPlayback?: boolean }) {
@@ -85,9 +89,18 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
         <input aria-label="Preamp" type="range" min="-18" max="0" step=".5" value={current.preamp} onChange={(event) => update({ preamp: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
       </label>
       <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.compressor} onChange={(event) => update({ compressor: event.target.checked })} className="size-5 accent-mint" />Dynamic range compression</label>
+      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.limiter} onChange={(event) => update({ limiter: event.target.checked })} className="size-5 accent-mint" />True-peak safe limiter (-0.3 dBFS)</label>
+      <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.loudnessContour} onChange={(event) => update({ loudnessContour: event.target.checked })} className="size-5 accent-mint" />Equal-loudness contour (warm low-volume balance)</label>
+      <label className="flex flex-col gap-2 text-sm">Stereo stage
+        <select aria-label="Stereo stage" value={current.stereoMode} onChange={(event) => update({ stereoMode: event.target.value as DspSettings["stereoMode"] })} className="min-h-11 rounded-md border border-line bg-elevated px-3">
+          <option value="normal">Normal stereo</option>
+          <option value="crossfeed">Headphone crossfeed · natural speaker image</option>
+          <option value="wide">Wide stage · expanded presence</option>
+        </select>
+      </label>
       <label className="flex flex-col gap-2 text-sm">Transition style
         <select aria-label="Transition style" value={current.fadeMode} onChange={(event) => update({ fadeMode: event.target.value as DspSettings["fadeMode"] })} className="min-h-11 rounded-md border border-line bg-elevated px-3">
-          <option value="off">Off · original track boundaries</option><option value="fixed">Fixed crossfade</option><option value="smart">Smart Fades · content-aware</option>
+          <option value="off">Off · original track boundaries</option><option value="fixed">Fixed crossfade</option><option value="smart">Smart Fades · beat, key &amp; contour aware</option>
         </select>
       </label>
       <label className="block text-sm">Maximum overlap <span className="float-right text-muted tabular">{current.crossfade ? `${current.crossfade}s` : "Off"}</span>
@@ -95,10 +108,19 @@ export function AudioPanel({ state, command, showPlayback = true }: { state: Pla
       </label>
       <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.albumSafe} onChange={(event) => update({ albumSafe: event.target.checked })} className="size-5 accent-mint" />Preserve continuous albums when not shuffled</label>
       <label className="flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" checked={current.normalize} onChange={(event) => update({ normalize: event.target.checked })} className="size-5 accent-mint" />Loudness normalization</label>
-      {current.normalize && <label className="block text-sm">Target loudness <span className="float-right text-muted tabular">{current.targetLufs} LUFS</span>
-        <input aria-label="Target loudness" type="range" min="-23" max="-9" step="1" value={current.targetLufs} onChange={(event) => update({ targetLufs: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
-      </label>}
-      <p className="max-w-prose text-xs leading-relaxed text-muted">Mint Smart Fades use measured silence and boundary energy. Missing analysis uses a short fixed fade; missing loudness data applies no normalization. EQ and overlap reserve headroom. Repeat-one never fades.</p>
+      {current.normalize && <>
+        <label className="flex flex-col gap-2 text-sm">Normalization mode
+          <select aria-label="Normalization mode" value={current.normalizeMode} onChange={(event) => update({ normalizeMode: event.target.value as DspSettings["normalizeMode"] })} className="min-h-11 rounded-md border border-line bg-elevated px-3">
+            <option value="auto">Auto · album dynamics in order, track balance in mixes</option>
+            <option value="track">Track · match every song to target loudness</option>
+            <option value="album">Album · preserve quiet interludes and album arc</option>
+          </select>
+        </label>
+        <label className="block text-sm">Target loudness <span className="float-right text-muted tabular">{current.targetLufs} LUFS</span>
+          <input aria-label="Target loudness" type="range" min="-23" max="-9" step="1" value={current.targetLufs} onChange={(event) => update({ targetLufs: Number(event.target.value) })} className="mt-3 h-5 w-full accent-mint" />
+        </label>
+      </>}
+      <p className="max-w-prose text-xs leading-relaxed text-muted">Mint Smart Fades use measured silence, MixRamp contours, BPM beatgrids, and Camelot harmonic compatibility. Missing analysis uses a short fixed fade; missing loudness data applies no normalization. EQ, contour, and limiter protect headroom. Repeat-one never fades.</p>
       <p role="status" className="text-xs text-muted">{state.transitionDetail ?? "Transitions off"}{current.normalize ? ` · gain ${(state.normalizationDb ?? 0).toFixed(1)} dB` : ""}</p>
       <div className="flex flex-wrap gap-2">
         <button disabled={!dirty} className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"

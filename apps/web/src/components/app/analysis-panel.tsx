@@ -5,11 +5,32 @@ import { useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { formatCount } from "@/lib/format";
 
+interface WorkerRow {
+  id: string;
+  mode: string;
+  online: boolean;
+  error: string | null;
+  completedCount?: number;
+  failedCount?: number;
+  avgDurationMs?: number | null;
+  activeTrackId?: string | null;
+  engineVersion?: string;
+  capabilities?: string[];
+  lastError?: string | null;
+}
+
 interface Diagnostics {
-  total: number; covered: number; statuses: Record<string, number>; controls: AnalysisControls; notes: string[];
-  workers: { id: string; mode: string; online: boolean; error: string | null }[];
-  recent: { trackId: string; title: string; artist: string; status: string; attempts: number; error: string | null }[];
-  backfill: { mode: "missing" | "all"; status: "queuing" | "queued" | "cancelled"; total: number; scanned: number; queued: number } | null;
+  version?: number;
+  total: number;
+  covered: number;
+  v2Covered?: number;
+  v1Covered?: number;
+  statuses: Record<string, number>;
+  controls: AnalysisControls;
+  notes: string[];
+  workers: WorkerRow[];
+  recent: { trackId: string; title: string; artist: string; status: string; attempts: number; error: string | null; version?: number }[];
+  backfill: { mode: "missing" | "upgrade-v1" | "all"; status: "queuing" | "queued" | "cancelled"; total: number; scanned: number; queued: number } | null;
 }
 const button = "min-h-11 rounded-lg border border-line px-4 py-2 text-sm font-semibold hover:bg-hover focus-visible:outline-2 focus-visible:outline-mint disabled:opacity-50";
 const fields = [
@@ -67,16 +88,20 @@ export function AnalysisPanel() {
     {!data ? <p className="text-muted">Loading measured-audio coverage…</p> : <>
       <section aria-labelledby="analysis-coverage">
         <h2 id="analysis-coverage" className="text-xl font-bold">Measured audio</h2>
-        <p className="mt-2 text-muted"><strong className="text-fg tabular">{formatCount(data.covered)} of {formatCount(data.total)}</strong> playable tracks analyzed.</p>
+        <p className="mt-2 text-muted">
+          <strong className="text-fg tabular">{formatCount(data.covered)} of {formatCount(data.total)}</strong> playable tracks analyzed
+          {data.v2Covered !== undefined && <span className="ml-2 text-sm tabular">({formatCount(data.v2Covered)} v2 · {formatCount(data.v1Covered ?? 0)} legacy v1)</span>}.
+        </p>
         <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
           {["pending", "running", "complete", "failed", "cancelled"].map((status) => <div key={status} className="flex gap-2"><dt className="capitalize text-muted">{status}</dt><dd className="tabular">{formatCount(data.statuses[status] ?? 0)}</dd></div>)}
         </dl>
         <p className="mt-4 text-sm text-muted">{data.workers.some((worker) => worker.online && worker.mode !== "coordinator") ? `${data.workers.filter((worker) => worker.online && worker.mode !== "coordinator").length} analysis worker(s) connected.` : "No audio processor has reported in the last minute. In remote-only mode, connect a separate mint-analysis container over your private/VPN network."}</p>
         {data.workers.some((worker) => worker.online && worker.mode === "coordinator") && <p className="mt-2 text-sm text-muted">NAS coordinator connected. Audio processing is offloaded; the NAS still sends leased audio files.</p>}
         {(!data.controls.enabled || data.controls.paused) && <p className="mt-3 max-w-prose text-sm text-warn">{!data.controls.enabled ? "Analysis is disabled." : "Processing is paused."} You can build the queue now; enable and unpause analysis in resource controls below to start processing.</p>}
-        {data.workers.map((worker) => worker.error && <p key={worker.id} className="mt-2 text-sm text-warn">{worker.mode} worker: {worker.error}</p>)}
+        {data.workers.map((worker) => (worker.error || worker.lastError) && <p key={worker.id} className="mt-2 text-sm text-warn">{worker.mode} worker ({worker.id.slice(0, 16)}): {worker.error ?? worker.lastError}</p>)}
         <div className="mt-5 flex flex-wrap gap-2">
           <button type="button" className={`${button} bg-mint text-mint-ink hover:bg-mint-strong`} disabled={busy || data.backfill?.status === "queuing"} onClick={() => void change({ action: "process-all" })}>Analyze all missing files</button>
+          <button type="button" className={button} disabled={busy || data.backfill?.status === "queuing"} onClick={() => void change({ action: "upgrade-v1" })}>Upgrade v1 tracks to v2{data.v1Covered ? ` (${formatCount(data.v1Covered)})` : ""}</button>
           <button type="button" className={button} disabled={busy || data.backfill?.status === "queuing"} onClick={() => setConfirmAction("reprocess-all")}>Reprocess entire library</button>
           <button type="button" className={button} disabled={busy} onClick={() => void change({ action: "retry-failed" })}>Retry failed</button>
           <button type="button" className={`${button} text-danger`} disabled={busy} onClick={() => setConfirmAction("cancel-all")}>Cancel pending and running</button>
@@ -113,10 +138,70 @@ export function AnalysisPanel() {
         </div>}
         <p className="mt-4 max-w-prose text-sm text-muted">Full-library scans add files in resumable batches of 500, with no total-library cap. Reprocessing also retries failed and cancelled files. Processing still respects enable, pause, UTC hours, duration and time budgets; no work is forced past these limits.</p>
       </section>
+      <section aria-labelledby="analysis-execution-mode" className="rounded-xl border border-line bg-surface p-5">
+        <h2 id="analysis-execution-mode" className="text-xl font-bold">Execution &amp; worker offloading</h2>
+        <p className="mt-2 max-w-prose text-sm text-muted">Choose where audio decoding and DSP analysis run. Switching to remote-only offloads all CPU work from the NAS within two seconds without editing <code className="font-mono">.env</code> or recreating containers.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Execution mode">
+          {([
+            ["remote-only", "Offload all to external worker", "NAS acts strictly as coordinator; zero local audio decoding."],
+            ["prefer-remote", "Prefer external worker", "External worker claims leases when online; NAS falls back if none connected."],
+            ["hybrid", "Hybrid (NAS + external)", "Both local NAS and external workers process files up to global concurrency."],
+          ] as const).map(([modeValue, title, summary]) => {
+            const selected = (controls.executionMode ?? "hybrid") === modeValue;
+            return <label key={modeValue} className={`flex min-h-11 cursor-pointer flex-col justify-between rounded-lg border p-3.5 text-sm transition-colors ${selected ? "border-mint bg-elevated" : "border-line hover:bg-hover"}`}>
+              <span className="flex items-center gap-2.5 font-semibold">
+                <input
+                  type="radio"
+                  name="executionMode"
+                  value={modeValue}
+                  checked={selected}
+                  disabled={busy}
+                  onChange={() => {
+                    const updated = { ...controls, executionMode: modeValue };
+                    setControls(updated);
+                    void change({ action: "settings", controls: updated });
+                  }}
+                  className="size-4 accent-mint"
+                />
+                {title}
+              </span>
+              <span className="mt-2 block text-xs leading-relaxed text-muted">{summary}</span>
+            </label>;
+          })}
+        </div>
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold">Connected workers &amp; throughput</h3>
+          {!data.workers.length ? (
+            <p className="mt-2 text-sm text-muted">No analysis workers have reported in the last 24 hours.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-line rounded-lg border border-line bg-elevated px-4">
+              {data.workers.map((worker) => (
+                <li key={worker.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">
+                      <span className={`mr-2 inline-block size-2 rounded-full ${worker.online ? "bg-mint" : "bg-faint"}`} aria-hidden />
+                      {worker.id} <span className="ml-1 rounded bg-surface px-2 py-0.5 text-xs font-normal text-muted">{worker.mode}</span>
+                      {worker.engineVersion && <span className="ml-2 text-xs text-muted">{worker.engineVersion}</span>}
+                    </p>
+                    <p className="mt-1 text-xs text-muted tabular">
+                      {worker.online ? "Online" : "Offline"}
+                      {" · "}{formatCount(worker.completedCount ?? 0)} completed
+                      {" · "}{formatCount(worker.failedCount ?? 0)} failed
+                      {worker.avgDurationMs ? ` · avg ${(worker.avgDurationMs / 1000).toFixed(1)}s/track` : ""}
+                      {worker.activeTrackId ? ` · active track ${worker.activeTrackId.slice(0, 8)}…` : " · idle"}
+                    </p>
+                    {worker.lastError && <p className="mt-1 text-xs text-warn">Last error: {worker.lastError}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
       <section aria-labelledby="analysis-offload">
         <h2 id="analysis-offload" className="text-xl font-bold">Connect a powerful analysis machine</h2>
         <ol className="mt-4 max-w-prose list-decimal space-y-3 pl-5 text-sm text-muted">
-          <li>On the NAS pipeline worker, set a separate random <code className="break-all font-mono">ANALYSIS_WORKER_TOKEN</code> of at least 32 characters. Set <code className="font-mono">ANALYSIS_REMOTE_ONLY=true</code> to keep audio processing off the NAS, then recreate that worker.</li>
+          <li>On the NAS pipeline worker, set a separate random <code className="break-all font-mono">ANALYSIS_WORKER_TOKEN</code> of at least 32 characters, then select <strong>Offload all to external worker</strong> above (or set <code className="font-mono">ANALYSIS_REMOTE_ONLY=true</code> in <code className="font-mono">.env</code>).</li>
           <li>Use the repository&apos;s <code className="font-mono">docker-compose.analysis.yml</code> on the other machine. Set the same analysis token and <code className="break-all font-mono">ANALYSIS_SERVER_URL=http://NAS-VPN-IP:8080</code> in its .env. The address must reach the pipeline worker on your private network. Do not expose port 8080 publicly or use a volunteer token.</li>
           <li>For parallel processing, set <code className="font-mono">ANALYSIS_CONCURRENCY</code> from 1 to 4 on that machine and increase its CPU/memory allocation. Match “Concurrent files” below to the capacity you want across all machines. Run <code className="font-mono">docker compose pull &amp;&amp; docker compose up -d</code>, wait for a processor to connect, then choose a full-library action above.</li>
         </ol>

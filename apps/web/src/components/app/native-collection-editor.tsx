@@ -163,6 +163,12 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                         addedWithinDays: number("days"),
                         minYear: number("minYear"),
                         maxYear: number("maxYear"),
+                        genre: f.get("genre") || undefined,
+                        mood: f.get("mood") || undefined,
+                        minBpm: number("minBpm"),
+                        maxBpm: number("maxBpm"),
+                        camelotKey: f.get("camelotKey") || undefined,
+                        vocalType: f.get("vocalType") || undefined,
                         order: f.get("order"),
                         limit: number("limit"),
                       },
@@ -242,6 +248,35 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               <label className="text-sm">
                 Added within days
                 <input name="days" type="number" min={1} max={3650} defaultValue={data.rules.addedWithinDays} className={field} />
+              </label>
+              <label className="text-sm">
+                Genre or sub-style
+                <input name="genre" maxLength={100} defaultValue={data.rules.genre} placeholder="Electronic, House, Jazz…" className={field} />
+              </label>
+              <label className="text-sm">
+                Mood / vibe
+                <input name="mood" maxLength={100} defaultValue={data.rules.mood} placeholder="chill, energetic, focus…" className={field} />
+              </label>
+              <label className="text-sm">
+                BPM from
+                <input name="minBpm" type="number" min={40} max={240} defaultValue={data.rules.minBpm} className={field} />
+              </label>
+              <label className="text-sm">
+                BPM through
+                <input name="maxBpm" type="number" min={40} max={240} defaultValue={data.rules.maxBpm} className={field} />
+              </label>
+              <label className="text-sm">
+                Key or Camelot code
+                <input name="camelotKey" maxLength={10} defaultValue={data.rules.camelotKey} placeholder="8A, 11B, F# minor…" className={field} />
+              </label>
+              <label className="text-sm">
+                Vocal / instrumental
+                <select name="vocalType" defaultValue={data.rules.vocalType ?? ""} className={field}>
+                  <option value="">Any</option>
+                  <option value="vocal">Vocal</option>
+                  <option value="instrumental">Instrumental</option>
+                  <option value="spoken-word">Spoken word</option>
+                </select>
               </label>
               <label className="text-sm">
                 Maximum songs

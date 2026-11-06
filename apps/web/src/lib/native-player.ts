@@ -97,6 +97,21 @@ export class NativePlayer {
     if (!this.disposed) this.options.error(error instanceof Error ? error.message : "Playback failed. Try again.");
   }
 
+  private isSameAlbumSequence(track: PlayerItem | null | undefined): boolean {
+    if (!track || this.shuffle || !track.albumId || !track.album) return false;
+    const prev = this.queue[this.index - 1];
+    const next = this.queue[this.index + 1];
+    return Boolean((prev && prev.albumId === track.albumId) || (next && next.albumId === track.albumId));
+  }
+
+  private computeNormalizationDb(track: PlayerItem | null | undefined): number {
+    if (!track || !this.dsp.settings.normalize) return 0;
+    return normalizationGain(this.analysis.get(track.id), this.dsp.settings.targetLufs, {
+      mode: this.dsp.settings.normalizeMode,
+      sameAlbumSequence: this.isSameAlbumSequence(track),
+    });
+  }
+
   getState(): PlayerState {
     const track = this.queue[this.index] ?? null;
     const loaded = Boolean(this.element.getAttribute("src"));
@@ -108,7 +123,7 @@ export class NativePlayer {
       queue: this.queue.slice(offset, offset + 1000), queueTotal: this.context?.total ?? this.queue.length, queueOffset: this.context?.offset ?? offset,
       dsp: this.dsp.settings, dspAvailable: typeof window !== "undefined" && Boolean(window.AudioContext), transitioning: this.transitioning,
       transitionDetail: this.transitionDetail,
-      normalizationDb: this.dsp.settings.normalize ? normalizationGain(track ? this.analysis.get(track.id) : null, this.dsp.settings.targetLufs) : 0,
+      normalizationDb: this.computeNormalizationDb(track),
       playbackFormat: this.format,
     };
   }
@@ -160,7 +175,7 @@ export class NativePlayer {
       this.format = snapshot.format;
       for (const element of this.options.elements) element.volume = snapshot.volume / 100;
       this.dsp.settings = snapshot.dsp;
-      if ((typeof window === "undefined" || !window.AudioContext) && (snapshot.dsp.enabled || snapshot.dsp.compressor || snapshot.dsp.crossfade > 0 || snapshot.dsp.normalize)) {
+      if ((typeof window === "undefined" || !window.AudioContext) && (snapshot.dsp.enabled || snapshot.dsp.compressor || snapshot.dsp.crossfade > 0 || snapshot.dsp.normalize || snapshot.dsp.loudnessContour || snapshot.dsp.stereoMode !== "normal")) {
         this.dsp.settings = { ...defaultDsp, bands: [...defaultDsp.bands] };
         this.options.error("Saved sound processing is not supported in this browser. Sound processing is off; standard playback remains available.");
       }
@@ -280,7 +295,7 @@ export class NativePlayer {
   private analyze(track: PlayerItem, element: HTMLAudioElement) {
     const apply = () => {
       const current = element === this.element ? this.queue[this.index] : this.queue.find((item) => item.queueId === this.prepared);
-      if (current?.id === track.id) this.dsp.normalize(element, normalizationGain(this.analysis.get(track.id), this.dsp.settings.targetLufs));
+      if (current?.id === track.id) this.dsp.normalize(element, this.computeNormalizationDb(track));
     };
     if (this.analysis.has(track.id) && Date.now() - (this.analysisChecked.get(track.id) ?? 0) < (this.analysis.get(track.id) ? 1800_000 : 60_000)) { apply(); return; }
     this.dsp.normalize(element, 0);
@@ -556,7 +571,7 @@ export class NativePlayer {
         this.transitionDetail = command.settings.fadeMode === "off" || !command.settings.crossfade ? "Transitions off"
           : command.settings.fadeMode === "smart" ? "Smart Fades · waiting for the next track boundary" : "Fixed equal-power crossfade";
         const track = this.queue[this.index];
-        if (track) this.dsp.normalize(this.element, normalizationGain(this.analysis.get(track.id), this.dsp.settings.targetLufs));
+        if (track) this.dsp.normalize(this.element, this.computeNormalizationDb(track));
         break;
       }
       case "state": break;
