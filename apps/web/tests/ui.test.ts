@@ -4,9 +4,11 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { jsx } from "react/jsx-runtime";
 import { Button, Checkbox, Input, ProgressBar, Row } from "../src/components/ui/primitives";
+import { ConfirmDialog } from "../src/components/ui/confirm-dialog";
 import { getMenuTargetIndex, getTabTargetIndex, Tabs } from "../src/components/ui/interactive";
 import { Shelf } from "../src/components/ui/shelf";
 import { ProgressBar as StageProgressBar, StageBadge } from "../src/components/stage-badge";
+import { SetupNudge } from "../src/components/app/setup-nudge";
 
 test("buttons expose pending state and retain an accessible action label", () => {
   const html = renderToStaticMarkup(createElement(Button, { loading: true }, "Saving changes"));
@@ -82,4 +84,41 @@ test("track stages and processing progress compose shared status primitives", ()
   assert.match(stage, /Ready/);
   assert.match(progress, /aria-label="Processing progress"/);
   assert.match(progress, /aria-valuenow="50"/);
+});
+
+test("ConfirmDialog renders an accessible modal dialog for destructive actions", () => {
+  const html = renderToStaticMarkup(
+    createElement(ConfirmDialog, {
+      open: true,
+      onClose: () => undefined,
+      onConfirm: () => undefined,
+      title: "Delete playlist?",
+      description: "Delete Night Drive? Your songs remain in the library.",
+      confirmLabel: "Delete playlist",
+      tone: "danger",
+    }),
+  );
+  assert.match(html, /<dialog[^>]*aria-labelledby="/);
+  assert.match(html, /Delete playlist\?/);
+  assert.match(html, /Delete Night Drive\? Your songs remain in the library\./);
+  assert.match(html, />Cancel<\/button>/);
+  assert.match(html, />Delete playlist<\/button>/);
+});
+
+test("SetupNudge renders first-run welcome steps and linked playable progress", () => {
+  const unlinkedHtml = renderToStaticMarkup(createElement(SetupNudge, { linked: false }));
+  assert.match(unlinkedHtml, /Welcome to your listening room/);
+  assert.match(unlinkedHtml, /1\. Connect a source/);
+  assert.match(unlinkedHtml, /2\. Explore the library/);
+  assert.match(unlinkedHtml, /3\. Play &amp; discover/);
+
+  const linkedHtml = renderToStaticMarkup(
+    createElement(SetupNudge, {
+      linked: true,
+      summary: { total: 4, ready: 2, active: 1, failed: 1 },
+    }),
+  );
+  assert.match(linkedHtml, /Bringing in your music/);
+  assert.match(linkedHtml, /2 of 4 playable/);
+  assert.match(linkedHtml, /aria-valuenow="50"/);
 });

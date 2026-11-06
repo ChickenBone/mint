@@ -1,10 +1,10 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { constants } from "node:fs";
+import { constants, existsSync, readdirSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { setPriority } from "node:os";
 import { ANALYSIS_ALGORITHM, ANALYSIS_VERSION, analysisSchema, type TrackAnalysis } from "@mint/core/analysis";
-import { MultichannelDescriptors } from "./analysis-dsp";
+import { MultichannelDescriptors, SAMPLE_RATE } from "./analysis-dsp";
 
 interface Limits { maxDurationSec: number; timeoutSec: number; signal?: AbortSignal; maxBytes?: number; verifyOpened?: (fd: number) => Promise<void> }
 export interface AudioInput { path: string; fd?: number }
@@ -58,14 +58,38 @@ export function audioProcess(command: string, args: string[], source: AudioInput
   });
 }
 
-export function parseLoudness(log: string) {
-  const summary = log.slice(log.lastIndexOf("Summary:"));
+export function parseLoudness(log: string): { integratedLufs: number | null; truePeakDbtp: number | null; lraLu?: number | null; shortTermMaxLufs?: number | null } {
+  const summaryIdx = log.lastIndexOf("Summary:");
+  const summary = summaryIdx >= 0 ? log.slice(summaryIdx) : log;
   const integrated = /I:\s*(-?[\d.]+)\s*LUFS/.exec(summary);
   const truePeak = /True peak:[\s\S]*?Peak:\s*(-?[\d.]+)\s*dBFS/.exec(summary);
+  const lra = /LRA:\s*(-?[\d.]+)\s*LU/.exec(summary);
   const integratedLufs = integrated ? Number(integrated[1]) : null;
   const truePeakDbtp = truePeak ? Number(truePeak[1]) : null;
+  const lraLu = lra ? Number(lra[1]) : undefined;
+  let shortTermMax: number | undefined;
+  for (const match of log.matchAll(/\bS:\s*(-?[\d.]+)/g)) {
+    const val = Number(match[1]);
+    if (Number.isFinite(val) && val > -70 && (shortTermMax === undefined || val > shortTermMax)) shortTermMax = val;
+  }
   // ebur128 reports -70 LUFS for digital silence; that is its gating floor, not a measurement.
-  return { integratedLufs: integratedLufs !== null && integratedLufs > -70 ? integratedLufs : null, truePeakDbtp };
+  return {
+    integratedLufs: integratedLufs !== null && integratedLufs > -70 ? integratedLufs : null,
+    truePeakDbtp,
+    ...(lraLu !== undefined && Number.isFinite(lraLu) && lraLu >= 0 ? { lraLu } : {}),
+    ...(shortTermMax !== undefined ? { shortTermMaxLufs: Math.round(shortTermMax * 100) / 100 } : {}),
+  };
+}
+
+function resolveAnalysisEngineName() {
+  const modelDir = process.env.ANALYSIS_MODEL_DIR?.trim();
+  if (modelDir && existsSync(modelDir)) {
+    try {
+      const hasModel = readdirSync(modelDir).some((entry) => entry.endsWith(".onnx") || entry.endsWith(".pb") || entry.endsWith(".json"));
+      if (hasModel) return "ffmpeg+mint-dsp-v2+model";
+    } catch { /* fallback to deterministic DSP */ }
+  }
+  return "ffmpeg+mint-dsp-v2";
 }
 
 export async function analyzeAudio(file: string, limits: Limits): Promise<TrackAnalysis> {
@@ -96,7 +120,7 @@ export async function analyzeAudio(file: string, limits: Limits): Promise<TrackA
       "-nostdin", "-hide_banner", "-nostats", "-loglevel", "info", "-threads", "1",
       "-filter_threads", "1", "-filter_complex_threads", "1", "-max_alloc", "67108864",
       "-protocol_whitelist", "file,pipe", "-i", input(source),
-      "-filter_complex", "[0:a:0]asplit=2[a][b];[a]ebur128=peak=true:framelog=verbose[l];[b]aresample=8000,aformat=sample_fmts=flt[p]",
+      "-filter_complex", `[0:a:0]asplit=2[a][b];[a]ebur128=peak=true:framelog=verbose[l];[b]aresample=${SAMPLE_RATE},aformat=sample_fmts=flt[p]`,
       "-map", "[l]", "-t", String(limits.maxDurationSec + 1), "-f", "null", "-",
       "-map", "[p]", "-t", String(limits.maxDurationSec + 1), "-f", "f32le", "pipe:1",
     ], source, bounded, (chunk) => descriptors.push(chunk));
@@ -104,16 +128,23 @@ export async function analyzeAudio(file: string, limits: Limits): Promise<TrackA
     if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs || stat.ctimeMs !== after.ctimeMs) throw new Error("Audio changed during analysis; retry when the file is stable");
     const measured = descriptors.finish();
     const loudness = parseLoudness(log);
+    const engine = resolveAnalysisEngineName();
     return analysisSchema.parse({
       version: ANALYSIS_VERSION, algorithm: ANALYSIS_ALGORITHM,
       fingerprint: { sha256: hash.digest("hex"), bytes: stat.size, mtimeMs: stat.mtimeMs },
-      measuredAt: new Date().toISOString(), ...measured, ...loudness,
-      provenance: { engine: "ffmpeg+mint-dsp", sampleRate: 8000, notes: [
-        "Full-file SHA-256; EBU R128 integrated loudness and oversampled true peak from ffmpeg.",
-        "Silence threshold -60 dBFS; all-channel peak waveform and RMS energy at 8 kHz.",
+      measuredAt: new Date().toISOString(), ...measured,
+      integratedLufs: loudness.integratedLufs,
+      truePeakDbtp: loudness.truePeakDbtp,
+      lraLu: loudness.lraLu ?? null,
+      shortTermMaxLufs: loudness.shortTermMaxLufs ?? measured.shortTermMaxLufs ?? null,
+      crestFactorDb: measured.crestFactorDb ?? null,
+      provenance: { engine, sampleRate: SAMPLE_RATE, notes: [
+        "Full-file SHA-256; EBU R128 integrated loudness, loudness range (LRA), short-term max, and oversampled true peak from ffmpeg.",
+        `Silence threshold -60 dBFS; all-channel peak waveform, RMS energy, and MixRamp fade contours at ${SAMPLE_RATE} Hz.`,
         "Spectral/rhythm estimates use the strongest channel, avoiding phase-cancellation false silence.",
-        "Tempo is coarse energy-envelope autocorrelation; key is chroma profile correlation, not beat/key certainty.",
-        "Timbre/key use sampled spectral frames in the first 180 seconds; descriptors are not neural embeddings.",
+        "Tempo uses multi-band spectral flux onset autocorrelation with beatgrid phase alignment and stability scoring.",
+        "Key uses harmonic-weighted HPCP correlation against Krumhansl-Kessler profiles with Camelot and Open Key notation.",
+        "Timbre, 12-band Bark energy, 13 MFCCs, and genre/mood classification sample frames across intro, body, and outro.",
         ...(loudness.integratedLufs === null ? ["Integrated loudness unavailable or below EBU gating floor."] : []),
       ] },
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Clock3 } from "lucide-react";
 import Link from "next/link";
 import { useActionState } from "react";
 import { requestAccess, type FormState } from "@/app/actions/auth";
@@ -10,15 +10,40 @@ export function RequestForm() {
   const [state, action] = useActionState<FormState, FormData>(requestAccess, {});
   if (state.ok) {
     return (
-      <div className="rounded-2xl bg-elevated p-8" role="status">
-        <CheckCircle2 className="size-8 text-mint" aria-hidden />
-        <h2 className="mt-4 text-2xl font-bold">Request sent</h2>
-        <p className="mt-2 text-muted">
-          The admin will review it soon. Once you&rsquo;re approved, sign in with the email and password you just chose.
+      <div className="rounded-2xl border border-line/70 bg-elevated p-6 sm:p-8" role="status">
+        <div className="flex items-center gap-2 text-mint">
+          <CheckCircle2 className="size-7 shrink-0" aria-hidden />
+          <span className="text-xs font-semibold tracking-wider uppercase">Request received</span>
+        </div>
+        <h2 className="mt-3 text-2xl font-bold">Request sent</h2>
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
+          Your account is now in the review queue. Because Mint is a private home-server library, an admin approves new members manually—typically within a day.
         </p>
-        <Link href="/" className="mt-6 inline-block font-semibold text-mint hover:underline">
-          Back to the live board
-        </Link>
+        <div className="mt-5 rounded-xl border border-line/60 bg-surface/60 p-4 text-sm">
+          <p className="flex items-center gap-2 font-semibold text-fg">
+            <Clock3 className="size-4 text-mint" aria-hidden />
+            What happens next
+          </p>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-xs leading-relaxed text-muted">
+            <li>Keep the email and password you just chose—they activate as soon as you&rsquo;re approved.</li>
+            <li>Sign in at the Sign in page once approved to listen in your browser.</li>
+            <li>After signing in, you can link YouTube Music or Spotify in Settings to bring in your playlists and likes.</li>
+          </ol>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <Link
+            href="/login"
+            className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong"
+          >
+            Go to Sign in
+          </Link>
+          <Link
+            href="/browse"
+            className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm font-semibold text-fg hover:bg-hover"
+          >
+            Browse the library
+          </Link>
+        </div>
       </div>
     );
   }

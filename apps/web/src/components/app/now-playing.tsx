@@ -37,7 +37,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-lg font-bold focus-visible:outline-none">Now playing</h1>
       <div className="flex items-center gap-1">
-        <Link href="/app/devices" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
+        <Link href="/app/settings?section=devices" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
           <MonitorSpeaker className="size-4" />Devices
         </Link>
         <Link href={returnTo} aria-label="Close now playing" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">

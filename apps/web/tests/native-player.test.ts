@@ -5,6 +5,8 @@ import { BrowserDSP } from "../src/lib/browser-dsp";
 import { loadCollection, shuffled } from "../src/lib/browser-catalog";
 import { NativePlayer } from "../src/lib/native-player";
 import { defaultDsp, playerStateSchema, type PlayerItem } from "../src/lib/player-protocol";
+import { camelotCompatibility, normalizationGain, smartTransition } from "../src/lib/smart-fades";
+import { analysisSchema } from "@mint/core/analysis";
 
 function audioFixture(): HTMLAudioElement {
   const element = new EventTarget() as HTMLAudioElement;
@@ -378,11 +380,108 @@ test("original DSP preserves headroom, applies EQ, schedules equal-power fades a
     assert.equal(context.nodes[12]!.ratio.value, 1);
     await assert.rejects(dsp.configure({ ...defaultDsp, preamp: 1 }));
     assert.deepEqual(dsp.settings, defaultDsp);
+    await dsp.configure({ ...defaultDsp, loudnessContour: true, stereoMode: "crossfeed", limiter: true });
+    assert.equal(context.nodes[17]!.gain.value, 4.5);
+    assert.equal(context.nodes[18]!.gain.value, 3.0);
+    assert.equal(context.nodes[19]!.gain.value, -1.5);
+    assert.equal(context.nodes[20]!.ratio.value, 20);
   } finally {
     dsp.dispose();
     if (previous) Object.defineProperty(globalThis, "window", previous);
     else Reflect.deleteProperty(globalThis, "window");
   }
+});
+
+test("Smart Fades v2 aligns beatgrids, scores Camelot keys, protects vocals, and supports v1 fallback", () => {
+  const [from, to] = tracks(2);
+  const v2Base = {
+    version: 2 as const,
+    algorithm: "mint-dsp-v2" as const,
+    fingerprint: { sha256: "a".repeat(64), bytes: 1024, mtimeMs: 1000 },
+    measuredAt: new Date().toISOString(),
+    durationSec: 180,
+    leadingSilenceSec: 0.4,
+    trailingSilenceSec: 0.8,
+    integratedLufs: -14,
+    truePeakDbtp: -1,
+    lraLu: 6,
+    shortTermMaxLufs: -11,
+    crestFactorDb: 9,
+    energy: {
+      rms: 0.25,
+      peak: 0.8,
+      dynamicRangeDb: 8,
+      spectralCentroidHz: 1800,
+      spectralRolloffHz: 4200,
+      spectralFlatness: 0.12,
+      zeroCrossingRate: 0.08,
+      spectralFlux: 0.18,
+    },
+    tempo: { bpm: 120, confidence: 0.85, tempoStability: 0.9, firstDownbeatSec: 0.5, beatIntervalSec: 0.5, timeSignature: "4/4" as const },
+    key: { name: "A minor", camelot: "8A", openKey: "1m", scale: "minor" as const, confidence: 0.82 },
+    structure: {
+      introEndSec: 8,
+      outroStartSec: 168,
+      firstPeakSec: 16,
+      fadeInContourDb: [-36, -24, -16, -12, -8, -6, -4, -3, -2, -2, -1, -1, -1, 0, 0, 0],
+      fadeOutContourDb: [0, 0, -1, -2, -3, -5, -8, -11, -14, -16, -20, -25, -30, -36, -44, -55],
+    },
+    classification: {
+      genres: [{ name: "Electronic", subgenre: "House", confidence: 0.84 }],
+      moods: [{ name: "energetic" as const, confidence: 0.8 }, { name: "party" as const, confidence: 0.65 }],
+      valence: 0.68,
+      arousal: 0.78,
+      danceability: 0.85,
+      voiceInstrumental: { label: "instrumental" as const, vocalPresence: 0.18, confidence: 0.82 },
+    },
+    waveform: new Array(256).fill(0.3),
+    similarity: { method: "audio-embedding-v2" as const, confidence: 0.9, vector: new Array(64).fill(0.1) },
+    provenance: { engine: "ffmpeg+mint-dsp-v2", sampleRate: 16000, notes: ["Synthetic v2 fixture"] },
+  };
+  const outgoing = analysisSchema.parse(v2Base);
+  const incoming = analysisSchema.parse({
+    ...v2Base,
+    key: { ...v2Base.key, name: "C major", camelot: "8B", openKey: "1d", scale: "major" as const },
+  });
+  assert.equal(camelotCompatibility(outgoing.key, incoming.key).match, "relative");
+  const harmonicPlan = smartTransition({
+    from: { ...from!, albumId: "al_one" },
+    to: { ...to!, albumId: "al_two" },
+    outgoing,
+    incoming,
+    settings: { ...defaultDsp, fadeMode: "smart", crossfade: 8, albumSafe: true },
+    shuffled: true,
+    outgoingDuration: 180,
+  });
+  assert.ok(harmonicPlan.seconds > 0);
+  assert.match(harmonicPlan.reason, /120 BPM/);
+  assert.match(harmonicPlan.reason, /8A → 8B relative key/);
+
+  const vocalOut = analysisSchema.parse({
+    ...v2Base,
+    waveform: new Array(256).fill(0.6),
+    classification: { ...v2Base.classification, voiceInstrumental: { label: "vocal" as const, vocalPresence: 0.85, confidence: 0.9 } },
+  });
+  const vocalIn = analysisSchema.parse({
+    ...v2Base,
+    waveform: new Array(256).fill(0.6),
+    classification: { ...v2Base.classification, voiceInstrumental: { label: "vocal" as const, vocalPresence: 0.82, confidence: 0.88 } },
+  });
+  const vocalPlan = smartTransition({
+    from: { ...from!, albumId: "al_one" },
+    to: { ...to!, albumId: "al_two" },
+    outgoing: vocalOut,
+    incoming: vocalIn,
+    settings: { ...defaultDsp, fadeMode: "smart", crossfade: 8 },
+    shuffled: true,
+    outgoingDuration: 180,
+  });
+  assert.match(vocalPlan.reason, /vocal boundary protected/);
+  assert.ok(vocalPlan.seconds <= 8 * 0.5);
+
+  const quietInterlude = analysisSchema.parse({ ...v2Base, integratedLufs: -24, truePeakDbtp: -8, lraLu: 16 });
+  assert.equal(normalizationGain(quietInterlude, -16, { mode: "auto", sameAlbumSequence: true }), 3);
+  assert.ok(normalizationGain(quietInterlude, -16, { mode: "track", sameAlbumSequence: false }) > 3);
 });
 
 test("failed standby preload is not retried on every timeupdate, and pause cancels a real transition", async () => {

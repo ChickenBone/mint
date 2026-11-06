@@ -22,7 +22,7 @@ export function PageHeader({
       {art}
       <div className="min-w-0 flex-1">
         <h1 className="text-4xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl xl:text-6xl">{title}</h1>
-        {sub && <div className="mt-4 max-w-3xl text-sm leading-relaxed text-muted">{sub}</div>}
+        {sub && <div className="mt-4 max-w-prose text-sm leading-relaxed text-muted">{sub}</div>}
         {children && <div className="mt-6">{children}</div>}
       </div>
     </div>

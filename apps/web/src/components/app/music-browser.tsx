@@ -114,23 +114,56 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         event.preventDefault(); const values = new FormData(event.currentTarget);
         change(Object.fromEntries(metadataFilterKeys.map((key) => [key, String(values.get(key) ?? "").trim()])));
       }}>
-        <p className="text-sm leading-relaxed text-muted sm:col-span-2 lg:col-span-3">Artist and album contain your text. Codec matches exactly. Play and Shuffle use these same filters across the full library.</p>
-        {metadataFilterKeys.map((key) => <label key={key} className="text-sm text-muted">
-          {{ artist: "Artist contains", album: "Album contains", codec: "Codec", minYear: "Year from", maxYear: "Year through" }[key]}
-          <input name={key} defaultValue={params.get(key) ?? ""} type={key === "minYear" || key === "maxYear" ? "number" : "text"}
-            min={key === "minYear" || key === "maxYear" ? 1000 : undefined} max={key === "minYear" || key === "maxYear" ? 3000 : undefined}
-            maxLength={key === "codec" ? 100 : 200} placeholder={key === "codec" ? "flac, opus, mp3…" : undefined}
+        <p className="text-sm leading-relaxed text-muted sm:col-span-2 lg:col-span-3">Artist and album contain your text. Codec, genre, mood, BPM, and Camelot key filter measured audio across the library. Play and Shuffle use these same filters.</p>
+        {(["artist", "album", "codec", "minYear", "maxYear", "genre", "mood", "minBpm", "maxBpm", "camelotKey"] as const).map((key) => <label key={key} className="text-sm text-muted">
+          {{
+            artist: "Artist contains",
+            album: "Album contains",
+            codec: "Codec",
+            minYear: "Year from",
+            maxYear: "Year through",
+            genre: "Genre or sub-style",
+            mood: "Mood / vibe",
+            minBpm: "BPM from",
+            maxBpm: "BPM through",
+            camelotKey: "Key or Camelot code",
+          }[key]}
+          <input name={key} defaultValue={params.get(key) ?? ""} type={key === "minYear" || key === "maxYear" || key === "minBpm" || key === "maxBpm" ? "number" : "text"}
+            min={key === "minYear" || key === "maxYear" ? 1000 : key === "minBpm" || key === "maxBpm" ? 40 : undefined}
+            max={key === "minYear" || key === "maxYear" ? 3000 : key === "minBpm" || key === "maxBpm" ? 240 : undefined}
+            maxLength={key === "codec" || key === "genre" || key === "mood" ? 100 : key === "camelotKey" ? 10 : 200}
+            placeholder={{
+              artist: undefined,
+              album: undefined,
+              codec: "flac, opus, mp3…",
+              minYear: undefined,
+              maxYear: undefined,
+              genre: "Electronic, House, Jazz…",
+              mood: "chill, energetic, focus…",
+              minBpm: "90",
+              maxBpm: "130",
+              camelotKey: "8A, 11B, F# minor…",
+            }[key]}
             className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg ring-1 ring-line focus:ring-mint" />
         </label>)}
+        <label className="text-sm text-muted">
+          Vocal / instrumental
+          <select name="vocalType" defaultValue={params.get("vocalType") ?? ""} className="mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm text-fg ring-1 ring-line focus:ring-mint">
+            <option value="">Any</option>
+            <option value="vocal">Vocal</option>
+            <option value="instrumental">Instrumental</option>
+            <option value="spoken-word">Spoken word</option>
+          </select>
+        </label>
         <div className="flex flex-wrap items-end gap-2">
           <button className="min-h-11 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink">Apply filters</button>
           <button type="button" className="min-h-11 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover" onClick={() => change(Object.fromEntries(metadataFilterKeys.map((key) => [key, ""])))}>Clear filters</button>
         </div>
       </form>
     </details>}
-    {error ? <div role="alert" className="py-8"><p className="text-warn">{online ? error : "You’re offline. Catalog data needs a connection; downloaded songs remain available in Downloads."}</p><button className="mt-4 min-h-11 rounded-full bg-elevated px-5 hover:bg-hover" onClick={() => setRetry((n) => n + 1)}>Retry loading music</button></div>
+    {error ? <div role="alert" className="py-8"><p className="max-w-prose text-warn">{online ? error : "You’re offline. Catalog data needs a connection; downloaded songs remain available in Your music → Downloads."}</p><div className="mt-4 flex flex-wrap gap-3"><button className="min-h-11 rounded-full bg-elevated px-5 hover:bg-hover" onClick={() => setRetry((n) => n + 1)}>Retry loading music</button>{!online && <Link href="/app/collection?tab=downloads" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Open Downloads</Link>}</div></div>
       : !page ? <p role="status" className="py-12 text-muted">Opening your music…</p>
-      : !page.items.length ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? "No matches on this shelf." : "Nothing here yet."}</h2><p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">{q ? "Try an artist name, album or fewer words." : type === "playlist" ? "Your YouTube Music playlists appear after syncing. Manage imports in Settings." : "Music appears here as files finish importing. Check Jobs for progress."}</p></div>
+      : !page.items.length ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? "No matches on this shelf." : "Nothing here yet."}</h2><p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">{q ? "Try an artist name, album or fewer words." : type === "playlist" ? "Your playlists appear here after syncing or creating one in Your music." : "Music appears here as songs finish arriving in the library. Connect a service in Settings or check Your music for progress."}</p>{!q && <div className="mt-5 flex flex-wrap gap-3"><Link href="/app/settings?section=services" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Connect a service</Link><Link href="/app/collection" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Open Your music</Link></div>}</div>
       : type === "track" ? <CatalogTracks items={page.items} collection={collection} />
       : <div className="grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">{page.items.map((item) => <CollectionCard key={item.id} item={item} />)}</div>}
     {page && page.total > 100 && <nav aria-label="Library pages" className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">

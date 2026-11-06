@@ -1,25 +1,34 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
-
-function subscribeOnline(listener: () => void) {
-  window.addEventListener("online", listener);
-  window.addEventListener("offline", listener);
-  return () => {
-    window.removeEventListener("online", listener);
-    window.removeEventListener("offline", listener);
-  };
-}
-
-function isOnline() {
-  return navigator.onLine;
-}
+import Link from "next/link";
+import { AlertTriangle } from "lucide-react";
 
 export default function AppError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
-  const online = useSyncExternalStore(subscribeOnline, isOnline, () => true);
-  return <section role="alert" className="mx-auto max-w-xl py-16">
-    <h1 className="text-2xl font-bold">This part of Mint couldn’t load.</h1>
-    <p className="mt-3 text-sm leading-relaxed text-muted">{online ? "Your library and playback are unchanged. Try again in a moment." : "You appear to be offline. Reconnect and try again; downloaded music remains available."}</p>
-    <button type="button" onClick={reset} className="mt-6 min-h-11 rounded-full bg-mint px-5 font-semibold text-mint-ink hover:bg-mint-strong">Try again</button>
-  </section>;
+  return (
+    <div role="alert" className="mx-auto flex min-h-[50dvh] max-w-md flex-col justify-center py-12">
+      <div className="inline-flex items-center gap-2 text-xs font-semibold tracking-wider text-warn uppercase">
+        <AlertTriangle className="size-4" aria-hidden />
+        <span>Page unavailable</span>
+      </div>
+      <h1 className="mt-2 text-3xl font-extrabold tracking-tight">Something skipped</h1>
+      <p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
+        This view couldn&rsquo;t load right now. Active playback continues in the player below; retry loading or open your offline downloads.
+      </p>
+      <div className="mt-6 flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={reset}
+          className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong"
+        >
+          Try again
+        </button>
+        <Link
+          href="/app/collection?tab=downloads"
+          className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold text-fg hover:bg-hover"
+        >
+          Open Downloads
+        </Link>
+      </div>
+    </div>
+  );
 }

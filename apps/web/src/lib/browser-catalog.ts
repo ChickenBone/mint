@@ -1,10 +1,14 @@
 import { catalogPageSchema, collectionSchema, type PlayerCollection, type PlayerItem } from "./player-protocol";
 
-export const metadataFilterKeys = ["artist", "album", "codec", "minYear", "maxYear"] as const;
+export const metadataFilterKeys = [
+  "artist", "album", "codec", "minYear", "maxYear",
+  "genre", "mood", "minBpm", "maxBpm", "camelotKey", "vocalType",
+] as const;
+const numericFilterKeys = new Set<string>(["minYear", "maxYear", "minBpm", "maxBpm"]);
 export function collectionFromParams(params: Pick<URLSearchParams, "get">) {
   const filters = Object.fromEntries(metadataFilterKeys.flatMap((key) => {
     const value = params.get(key);
-    return value ? [[key, key === "minYear" || key === "maxYear" ? Number(value) : value]] : [];
+    return value ? [[key, numericFilterKeys.has(key) ? Number(value) : value]] : [];
   }));
   return collectionSchema.safeParse({ kind: params.get("kind") ?? "library", id: params.get("id"),
     query: params.get("q") || undefined, filters });

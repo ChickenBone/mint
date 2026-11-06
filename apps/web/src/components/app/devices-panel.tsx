@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Check, MonitorSpeaker, Pause, Play, SkipBack, SkipF
 import type { DeviceCommand } from "@mint/core/devices";
 import type { DeviceStore } from "@/lib/devices-store";
 import { getLocalDeviceId, handoffToDevice } from "@/lib/device-client";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Devices = Awaited<ReturnType<DeviceStore["list"]>>;
 type Device = Awaited<ReturnType<DeviceStore["getDevice"]>>;
@@ -169,6 +170,7 @@ function DeviceControls({ device, refresh, announce, busy, run }: {
 }) {
   const [name, setName] = useState(device.name), [volume, setVolume] = useState(device.state.volume);
   const [seek, setSeek] = useState(device.state.time);
+  const [confirmDisconnectOpen, setConfirmDisconnectOpen] = useState(false);
   const send = async (command: DeviceCommand) => {
     await run(async () => { await confirmCommand(`/api/devices/${device.id}/commands`, command); await refresh(); }, "Device confirmed the change.");
   };
@@ -217,11 +219,22 @@ function DeviceControls({ device, refresh, announce, busy, run }: {
         progressive={device.state.queueContext ? { total: device.state.queueContext.total, offset: device.state.queueContext.offset,
           entryIds: device.state.queueEntryIds ?? [], edit: async (edit) => { await send({ action: "queue-edit", edit }); } } : undefined}
         update={async (queue, currentIndex) => { await send({ action: "queue", trackIds: queue, currentIndex }); }} />
-      <button className={`${button} mt-6 text-danger`} disabled={busy} onClick={() => {
-        if (window.confirm(`Disconnect ${device.name}? Any party on this device will end.`)) void run(async () => {
-          await api(`/api/devices/${device.id}/revoke`, {}); await refresh();
-        }, "Device disconnected. Reload Mint on that device to reconnect.");
-      }}>Disconnect device</button>
+      <button className={`${button} mt-6 text-danger`} disabled={busy} onClick={() => setConfirmDisconnectOpen(true)}>Disconnect device</button>
+      <ConfirmDialog
+        open={confirmDisconnectOpen}
+        onClose={() => setConfirmDisconnectOpen(false)}
+        title={`Disconnect ${device.name}?`}
+        description={`Disconnect ${device.name}? Any party on this device will end.`}
+        confirmLabel="Disconnect device"
+        tone="danger"
+        busy={busy}
+        onConfirm={async () => {
+          setConfirmDisconnectOpen(false);
+          await run(async () => {
+            await api(`/api/devices/${device.id}/revoke`, {}); await refresh();
+          }, "Device disconnected. Reload Mint on that device to reconnect.");
+        }}
+      />
     </section>
   );
 }
@@ -231,6 +244,8 @@ function PartyControls({ party, refresh, run, busy }: {
   run: (task: () => Promise<void>, success?: string) => Promise<void>;
 }) {
   const [invite, setInvite] = useState<string | null>(null);
+  const [confirmEndOpen, setConfirmEndOpen] = useState(false);
+  const [pendingRemoveMember, setPendingRemoveMember] = useState<{ userId: string; name: string } | null>(null);
   const hostAction = (value: unknown, success: string) => run(async () => {
     await api(`/api/parties/${party.id}/control`, value); await refresh();
   }, success);
@@ -266,9 +281,7 @@ function PartyControls({ party, refresh, run, busy }: {
             <button className={button} disabled={busy} onClick={() => void run(async () => {
               await api(`/api/parties/${party.id}/invite`, { revoke: true }); setInvite(null);
             }, "Invitation revoked. Existing participants are unchanged.")}>Revoke invitation</button>
-            <button className={`${button} text-danger`} disabled={busy} onClick={() => {
-              if (window.confirm("End this party and revoke its invitation? Playback stays on its current device.")) void hostAction({ action: "end" }, "Party ended.");
-            }}>End party</button>
+            <button className={`${button} text-danger`} disabled={busy} onClick={() => setConfirmEndOpen(true)}>End party</button>
           </div>
           {invite && <label className="mt-4 block text-sm font-semibold">Invitation code · valid for up to one hour
             <input readOnly value={invite} className={`${input} mt-2`} onFocus={(event) => event.target.select()} />
@@ -280,9 +293,35 @@ function PartyControls({ party, refresh, run, busy }: {
         {party.participants.map((person) => <li key={person.userId} className="flex items-center gap-1 rounded-full bg-elevated py-1 pl-3 pr-2 text-sm">
           {person.name}{person.userId === party.hostId ? " · host" : ""}
           {party.isHost && person.userId !== party.hostId && <button className="rounded-full p-2 text-muted hover:text-danger" aria-label={`Remove ${person.name}`}
-            disabled={busy} onClick={() => { if (window.confirm(`Remove ${person.name} and revoke the invitation?`)) void hostAction({ action: "remove-member", userId: person.userId }, "Participant removed and invitation revoked."); }}><X className="size-3" aria-hidden /></button>}
+            disabled={busy} onClick={() => setPendingRemoveMember({ userId: person.userId, name: person.name })}><X className="size-3" aria-hidden /></button>}
         </li>)}
       </ul>
+      <ConfirmDialog
+        open={confirmEndOpen}
+        onOpenChange={setConfirmEndOpen}
+        title="End this party?"
+        description="This ends the party and revokes its invitation code. Playback stays on its current device."
+        confirmLabel="End party"
+        loading={busy}
+        onConfirm={async () => {
+          setConfirmEndOpen(false);
+          await hostAction({ action: "end" }, "Party ended.");
+        }}
+      />
+      <ConfirmDialog
+        open={pendingRemoveMember !== null}
+        onOpenChange={(open) => { if (!open) setPendingRemoveMember(null); }}
+        title={pendingRemoveMember ? `Remove ${pendingRemoveMember.name}?` : "Remove participant?"}
+        description="This removes the participant from the party and revokes the current invitation code."
+        confirmLabel="Remove participant"
+        loading={busy}
+        onConfirm={async () => {
+          const target = pendingRemoveMember;
+          setPendingRemoveMember(null);
+          if (!target) return;
+          await hostAction({ action: "remove-member", userId: target.userId }, "Participant removed and invitation revoked.");
+        }}
+      />
       <QueueEditor queue={party.queue} labels={party.queueTracks} disabled={busy || !editable} update={async (queue) => {
         await run(async () => { await api(`/api/parties/${party.id}/queue`, { revision: party.revision, queue }); await refresh(); }, "Shared queue updated.");
       }} />

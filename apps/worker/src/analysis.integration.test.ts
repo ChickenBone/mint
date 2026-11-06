@@ -48,7 +48,7 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
     globals.__mintDb = { db, pool }; config.musicDir = root; config.existingMusicDir = root;
     await mkdir(root);
     try {
-      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0011_analysis_backfill"]) {
+      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0011_analysis_backfill", "0013_analysis_v2"]) {
         const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
         for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
       }
@@ -175,9 +175,26 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
           })));
           assert.equal((await db.select().from(trackAnalysis)).filter((job) => job.status === "complete").length, 2);
           assert.equal((await db.select().from(trackAnalysis)).filter((job) => job.status === "pending").length, 1);
-          assert.equal((await db.select().from(analysisWorkers).where(eq(analysisWorkers.id, workerId))).length, 1);
+          assert.equal((await db.select().from(analysisWorkers)).filter((worker) => worker.id === workerId)[0]?.completedCount, 2);
           assert.deepEqual(await readdir(cacheDir), []);
         } finally { await new Promise<void>((resolve) => server.close(() => resolve())); }
+      });
+      await suite.test("executionMode remote-only and prefer-remote coordinate local vs remote lease claiming and result retries", async () => {
+        await enqueueAnalysis(db, { trackId: a.id, refresh: true });
+        await setControls({ executionMode: "remote-only", concurrency: 2 });
+        assert.equal(await claimAnalysis("local"), null, "remote-only blocks local lease claiming");
+        const remoteClaim = await claimAnalysis("remote");
+        assert.ok(remoteClaim);
+        await finishAnalysis(remoteClaim.leaseId, result);
+
+        await enqueueAnalysis(db, { trackId: a.id, refresh: true });
+        await setControls({ executionMode: "prefer-remote", concurrency: 2 });
+        assert.equal(await claimAnalysis("local"), null, "prefer-remote yields to online remote worker seen within 60s");
+        await db.update(analysisWorkers).set({ seenAt: new Date(Date.now() - 120_000) });
+        const fallbackClaim = await claimAnalysis("local");
+        assert.ok(fallbackClaim, "prefer-remote falls back to local when no remote worker seen in last 60s");
+        await finishAnalysis(fallbackClaim.leaseId, result);
+        await setControls({ executionMode: "hybrid", concurrency: 2 });
       });
       await suite.test("full-library scans exceed 500, resume atomically and never replace pending/running jobs", async () => {
         await setControls({ paused: true });
@@ -255,6 +272,14 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
         await startAnalysisBackfill(db, "missing");
         assert.equal((await advanceAnalysisBackfill(db))?.queued, 1);
         assert.equal((await row(b.id)).status, "pending");
+        await db.update(trackAnalysis).set({ version: 1, status: "complete", result }).where(eq(trackAnalysis.trackId, a.id));
+        await startAnalysisBackfill(db, "missing");
+        assert.equal((await advanceAnalysisBackfill(db))?.queued, 0, "missing mode preserves completed v1 tracks");
+        await startAnalysisBackfill(db, "upgrade-v1");
+        assert.equal((await advanceAnalysisBackfill(db))?.queued, 1, "upgrade-v1 queues v1 tracks for v2 while keeping v1 result readable");
+        assert.equal((await row(a.id)).status, "pending");
+        assert.equal((await row(a.id)).version, 2);
+        assert.ok((await row(a.id)).result, "v1 result stays readable while pending v2 upgrade");
         await db.delete(schema.tracks);
         assert.equal((await startAnalysisBackfill(db, "all"))?.status, "queued");
         assert.equal((await advanceAnalysisBackfill(db))?.total, 0);

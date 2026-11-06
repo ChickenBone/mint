@@ -22,7 +22,7 @@ export function RetryButton({ trackId, forceCobalt = false }: { trackId: string;
           setError(res.error ?? null);
         })
       }
-      className={clsx("grid size-8 place-items-center rounded-full transition hover:bg-elevated hover:text-fg disabled:opacity-60", error ? "text-danger" : "text-muted")}
+      className={clsx("grid size-11 place-items-center rounded-full transition hover:bg-elevated hover:text-fg disabled:opacity-60", error ? "text-danger" : "text-muted")}
     >
       <Icon className={pending ? "size-4 animate-spin" : "size-4"} aria-hidden />
     </button>

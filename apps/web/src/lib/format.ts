@@ -24,10 +24,10 @@ export function formatCount(n: number) {
   return n.toLocaleString("en-US");
 }
 
-export function timeAgo(iso: string | Date | null | undefined) {
+export function timeAgo(iso: string | Date | null | undefined, now = Date.now()) {
   if (!iso) return "never";
   const d = typeof iso === "string" ? new Date(iso) : iso;
-  const s = Math.round((Date.now() - d.getTime()) / 1000);
+  const s = Math.round((now - d.getTime()) / 1000);
   if (s < 45) return "just now";
   if (s < 3600) return `${Math.round(s / 60)} min ago`;
   if (s < 86400) return `${Math.round(s / 3600)} h ago`;

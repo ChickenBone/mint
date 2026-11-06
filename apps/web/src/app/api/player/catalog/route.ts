@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const querySchema = z.object({
   type: z.enum(["track", "album", "artist", "playlist"]).default("track"),
   sort: z.enum(["title", "artist", "album", "newest"]).default("artist"),
-  kind: z.enum(["library", "liked", "playlist", "album", "artist"]).default("library"),
+  kind: z.enum(["library", "liked", "playlist", "album", "artist", "spotify"]).default("library"),
   id: z.string().optional(), q: z.string().max(100).optional(),
   start: z.coerce.number().int().min(0).max(1_000_000).default(0),
   size: z.coerce.number().int().min(1).max(500).default(100),

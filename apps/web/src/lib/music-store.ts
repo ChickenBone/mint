@@ -47,6 +47,54 @@ export async function smartTracks(db: Store, userId: string, rules: SmartRules) 
   if (rules.minYear) conditions.push(sql`${t.year} >= ${rules.minYear}`);
   if (rules.maxYear) conditions.push(sql`${t.year} <= ${rules.maxYear}`);
   if (rules.addedWithinDays) conditions.push(sql`${t.createdAt} >= now() - ${rules.addedWithinDays} * interval '1 day'`);
+  if (rules.genre?.trim()) {
+    const g = rules.genre.trim().toLowerCase();
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta, jsonb_array_elements(coalesce(ta.result->'classification'->'genres', '[]'::jsonb)) item
+      where ta.track_id = ${t.id} and ta.result is not null
+        and (lower(coalesce(item->>'name', '')) = ${g} or lower(coalesce(item->>'subgenre', '')) = ${g})
+    )`);
+  }
+  if (rules.mood?.trim()) {
+    const m = rules.mood.trim().toLowerCase();
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta, jsonb_array_elements(coalesce(ta.result->'classification'->'moods', '[]'::jsonb)) item
+      where ta.track_id = ${t.id} and ta.result is not null
+        and lower(coalesce(item->>'name', '')) = ${m}
+    )`);
+  }
+  if (rules.minBpm !== undefined) {
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta
+      where ta.track_id = ${t.id} and ta.result is not null
+        and (ta.result->'tempo'->>'bpm') is not null
+        and (ta.result->'tempo'->>'bpm')::double precision >= ${rules.minBpm}
+    )`);
+  }
+  if (rules.maxBpm !== undefined) {
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta
+      where ta.track_id = ${t.id} and ta.result is not null
+        and (ta.result->'tempo'->>'bpm') is not null
+        and (ta.result->'tempo'->>'bpm')::double precision <= ${rules.maxBpm}
+    )`);
+  }
+  if (rules.camelotKey?.trim()) {
+    const kUpper = rules.camelotKey.trim().toUpperCase();
+    const kLower = rules.camelotKey.trim().toLowerCase();
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta
+      where ta.track_id = ${t.id} and ta.result is not null
+        and (upper(coalesce(ta.result->'key'->>'camelot', '')) = ${kUpper} or lower(coalesce(ta.result->'key'->>'name', '')) = ${kLower})
+    )`);
+  }
+  if (rules.vocalType) {
+    conditions.push(sql`exists (
+      select 1 from track_analysis ta
+      where ta.track_id = ${t.id} and ta.result is not null
+        and lower(coalesce(ta.result->'classification'->'voiceInstrumental'->>'label', '')) = ${rules.vocalType.toLowerCase()}
+    )`);
+  }
   const order = rules.order === "newest" ? [desc(t.createdAt)] : rules.order === "least-played"
     ? [asc(sql`(select count(*) from music_history h where h.track_id = ${t.id} and h.user_id = ${userId})`)] : [asc(t.artist), asc(t.title)];
   return db.select().from(t).where(and(...conditions)).orderBy(...order, asc(t.id)).limit(rules.limit);

@@ -352,9 +352,10 @@ function TrackMenu({ selection, close, command, browse }: {
     <button role="menuitem" className={menuClass} onClick={() => {
       close();
       const params = collectionParams(itemCollection(item));
+      params.set("tab", "downloads");
       if (item.type === "track") params.set("track", item.id);
       params.set("title", item.title);
-      router.push(`/app/downloads?${params}`);
+      router.push(`/app/collection?${params}`);
     }}>Download {item.type === "track" ? "song" : item.type}</button>
     {item.type !== "track" && <button role="menuitem" className={menuClass} onClick={() => { close(); browse(item); }}>Open {item.type}</button>}
     {item.albumId && <button role="menuitem" className={menuClass} onClick={() => {
