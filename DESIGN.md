@@ -19,7 +19,9 @@ The approved redesign is a spacious listening service, not a pipeline dashboard.
 - Content gutters scale from 20px on phones to 48px on wide screens. Related controls form small groups; sections have 40–64px separation.
 - Primary controls are mint with dark ink. Secondary controls use neutral fills or quiet outlines. Destructive and warning states use danger/warn, never mint.
 - Touch actions target 44px. Focus is visible. Inputs always have names; ranked rows retain their order and state in accessible text, not color alone.
-- The player is one anchored horizontal surface. Now Playing pairs the sleeve with Queue / Lyrics / Sound, retaining arrow/Home/End tab navigation and pinned phone transport.
+- The player is one anchored three-part surface: song identity, centered transport/seek, then lyrics, queue and mute/volume. The compact phone dock keeps playback and direct queue access with a quiet progress edge. Now Playing pairs the sleeve with Queue / Lyrics, retaining arrow/Home/End tab navigation and pinned phone transport. EQ and all sound configuration live in Settings → Playback & sound, linked from Now Playing.
+- Artist and album pages lead with large real library sleeves, readable titles and full-collection Play/Shuffle. Artist mosaics are album artwork, not invented portraits. Artist names and album titles are separate navigation targets throughout member listening views.
+- Songs, collection sleeves, recommendations, local chart entries, downloads and queue rows share right-click, 550ms touch/pen hold, options-button and Context Menu/Shift+F10 actions. Movement cancels a hold; releasing a hold never also plays or navigates. Inputs keep native editing gestures, and public browsing keeps native context menus.
 - Motion is brief and purposeful: the existing sleeve reveal and a muted-to-playable chart transition. Reduced motion removes animation and nonessential transitions.
 - Failed artwork uses the shared neutral music tile. Never invent covers, counts, chart ranks or playback availability.
 
@@ -35,7 +37,7 @@ The approved redesign is a spacious listening service, not a pipeline dashboard.
 | YouTube likes and imported playlists | Your collection / Settings → YouTube Music |
 | Spotify metadata playlists and account linking | Your collection / Settings → Spotify |
 | Persistent playback, seek, repeat, queue editing | Player / Now Playing |
-| DSP/EQ, normalization, Smart Fades, playback compatibility | Player → Sound |
+| DSP/EQ, normalization, Smart Fades, playback compatibility | Settings → Playback & sound |
 | Lyrics and personal lyric-match corrections | Player → Lyrics |
 | Account-scoped offline downloads, storage/retry/removal | Downloads |
 | Private history, private sessions and history deletion | Listening history |

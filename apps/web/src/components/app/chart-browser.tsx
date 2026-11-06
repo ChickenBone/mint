@@ -9,6 +9,8 @@ import { formatDuration } from "@/lib/format";
 import { Artwork } from "@/components/artwork";
 import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 
 type RecordingResult = RequestRecording & { token: string; existing: { id: string; stage: string } | null };
 type Acquisition = { status: "available" | "requested" } | { status: "resolve"; message: string; query: string; results: RecordingResult[] };
@@ -119,7 +121,7 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
     <p role="status" className="text-sm text-mint">{notice}</p>
     {page.status === "error" && !page.total ? <div className="py-12"><h3 className="text-xl font-semibold">This chart couldn’t be reached.</h3><p className="mt-3 text-sm text-muted">Your library is unaffected. Retry shortly or choose another collection.</p></div>
       : !page.total ? <div className="py-12"><h3 className="text-xl font-semibold">No rankings published yet.</h3><p className="mt-3 text-sm text-muted">The provider returned an empty chart, not an error. Check another collection.</p></div>
-      : <ol start={page.offset + 1} className="chart-rows mt-3">{page.items.map((row) => <li key={`${page.chart.id}:${row.id}`} className="chart-row group" data-availability={row.availability}>
+      : <ol start={page.offset + 1} className="chart-rows mt-3">{page.items.map((row) => <MusicItem as="li" item={member && row.availability === "available" ? row.item : null} key={`${page.chart.id}:${row.id}`} className="chart-row group" data-availability={row.availability}>
         <span className="text-center text-sm text-faint tabular">{row.rank}</span>
         <div className={`relative ${row.availability !== "available" ? "grayscale" : ""}`}>
           <Artwork track={{ artworkUrl: row.item?.thumb ?? row.artwork ?? "" }} className="size-14 rounded-lg" />
@@ -127,7 +129,7 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
             className="absolute inset-0 grid place-items-center rounded-lg bg-bg/70 text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"><Play className="size-5" fill="currentColor" /></button>}
         </div>
         <div className="min-w-0">
-          <p className="truncate font-semibold">{row.title}</p><p className="truncate text-sm text-muted">{row.artist}</p>
+          <p className="truncate font-semibold">{row.title}</p><p className="truncate text-sm text-muted">{member && row.item ? <ArtistLink item={row.item} /> : row.artist}</p>
           <p className="mt-1 text-xs text-faint">{statusNames[row.availability]}{row.availability === "processing" && row.progress !== null ? ` · ${Math.round(row.progress)}%` : ""}</p>
           {row.availability === "processing" && <progress aria-label={`Acquisition progress for ${row.title}`} value={row.progress ?? 0} max={100} className="mt-2 h-1 w-full max-w-40 accent-mint" />}
         </div>
@@ -141,7 +143,7 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
           <a href={row.url} target="_blank" rel="noreferrer" aria-label={`View ${row.title} on its source`} className="grid size-11 shrink-0 place-items-center text-faint hover:text-fg"><ExternalLink className="size-4" /></a>
         </div>
         {row.availability === "ambiguous" && <p className="chart-row-reason text-xs leading-relaxed text-muted">{row.reason}</p>}
-      </li>)}</ol>}
+      </MusicItem>)}</ol>}
     {resolution && <section ref={resolutionRef} tabIndex={-1} className="my-7 rounded-2xl bg-elevated p-5 sm:p-7" aria-label={`Resolve ${resolution.row.title}`}>
       <div className="flex items-start justify-between gap-3"><h3 className="text-xl font-bold">Choose the right recording.</h3><button aria-label="Close recording selection" className="grid size-11 shrink-0 place-items-center rounded-full hover:bg-hover" onClick={() => setResolution(null)}><X className="size-5" /></button></div>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">Nothing has been requested yet. Check the version and duration for {resolution.row.title} by {resolution.row.artist}. Live, remix and cover recordings are not interchangeable.</p>

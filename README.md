@@ -103,7 +103,7 @@ Current desktop and mobile views, captured from a local demo instance. All names
 | Listening | Running your server |
 | --- | --- |
 | ![Mint Now playing view with album artwork, playback controls and the upcoming queue](docs/screenshots/now-playing.png) | ![Mint jobs dashboard with matching, downloads and Plex scanning progress](docs/screenshots/jobs.png) |
-| **Now playing:** your music and queue, with lyrics and sound tools one tab away. | **Jobs:** see what is happening and where a track needs attention. |
+| **Now playing:** your music, queue and multi-source lyrics. Sound controls live in Settings. | **Jobs:** see what is happening and where a track needs attention. |
 | ![Mint album library with artwork-led browsing and collection playback](docs/screenshots/library.png) | ![Mint audio analysis coverage, connected workers and full-library processing actions](docs/screenshots/analysis.png) |
 | **Library:** albums, artists, songs and playlists without loading everything at once. | **Audio analysis:** check coverage and queue full-library processing. |
 | ![Ranked chart discovery with provider attribution, local playback and explicit Add to library actions](docs/screenshots/charts.png) | ![Settings and management hub with collections, devices, activity and administration](docs/screenshots/settings.png) |

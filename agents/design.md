@@ -18,7 +18,7 @@ The current visual contract is [DESIGN.md](../DESIGN.md): **Listening room**, a 
 | Discover | Virtual playlist shelves, radios, mixes, charts and genre discovery |
 | Library | Bounded album/artist/song browsing, search, filters and full-collection playback |
 | Your collection | Native playlists/likes and imported collections, preserving their distinct ownership |
-| Player / Now Playing | Transport, queue, lyrics and sound; never a separate embedded application |
+| Player / Now Playing | Transport, queue and lyrics; never a separate embedded application |
 | Settings & management | Provider linking, devices/parties, activity/requests, workers and administration |
 | Public pages | Browse-only discovery and requests for access; public activity remains separately reachable |
 
@@ -28,11 +28,13 @@ Move machinery out of the listening foreground; do not remove it. Sync status, a
 
 ## Playback surface
 
-Keep the audio engine mounted during member navigation. Clicking player title/artwork opens Mint's own Now Playing view, with a large sleeve and Queue/Lyrics/Sound tools.
+Keep the audio engine mounted during member navigation. Clicking player title/artwork opens Mint's own Now Playing view, with a large sleeve and Queue/Lyrics tools. Sound configuration, including EQ, normalization, transitions and compatibility, lives in Settings → Playback & sound. Now Playing links there without remounting playback.
 
 On phones, listening content scrolls above pinned transport and safe-area-aware navigation. Do not duplicate competing player bars. Back/Escape returns to the originating view without resetting audio.
 
-Context menus are Mint-owned and accessible through right-click, options buttons and keyboard invocation. Tabs retain arrow/Home/End support; menus support navigation, dismissal and focus return.
+Context menus are Mint-owned and accessible through right-click, options buttons, a 550ms touch/pen hold and keyboard invocation. Use the shared `MusicItem` surface for local songs and collections. Movement/scrolling cancels holds, release clicks are suppressed after a hold, and editing fields retain native gestures. Public browsing retains native context menus. Tabs retain arrow/Home/End support; menus support navigation, dismissal and focus return.
+
+Artist names and album titles navigate independently of playback. Artist/album detail heroes use bounded library artwork and collection-wide Play/Shuffle; an artist mosaic represents album sleeves, not an artist portrait. Overview titles/counts are independent of filtered/paginated results.
 
 ## Discovery and charts
 

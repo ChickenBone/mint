@@ -6,6 +6,8 @@ import { Folder, Heart, ListMusic, Pin } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { musicRequest, type CollectionList } from "@/lib/music-client";
 import { NativeLikes } from "./native-likes";
+import { MusicItem } from "./music-item";
+import { TrackMenuButton } from "./player";
 
 const input = "min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm ring-1 ring-line focus:ring-mint";
 const button = "min-h-11 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
@@ -64,10 +66,11 @@ export function NativeCollections({ initial, sources }: { initial: CollectionLis
       }}><label className="text-sm text-muted">Folder name<input name="title" defaultValue={data.folders.find((f) => f.id === folder)?.title} required maxLength={100} className={`${input} mt-2 w-52`} /></label>
         <button className={button} disabled={busy}>Rename folder</button></form>}
       {!shown.length ? <div className="py-12"><ListMusic className="mb-4 size-8 text-faint" /><h2 className="text-xl font-bold">Make room for your next favorite.</h2><p className="mt-3 text-sm text-muted">Create a playlist above, or copy a YouTube playlist to make it your own.</p></div>
-        : <ul className="divide-y divide-line/60">{shown.map((p) => <li key={p.id} className="flex flex-wrap items-center gap-3 py-4">
+        : <ul className="divide-y divide-line/60">{shown.map((p) => <MusicItem as="li" item={{ id: p.id, type: "playlist", title: p.title, thumb: p.artworkUrl ?? undefined }} key={p.id} className="flex flex-wrap items-center gap-3 py-4">
           <Link className="flex min-w-0 flex-1 items-center gap-4" href={`/app/collections/${p.id}`}>
             {p.artworkUrl ? <Artwork track={{ artworkUrl: p.artworkUrl }} className="size-16 shrink-0 rounded" /> : <span className="grid size-16 shrink-0 place-items-center rounded bg-elevated text-faint"><ListMusic className="size-6" /></span>}
             <span className="min-w-0"><span className="block truncate font-bold hover:underline">{p.title}</span><span className="mt-1 block text-sm text-muted">{p.rules ? "Smart playlist" : "Mint playlist"} · {p.role === "owner" ? "Owner" : "Editor"}</span></span></Link>
+          <TrackMenuButton item={{ id: p.id, type: "playlist", title: p.title, thumb: p.artworkUrl ?? undefined }} />
           <button className={button} disabled={busy} aria-label={`${p.pinned ? "Unpin" : "Pin"} ${p.title}`} aria-pressed={p.pinned} onClick={() => void run(async () => {
             await musicRequest(`collections/${p.id}/organization`, "PATCH", { pinned: !p.pinned, folderId: p.folderId }); await reload();
           })}><Pin className={`size-4 ${p.pinned ? "text-mint" : ""}`} /></button>
@@ -75,7 +78,7 @@ export function NativeCollections({ initial, sources }: { initial: CollectionLis
             <select className={`${input} max-w-44`} disabled={busy} value={p.folderId ?? ""} onChange={(e) => { const folderId = e.target.value || null;
               void run(async () => { await musicRequest(`collections/${p.id}/organization`, "PATCH", { pinned: p.pinned, folderId }); await reload(); }); }}>
               <option value="">Unfiled</option>{data.folders.map((f) => <option key={f.id} value={f.id}>{f.title}</option>)}</select></label>
-        </li>)}</ul>}
+        </MusicItem>)}</ul>}
       <p className="mt-8 flex items-center gap-2 text-sm text-faint"><Heart className="size-4" />Mint likes are private to you and never change YouTube Music.</p>
     </>}
   </section>;

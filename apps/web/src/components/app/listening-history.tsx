@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { TrackView } from "@mint/core/events";
 import { musicRequest } from "@/lib/music-client";
 import { MusicTrackList } from "./music-track-list";
+import { ArtistLink } from "./music-links";
 
 type Entry = { event: { id: string; createdAt: string; listenedMs: number; completed: boolean }; track: TrackView };
 const button = "inline-flex min-h-11 items-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
@@ -42,7 +43,7 @@ export function ListeningHistory({ initialEntries, initialPrivate, initialExclud
         <button key={p.label} disabled={busy || p.disabled} className={button} onClick={() => void run(async () => { const result = await musicRequest<{ entries: Entry[] }>(`history?page=${p.value}`); setEntries(result.entries); setPage(p.value); })}>{p.label}</button>)}
     </nav>}
     {!!excluded.length && <section className="mt-10 border-t border-line pt-7"><h2 className="text-2xl font-bold">Outside your taste profile</h2><p className="mt-3 mb-5 text-sm text-muted">These exclusions remain even if you delete their listening history. Restore a song whenever you want.</p>
-      <ul className="divide-y divide-line/60">{excluded.map((track) => <li key={track.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><p className="min-w-0 truncate">{track.title}<span className="ml-2 text-sm text-muted">{track.artist}</span></p>
+      <ul className="divide-y divide-line/60">{excluded.map((track) => <li key={track.id} className="flex flex-wrap items-center justify-between gap-3 py-3"><p className="min-w-0 truncate">{track.title}<span className="ml-2 text-sm text-muted"><ArtistLink item={track} /></span></p>
         <button className={button} disabled={busy} onClick={() => void run(async () => { await musicRequest(`exclusions/${track.id}`, "DELETE"); setExcluded(excluded.filter((t) => t.id !== track.id)); })}>Include in taste</button></li>)}</ul>
     </section>}
   </section>;

@@ -2,18 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, SlidersHorizontal, Volume2 } from "lucide-react";
+import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Settings2, Volume2 } from "lucide-react";
 import { Artwork } from "../artwork";
 import type { PlayerCommand, PlayerItem, PlayerState } from "@/lib/player-protocol";
-import { AudioPanel, LyricsPanel, QueueContents } from "./player-panels";
+import { LyricsPanel, QueueContents } from "./player-panels";
+import { AlbumLink, ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 import { PlaybackControls, SeekControl } from "./player-controls";
 import { getTabTargetIndex } from "@/components/ui/interactive";
 
-type Panel = "queue" | "lyrics" | "audio";
+type Panel = "queue" | "lyrics";
 const tabs = [
   { id: "queue", label: "Queue", icon: ListMusic },
   { id: "lyrics", label: "Lyrics", icon: Mic2 },
-  { id: "audio", label: "Sound", icon: SlidersHorizontal },
 ] as const;
 
 // Mint's record-sleeve view: artwork and transport first, listening tools alongside.
@@ -37,27 +38,28 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
     <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-lg font-bold focus-visible:outline-none">Now playing</h1>
       <div className="flex items-center gap-1">
-        <Link href="/app/devices" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
-          <MonitorSpeaker className="size-4" />Devices
+        <Link href="/app/settings#playback" aria-label="Playback and sound settings" className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><Settings2 className="size-5" /></Link>
+        <Link href="/app/devices" aria-label="Devices" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
+          <MonitorSpeaker className="size-4" /><span className="hidden sm:inline">Devices</span>
         </Link>
-        <Link href={returnTo} aria-label="Close now playing" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
-          <ArrowDown className="size-4" />Back
+        <Link href={returnTo} aria-label="Close now playing" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
+          <ArrowDown className="size-4" /><span className="hidden sm:inline">Back</span>
         </Link>
       </div>
     </header>
     {!track ? <div className="mx-auto max-w-md px-6 py-20 text-center">
       <ListMusic className="mx-auto mb-5 size-10 text-muted" />
       <h2 className="text-2xl font-bold">Make room for a good song.</h2>
-      <p className="mt-3 text-sm leading-relaxed text-muted">Choose something from your library. Your queue, lyrics and sound controls will be right here.</p>
+      <p className="mt-3 text-sm leading-relaxed text-muted">Choose something from your library. Your queue and lyrics will be right here.</p>
       <Link href="/app/library" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">Browse music</Link>
     </div> : <div className="now-playing-grid">
       <section aria-label="Current song" className="mx-auto flex w-full min-w-0 max-w-lg flex-col px-5 pb-6 pt-5 sm:px-8">
-        <Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art mx-auto w-full max-w-[min(34dvh,22rem)] rounded-lg shadow-[0_16px_40px_-16px_#000]" />
+        <MusicItem item={track} className="mx-auto w-full max-w-[min(34dvh,22rem)]"><Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art w-full rounded-lg shadow-[0_16px_40px_-16px_#000]" /></MusicItem>
         <div className="mt-6 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{track.title}</h2>
-            <p className="mt-2 break-words text-base text-muted">{track.artist}</p>
-            {track.album && <p className="mt-1 truncate text-sm text-faint">{track.album}</p>}
+            <p className="mt-2 break-words text-base text-muted"><ArtistLink item={track} /></p>
+            {track.album && <p className="mt-1 truncate text-sm text-faint"><AlbumLink item={track} /></p>}
           </div>
           <button type="button" aria-label={`More options for ${track.title}`} aria-haspopup="menu" onClick={(event) => onMore(track, event.currentTarget)}
             className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MoreHorizontal className="size-5" /></button>
@@ -92,7 +94,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
         </div>
         {tabs.map(({ id, label }) => <div key={id} id={`listening-panel-${id}`} role="tabpanel" aria-labelledby={`listening-${id}`} hidden={selected !== id}
           tabIndex={0} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 scrollbar-thin sm:px-8" aria-label={label}>
-          {visited.includes(id) && (id === "queue" ? <QueueContents state={state} command={command} /> : id === "lyrics" ? <LyricsPanel state={state} command={command} /> : <AudioPanel state={state} command={command} showPlayback={false} />)}
+          {(visited.includes(id) || selected === id) && (id === "queue" ? <QueueContents state={state} command={command} /> : <LyricsPanel state={state} command={command} />)}
         </div>)}
       </section>
     </div>}

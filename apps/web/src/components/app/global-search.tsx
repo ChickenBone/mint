@@ -8,6 +8,8 @@ import { MissingMusic } from "@/components/app/missing-music";
 import { fetchCatalog } from "@/lib/browser-catalog";
 import type { PlayerItem } from "@/lib/player-protocol";
 import { TrackMenuButton, usePlayer } from "./player";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 
 const recentKey = "mint:recent-searches";
 const emptyRecent: string[] = [];
@@ -206,16 +208,19 @@ export function GlobalSearch({ fullPage = false, initialQuery = "" }: { fullPage
       {loading && <p role="status" className="mt-6 text-sm text-muted">Searching your library…</p>}
       {!loading && groups.map((group) => <section key={group.type} className="mt-6" aria-label={group.label}>
         <h2 className="mb-2 text-sm font-semibold">{group.label}</h2>
-        <ul className="divide-y divide-line/70">{group.items.map((item) => <li key={item.id} className="flex min-h-14 items-center gap-3 py-1">
+        <ul className="divide-y divide-line/70">{group.items.map((item) => <MusicItem as="li" item={item} key={item.id} className="flex min-h-14 items-center gap-3 py-1">
           <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`size-10 shrink-0 ${item.type === "artist" ? "rounded-full" : "rounded"}`} />
-          {item.type === "track" ? <button type="button" onClick={() => chooseTrack(item)} className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline">
-            {item.title}<span className="ml-2 text-muted">{item.artist}</span>
+          <div className="min-w-0 flex-1">
+          {item.type === "track" ? <button type="button" onClick={() => chooseTrack(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">
+            {item.title}
           </button> : <Link href={item.type === "album" ? `/app/library/albums/${encodeURIComponent(item.id)}` : `/app/library/artists/${encodeURIComponent(item.id)}`}
-            onClick={() => remember(query)} className="min-w-0 flex-1 truncate text-sm font-medium hover:underline">{item.title}<span className="ml-2 text-muted">{item.type === "album" ? item.artist : "Artist"}</span></Link>}
+            onClick={() => { remember(query); close(false); }} className="block truncate text-sm font-medium hover:underline">{item.title}</Link>}
+          <p onClick={() => close(false)} className="mt-1 truncate text-xs text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
+          </div>
           {item.type === "track" && player && <button type="button" aria-label={`Play ${item.title}`} disabled={!player.ready || player.busy}
             onClick={() => chooseTrack(item)} className="grid size-11 shrink-0 place-items-center rounded-full bg-mint text-mint-ink disabled:opacity-40">▶</button>}
-          {item.type === "track" && player && <TrackMenuButton item={item} />}
-        </li>)}</ul>
+          {player && <TrackMenuButton item={item} />}
+        </MusicItem>)}</ul>
       </section>)}
       {!loading && query.trim().length >= 2 && !groups.length && !error && <>
         <p className="mt-6 text-sm text-muted">No songs, artists or albums match “{query}”.</p>

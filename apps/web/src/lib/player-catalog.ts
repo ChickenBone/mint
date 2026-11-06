@@ -138,6 +138,8 @@ export async function catalogItems(opts: {
   }
   const q = opts.q ?? (collection.kind === "library" ? collection.query : undefined);
   const where = catalogWhere(collection, opts.userId, q);
+  if (collection.kind === "artist") title = Buffer.from(collection.id.slice(3), "base64url").toString("utf8");
+  if (collection.kind === "album") title = JSON.parse(Buffer.from(collection.id.slice(3), "base64url").toString("utf8"))[1] || "Unknown album";
   if (opts.type === "artist" || opts.type === "album") {
     const album = sql<string>`coalesce(${t.album}, '')`;
     const group = opts.type === "album" ? [t.artist, album] : [t.artist];
@@ -166,5 +168,5 @@ export async function catalogItems(opts: {
   ]);
   return { items: rows.map((track) => ({
     ...trackPlayerItem(toTrackView(track)), duration: (track.durationSec ?? track.existingDurationSec ?? 0) * 1000,
-  })), total: count[0]?.n ?? 0, start };
+  })), total: count[0]?.n ?? 0, start, title };
 }

@@ -11,6 +11,8 @@ import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
 import { TrackMenuButton, usePlayer } from "./player";
 import { MissingMusic } from "./missing-music";
+import { AlbumLink, ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 
 const kinds = ["track", "album", "artist", "playlist"] as const;
 type Kind = typeof kinds[number];
@@ -27,6 +29,7 @@ function subscribeOnline(listener: () => void) {
 function itemHref(item: PlayerItem) {
   if (item.type === "artist") return `/app/library/artists/${encodeURIComponent(item.id)}?type=album`;
   if (item.type === "album") return `/app/library/albums/${encodeURIComponent(item.id)}?type=track`;
+  if (item.type === "playlist") return `/app/library?${new URLSearchParams({ kind: "playlist", id: item.id, type: "track" })}`;
   return `/app/library?q=${encodeURIComponent(item.title)}`;
 }
 
@@ -47,6 +50,21 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
   const key = request.toString();
   const [result, setResult] = useState<{ key: string; page?: CatalogPage; error?: string } | null>(null);
   const [retry, setRetry] = useState(0);
+  const [identity, setIdentity] = useState<{ key: string; page?: CatalogPage; error?: string } | null>(null);
+  const identityKey = initialCollection ? collectionParams(initialCollection).toString() : "";
+  useEffect(() => {
+    if (!identityKey) return;
+    const controller = new AbortController();
+    const query = new URLSearchParams(identityKey);
+    query.set("type", initialCollection?.kind === "artist" ? "album" : "track");
+    query.set("size", "4");
+    void fetchCatalog(query, controller.signal).then((page) => {
+      if (!controller.signal.aborted) setIdentity({ key: identityKey, page });
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setIdentity({ key: identityKey, error: error instanceof Error ? error.message : "Collection artwork could not load." });
+    });
+    return () => controller.abort();
+  }, [identityKey, initialCollection?.kind]);
   const page = result?.key === key ? result.page : undefined;
   const error = result?.key === key ? result.error : undefined;
   const valid = collection !== null;
@@ -79,19 +97,29 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     <div className="flex flex-wrap gap-4 text-sm font-semibold"><Link href="/app" className="inline-flex min-h-11 items-center text-mint hover:underline">Your daily recommendations</Link><Link href="/app/library" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Browse the catalog</Link></div>
     <MissingMusic key={q} query={q} />
   </div>;
-  const first = page?.items[0];
-  const title = collection.kind === "album" ? first?.album ?? "Album"
-    : collection.kind === "artist" ? first?.artist ?? "Artist"
+  const detail = identity?.key === identityKey ? identity.page : undefined;
+  const first = detail?.items[0] ?? page?.items[0];
+  const title = collection.kind === "album" ? detail?.title ?? first?.album ?? "Album"
+    : collection.kind === "artist" ? detail?.title ?? first?.artist ?? "Artist"
     : collection.kind === "liked" ? "Liked songs"
     : collection.kind === "playlist" ? page?.title ?? "Playlist"
     : pathname === "/app/library" ? "Library" : "Your music";
   return <div className="mx-auto max-w-[100rem]">
     {collection.kind !== "library" && <Link href="/app/library" className="mb-5 inline-flex min-h-11 items-center gap-1 text-sm text-muted hover:text-fg"><ChevronLeft className="size-4" />Library</Link>}
-    <header className="mb-7 flex items-end gap-5">
-      {collection.kind === "album" && first && <Artwork track={{ artworkUrl: first.thumb ?? "" }} className="hidden size-32 shrink-0 rounded-md sm:block" />}
+    {identity?.key === identityKey && identity.error && <p role="status" className="mb-4 text-sm text-warn">Collection artwork and overview could not load. {identity.error} Reopen this collection to retry.</p>}
+    <header className={collection.kind === "album" || collection.kind === "artist" ? "collection-hero mb-8" : "mb-7 flex items-end gap-5"}>
+      {(collection.kind === "album" || collection.kind === "artist") && <div className={`collection-hero-art ${collection.kind === "artist" && (detail?.items.length ?? 0) > 1 ? "collection-hero-mosaic" : ""}`}>
+        {(collection.kind === "artist" && (detail?.items.length ?? 0) > 1 ? detail!.items.slice(0, 4) : [first]).map((item, index) =>
+          <Artwork key={item?.id ?? index} track={{ artworkUrl: item?.thumb ?? "" }} eager className="h-full w-full rounded-none" />)}
+      </div>}
       <div className="min-w-0">
-        <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">{collection.kind === "library" ? "Library" : title}</h1>
-        <p className="mt-3 text-sm text-muted">{collection.kind === "library" ? "Made for your music. Nothing between you and the next song." : collection.kind === "artist" ? "Albums and songs in your library." : first?.artist ?? "Downloaded music from your collection."}</p>
+        <h1 className="break-words text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">{collection.kind === "library" ? "Library" : title}</h1>
+        <p className="mt-4 text-sm text-muted">{collection.kind === "library" ? "Made for your music. Nothing between you and the next song." : collection.kind === "artist" ? "Explore the albums. Stay for the songs." : first ? <ArtistLink item={first} /> : "Music from your collection."}</p>
+        {detail && <p className="mt-3 text-sm text-muted tabular">{detail.total.toLocaleString()} {collection.kind === "artist" ? detail.total === 1 ? "album" : "albums" : detail.total === 1 ? "song" : "songs"} in your library</p>}
+        {(collection.kind === "album" || collection.kind === "artist") && <div className="mt-6 flex items-center gap-2">
+          <CollectionActions collection={collection} empty={!first} label={collection.kind} />
+          {first && <TrackMenuButton item={{ id: collection.id, type: collection.kind, title, artist: first.artist, artistId: first.artistId, thumb: first.thumb }} />}
+        </div>}
       </div>
     </header>
     <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -100,7 +128,7 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
           <button key={kind} aria-pressed={type === kind} onClick={() => change({ type: kind })}
             className={`min-h-11 rounded-full px-4 text-sm font-semibold ${type === kind ? "bg-fg text-bg" : "bg-elevated text-muted hover:bg-hover hover:text-fg"}`}>{labels[kind]}</button>)}
       </nav>
-      {type !== "playlist" && <CollectionActions collection={collection.kind === "library" ? { ...collection, query: q } : collection} empty={!page?.items.length} label={collection.kind === "library" && q ? "results" : collection.kind} />}
+      {type !== "playlist" && collection.kind !== "album" && collection.kind !== "artist" && <CollectionActions collection={collection.kind === "library" ? { ...collection, query: q } : collection} empty={!page?.items.length} label={collection.kind === "library" && q ? "results" : collection.kind} />}
       {type !== "playlist" && <label className="flex min-h-11 items-center gap-2 text-sm text-muted">Sort by
         <select aria-label="Sort library" value={sort} onChange={(event) => change({ sort: event.target.value })} className="min-h-11 rounded-full bg-elevated px-3 text-fg ring-1 ring-line focus-visible:ring-mint">
           <option value="artist">Artist</option><option value="title">Title</option><option value="album">Album</option><option value="newest">Recently added</option>
@@ -172,46 +200,36 @@ function CatalogSearch({ query }: { query: string }) {
 
 function CollectionCard({ item }: { item: PlayerItem }) {
   const player = usePlayer()!;
-  return <article className="group relative min-w-0" onContextMenu={(event) => {
-    event.preventDefault(); player.menu(item, { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("a"));
-  }}>
+  return <MusicItem as="article" item={item} className="group relative min-w-0 rounded-lg p-2 transition-colors hover:bg-surface">
     <Link href={itemHref(item)} className="block rounded-md">
       <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`w-full ${item.type === "artist" ? "rounded-full" : "rounded-md"}`} />
       <h2 className="mt-3 truncate font-semibold group-hover:underline">{item.title}</h2>
-      <p className="truncate text-sm text-muted">{item.artist ?? labels[item.type]}</p>
     </Link>
+    <p className="mt-1 truncate text-sm text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
     <button aria-label={`Play ${item.title}`} disabled={!player.ready || player.busy} onClick={() => player.command({ action: "play", item })}
       className="absolute right-2 top-2 grid size-11 place-items-center rounded-full bg-mint text-mint-ink shadow-[0_6px_12px_-4px_#000] transition-transform hover:scale-105 disabled:opacity-40"><Play className="size-5" fill="currentColor" /></button>
     <div className="mt-1 flex justify-end"><TrackMenuButton item={item} /></div>
-  </article>;
+  </MusicItem>;
 }
 
 function CatalogTracks({ items, collection }: { items: PlayerItem[]; collection: PlayerCollection }) {
   const player = usePlayer()!;
   return <div>
-    <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_5rem] gap-3 border-b border-line px-3 pb-3 text-xs text-faint sm:grid">
+    <div className="hidden grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7rem] gap-3 border-b border-line px-3 pb-3 text-xs text-faint sm:grid">
       <span>#</span><span>Title</span><span>Album</span><Clock3 className="ml-auto size-4" aria-label="Duration" />
     </div>
     <ol className="mt-2">{items.map((item, index) => {
       const current = player.state.track?.id === item.id;
       const play = () => player.command({ action: "collection", collection, id: item.id, occurrenceId: item.occurrenceId, shuffle: false });
-      return <li key={item.occurrenceId ?? item.id} onContextMenu={(event) => {
-        if ((event.target as HTMLElement).closest("a,input")) return;
-        event.preventDefault(); player.menu(item, { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button"));
-      }} onKeyDown={(event) => {
-        if (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") {
-          event.preventDefault(); const rect = event.currentTarget.getBoundingClientRect();
-          player.menu(item, { x: rect.x + 40, y: rect.bottom }, event.target as HTMLElement);
-        }
-      }} className="group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_5rem]">
+      return <MusicItem as="li" item={item} key={item.occurrenceId ?? item.id} className="group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7rem]">
         <button aria-label={`Play ${item.title}`} disabled={!player.ready || player.busy} onClick={play} className="grid size-8 place-items-center rounded-full text-muted hover:bg-elevated hover:text-mint disabled:opacity-40"><Play className={`size-4 ${current ? "text-mint" : ""}`} fill={current ? "currentColor" : "none"} /></button>
         <div className="flex min-w-0 items-center gap-3">
           <Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-11" />
-          <div className="min-w-0"><button disabled={!player.ready || player.busy} onClick={play} className={`block max-w-full truncate text-left font-medium hover:underline disabled:opacity-40 ${current ? "text-mint" : "text-fg"}`}>{item.title}</button><p className="truncate text-sm text-muted">{item.artist}</p></div>
+          <div className="min-w-0"><button disabled={!player.ready || player.busy} onClick={play} className={`block max-w-full truncate text-left font-medium hover:underline disabled:opacity-40 ${current ? "text-mint" : "text-fg"}`}>{item.title}</button><p className="truncate text-sm text-muted"><ArtistLink item={item} /></p></div>
         </div>
-        <p className="hidden truncate text-sm text-muted sm:block">{item.album ?? "Single"}</p>
+        <p className="hidden truncate text-sm text-muted sm:block"><AlbumLink item={item} /></p>
         <div className="flex items-center justify-end text-xs text-muted tabular"><TrackMenuButton item={item} /><span>{formatDuration((item.duration ?? 0) / 1000)}</span></div>
-      </li>;
+      </MusicItem>;
     })}</ol>
   </div>;
 }

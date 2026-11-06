@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Pause, Play, Repeat, Repeat1, Shuffle, SkipBack, SkipForward } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import type { PlayerCommand, PlayerState } from "@/lib/player-protocol";
@@ -22,7 +22,7 @@ export function PlaybackControls({ state, ready, command, expanded = false }: {
     <Transport label="Shuffle" active={state.shuffle} disabled={disabled} onClick={() => command({ action: "shuffle" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}><Shuffle /></Transport>
     <Transport label="Previous track" disabled={disabled} onClick={() => command({ action: "previous" })} className={expanded ? "inline-flex" : "hidden sm:inline-flex"}><SkipBack /></Transport>
     <button type="button" aria-label={state.playing ? "Pause" : "Play"} disabled={disabled} onClick={() => command({ action: "toggle" })}
-      className={`grid shrink-0 place-items-center rounded-full bg-mint text-mint-ink transition-[background-color,transform] hover:bg-mint-strong active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${expanded ? "size-16" : "size-10"}`}>
+      className={`grid shrink-0 place-items-center rounded-full transition-[background-color,transform] active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${expanded ? "size-16 bg-mint text-mint-ink hover:bg-mint-strong" : "size-11 bg-fg text-bg hover:bg-mint"}`}>
       {state.playing ? <Pause className={expanded ? "size-7" : "size-5"} fill="currentColor" /> : <Play className={expanded ? "size-7" : "size-5"} fill="currentColor" />}
     </button>
     <Transport label="Next track" disabled={disabled} onClick={() => command({ action: "next" })}><SkipForward /></Transport>

@@ -8,6 +8,9 @@ import { collectionSchema, type PlayerItem } from "@/lib/player-protocol";
 import { loadCollection } from "@/lib/browser-catalog";
 import { authorizeOffline, clearOffline, downloadSong, listOffline, offlineSettings, removeOffline, saveOfflineCollection, setOfflineLimit, type OfflineSong } from "@/lib/offline";
 import { Artwork } from "@/components/artwork";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
+import { TrackMenuButton } from "./player";
 
 const bytes = (value: number) => value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(1)} MB`;
 export function Downloads({ memberId }: { memberId: string }) {
@@ -117,10 +120,11 @@ export function Downloads({ memberId }: { memberId: string }) {
       <button disabled={busy} onClick={() => void act(async () => { if (!confirm("Remove all downloaded music from this device? Server originals are untouched.")) return; await clearOffline(); await authorizeOffline(memberId); })} className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-danger hover:bg-hover disabled:opacity-40"><Trash2 className="size-4" />Remove all downloads</button>
     </section>
     <h2 className="mb-4 text-xl font-bold">Downloaded songs</h2>
-    {!songs.length ? <p className="py-6 text-sm text-muted">Nothing saved yet. Choose liked songs above, or use a song, album or playlist&apos;s Download menu.</p> : <ol className="divide-y divide-line">{songs.map((song) => <li key={song.id} className="flex items-center gap-3 py-3">
+    {!songs.length ? <p className="py-6 text-sm text-muted">Nothing saved yet. Choose liked songs above, or use a song, album or playlist&apos;s Download menu.</p> : <ol className="divide-y divide-line">{songs.map((song) => <MusicItem as="li" item={song.item} key={song.id} className="flex items-center gap-3 py-3">
       <Artwork track={{ artworkUrl: song.item.thumb ?? "" }} className="size-11" />
-      <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{song.item.title}</p><p className="truncate text-xs text-muted">{song.item.artist} · {bytes(song.bytes)}</p></div>
+      <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{song.item.title}</p><p className="truncate text-xs text-muted"><ArtistLink item={song.item} /> · {bytes(song.bytes)}</p></div>
+      <TrackMenuButton item={song.item} />
       <button disabled={busy} aria-label={`Remove download ${song.item.title}`} onClick={() => void act(() => removeOffline(memberId, song.id))} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-danger disabled:opacity-40"><Trash2 className="size-4" /></button>
-    </li>)}</ol>}
+    </MusicItem>)}</ol>}
   </div>;
 }

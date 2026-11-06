@@ -13,6 +13,7 @@ import { SyncPanel } from "@/components/app/sync-panel";
 import { syncStateOf } from "@/lib/data";
 import { SignOut } from "@/components/app/sign-out";
 import { ArrowUpRight } from "lucide-react";
+import { PlaybackSettings } from "@/components/app/playback-settings";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -41,9 +42,10 @@ export default async function Settings({ searchParams }: { searchParams: Promise
 
   return (
     <>
-      <PageHeader title="Your space" sub="Your collection, connected accounts and the tools behind your music." />
+      <PageHeader title="Settings" sub="Your sound, connected accounts and the tools behind your music." />
       <nav aria-label="Your listening and management tools" className="mb-12 grid gap-x-10 sm:grid-cols-2">
         {[
+          ["#playback", "Playback & sound", "Equalizer, normalization, transitions and audio compatibility"],
           ["/app/collections", "Your collection", "Playlists, Mint likes, smart rules and collaboration"],
           ["/app/downloads", "Downloads", "Offline music and device storage"],
           ["/app/history", "Listening history", "Recent listens, private sessions and history controls"],
@@ -64,6 +66,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       )}
 
       <div className="max-w-3xl">
+        <PlaybackSettings />
         <Section title="YouTube Music">
           {acct && <div className="mb-5"><SyncPanel initial={syncStateOf(acct)} /></div>}
           {acct ? (

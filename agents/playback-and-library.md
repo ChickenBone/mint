@@ -38,7 +38,7 @@ Loudness normalization uses measured LUFS/true peak and bounded headroom. EQ/ove
 
 Mint analysis measures fingerprints, loudness, silence, waveform, estimated tempo/key and descriptor similarity. Preserve version/provenance/confidence; metadata matching is not sonic similarity, and descriptors are not neural embeddings.
 
-LRCLIB lyrics are requested on demand, not library-wide. Keep synced/plain/instrumental/no-match/error states, manual-follow behavior and personal match/timing corrections. Never send audio, private paths or credentials to a lyrics provider.
+LRCLIB and Lyrics.ovh lyrics are compared on demand, not library-wide. Prefer actual enhanced-LRC word timing, then line sync, then plain text; never synthesize word timing from line duration. Show source/timing capability and partial provider failures, and allow choosing an available source. Keep instrumental/no-match/error states, manual-follow behavior and personal LRCLIB match/timing corrections. A corrected match takes precedence over automatic ranking. Never send audio, private paths or credentials to a lyrics provider. Providers remain bounded, Redis-cached and rate-limited; LRCLIB cooldown does not block the independent fallback.
 
 ## Collections, devices and offline
 

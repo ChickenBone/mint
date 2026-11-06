@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
+import { ListMusic, Mic2, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { GlobalSearch } from "./global-search";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
@@ -15,9 +15,11 @@ import { ListeningHistory } from "@/lib/listening-history";
 import { TrackMusicActions } from "./track-music-actions";
 import { NativePlayer } from "@/lib/native-player";
 import { collectionParams, itemCollection } from "@/lib/browser-catalog";
-import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
+import { LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
 interface PlayerContext {
@@ -30,7 +32,7 @@ interface PlayerContext {
 const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
   nowPlaying: boolean; ready: boolean;
-  panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void;
+  panel: "queue" | "lyrics" | null; setPanel: (panel: "queue" | "lyrics" | null) => void;
   returnTo: string; rememberReturn: () => void;
 }
 const ShellContext = createContext<ShellContext | null>(null);
@@ -55,7 +57,8 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const pathname = usePathname();
   const params = useSearchParams();
   const surface = `${pathname}?${params.toString()}`;
-  const panel = panelSelection?.surface === surface ? panelSelection.value : null;
+  const requestedPanel = pathname === "/app/now-playing" && (params.get("tab") === "lyrics" || params.get("tab") === "queue") ? params.get("tab") as "lyrics" | "queue" : null;
+  const panel = panelSelection?.surface === surface ? panelSelection.value : requestedPanel;
   const setPanel = useCallback((value: ShellContext["panel"]) => setPanelSelection({ surface, value }), [surface]);
   const router = useRouter();
   const nowPlaying = pathname === "/app/now-playing";
@@ -227,6 +230,10 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   }, [selection]);
   const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
   const browse = (item: PlayerItem) => {
+    if (item.type === "playlist") {
+      router.push(`/app/library?${new URLSearchParams({ kind: "playlist", id: item.id, type: "track" })}`);
+      return;
+    }
     const query = new URLSearchParams({ type: item.type === "artist" ? "album" : "track" });
     const route = item.type === "artist" ? "artists" : "albums";
     router.push(`/app/library/${route}/${encodeURIComponent(item.id)}?${query}`);
@@ -261,7 +268,7 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
   const player = usePlayer()!;
   const closeQueue = useCallback(() => {
     setPanel(null);
-    document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : panel === "lyrics" ? "Lyrics" : "Audio settings"}"]`)?.focus();
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : "Lyrics"}"]`)?.focus();
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
     {!nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin">{children}</main>}
@@ -269,7 +276,6 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
       const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
     }} />}
     {!nowPlaying && panel === "queue" && <PlayerPanel title="Queue" close={closeQueue}><QueueContents state={player.state} command={player.command} /></PlayerPanel>}
-    {!nowPlaying && panel === "audio" && <PlayerPanel title="Audio settings" close={closeQueue}><AudioPanel state={player.state} command={player.command} /></PlayerPanel>}
     {!nowPlaying && panel === "lyrics" && <PlayerPanel title="Lyrics" close={closeQueue}><LyricsPanel state={player.state} command={player.command} /></PlayerPanel>}
   </div>;
 }
@@ -278,30 +284,35 @@ export function PlayerBar() {
   const { state, ready, command } = usePlayer()!;
   const { panel, setPanel, nowPlaying, rememberReturn } = useContext(ShellContext)!;
   const track = state.track;
+  const previousVolume = useRef(100);
   if (nowPlaying) return null;
-  return <section aria-label="Music player" className="player-dock grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-bg px-3 py-2 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-4">
-    <div className="flex min-w-0 items-center gap-3">
+  return <section aria-label="Music player" className="player-dock relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-surface px-3 py-3 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-6 lg:py-3">
+    <MusicItem item={track} className="flex min-w-0 items-center gap-3">
       <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
         <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
-        <p className="truncate text-xs text-muted">{track?.artist ?? (ready ? "Choose a song to start listening" : "Connecting to your library…")}</p>
+        <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to start listening" : "Connecting to your library…"}</p>
       </div>
-    </div>
+      {track && <div className="hidden xl:block"><TrackMenuButton item={track} /></div>}
+    </MusicItem>
     <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-1 lg:flex-col lg:gap-1">
       <PlaybackControls state={state} ready={ready} command={command} />
+      <Link href="/app/now-playing?tab=queue" onClick={rememberReturn} aria-label="Open queue" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg lg:hidden"><ListMusic className="size-5" /></Link>
       <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
     </div>
     <div className="hidden min-w-0 items-center gap-2 lg:flex lg:col-start-3 lg:row-start-1 lg:justify-end">
-      <div className="min-w-0 flex-1 lg:hidden"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
-      <Transport label="Audio settings" active={panel === "audio"} disabled={!ready} onClick={() => setPanel(panel === "audio" ? null : "audio")}><SlidersHorizontal /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
-      <label className="hidden max-w-36 items-center gap-2 xl:flex">
-        <Volume2 className="size-4 shrink-0 text-muted" /><span className="sr-only">Volume</span>
+      <div className="flex max-w-36 items-center gap-1">
+        <Transport label={state.volume ? "Mute" : "Unmute"} disabled={!ready} onClick={() => {
+          if (state.volume) previousVolume.current = state.volume;
+          command({ action: "volume", value: state.volume ? 0 : previousVolume.current });
+        }}>{state.volume ? <Volume2 /> : <VolumeX />}</Transport>
         <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} disabled={!ready}
-          onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-4 min-w-0 w-24 accent-mint" />
-      </label>
+          onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-20 accent-mint" />
+      </div>
     </div>
+    <div aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-line lg:hidden"><div className="h-full bg-mint" style={{ width: `${state.duration ? Math.min(100, state.time / state.duration * 100) : 0}%` }} /></div>
   </section>;
 }
 
@@ -374,5 +385,5 @@ export function TrackMenuButton({ item }: { item: PlayerItem }) {
   return <button aria-label={`More options for ${item.title}`} aria-haspopup="menu" onClick={(event) => {
     const rect = event.currentTarget.getBoundingClientRect();
     player.menu(item, { x: rect.x, y: rect.bottom }, event.currentTarget);
-  }} className="rounded-full p-2 text-muted hover:bg-elevated hover:text-fg"><MoreHorizontal className="size-4" /></button>;
+  }} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg"><MoreHorizontal className="size-4" /></button>;
 }
