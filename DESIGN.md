@@ -5,7 +5,7 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 ## Direction contract
 
 **Thesis:** music and personal collections lead; the machinery stays available without competing for attention.
-**World:** charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus.
+**World:** cool charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus. A restrained blue/teal wash establishes listening atmosphere; lavender identifies the Liked songs sleeve. Administrative surfaces stay opaque and neutral.
 **Path:** Home, Search and Your Library lead. Discover and the shared catalog remain accessible from listening surfaces. Settings holds personal preferences and optional imports; the admin portal holds server operations.
 **First viewport:** navigation, familiar music shelves and an anchored transport. Phones retain the same primary destinations and persistent playback.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
@@ -14,9 +14,9 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 
 ## System
 
-- Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration.
+- Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration. `gradient-action` enriches mint primary controls, `gradient-atmosphere` belongs to music headers, and `gradient-liked` identifies personal favorites; never gradient text, glowing borders or rainbow chrome. `info` and `accent` are complementary roles, not a replacement for warning/error semantics.
 - Figtree is the only typeface. Titles use a compact 32–64px scale, section headings 24–32px, body 14–16px. Long explanations stay below 75 characters per line.
-- Content gutters scale from 20px on phones to 48px on wide screens. Related controls form small groups; sections have 40–64px separation.
+- Content gutters scale from 20px on phones to 48px on wide screens. Listening content is bounded by `content-max`; related controls use `space-control-gap`, panels use `space-panel`, and sections have 40–48px separation. Ordinary page headings use a compact 32–48px scale; album/artist titles stop at 64px. Shelves keep comfortable desktop density; personal collection sleeves stay smaller than album sleeves. Settings and the admin frame are narrower and quieter.
 - Primary controls are mint with dark ink. Secondary controls use neutral fills or quiet outlines. Destructive and warning states use danger/warn, never mint.
 - Touch actions target 44px. Focus is visible. Inputs always have names; ranked rows retain their order and state in accessible text, not color alone.
 - The player is one anchored three-part surface: song identity, centered transport/seek, then lyrics, queue and mute/volume. The compact phone dock keeps playback and direct queue access with a quiet progress edge. Now Playing pairs the sleeve with Queue / Lyrics, retaining arrow/Home/End tab navigation and pinned phone transport. EQ and all sound configuration live in Settings → Playback & sound, linked from Now Playing.
@@ -24,6 +24,7 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 - Songs, collection sleeves, recommendations, local chart entries, downloads and queue rows share right-click, 550ms touch/pen hold, options-button and Context Menu/Shift+F10 actions. Movement cancels a hold; releasing a hold never also plays or navigates. Inputs keep native editing gestures, and public browsing keeps native context menus.
 - Motion is brief and purposeful: the existing sleeve reveal and a muted-to-playable chart transition. Reduced motion removes animation and nonessential transitions.
 - Failed artwork uses the shared neutral music tile. Never invent covers, counts, chart ranks or playback availability.
+- Album, playlist and Now Playing headers can reuse `ArtworkAtmosphere` with the existing artwork URL. Color comes directly from the image, without canvas sampling, another provider, or a parallel cache. The decorative layer is clipped to a bounded header, pointer-inert and hidden from assistive technology; a dark scrim keeps foreground contrast independent of artwork brightness. Missing/failed art leaves a neutral background. Do not use full-screen backdrop blur, continuous image animation or glass over forms, menus, queue rows or errors.
 
 ## Navigation and capability map
 

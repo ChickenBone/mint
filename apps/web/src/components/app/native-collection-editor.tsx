@@ -5,14 +5,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TrackView } from "@mint/core/events";
 import { ArrowDown, ArrowUp, CheckCircle2, Heart, ListMusic, Plus, Sparkles, Trash2 } from "lucide-react";
-import { Artwork } from "@/components/artwork";
+import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
 import { Badge } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { musicRequest, type CollectionDetail } from "@/lib/music-client";
 import { CollectionActions } from "./collection-actions";
 import { MusicTrackList } from "./music-track-list";
 
-const field = "mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm ring-1 ring-line focus:ring-mint";
+const field = "ui-field mt-2 min-h-11 w-full rounded-control bg-elevated px-4 py-2 text-sm ring-1 ring-line focus:ring-mint";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
 
 export function NativeCollectionEditor({ initial }: { initial: CollectionDetail }) {
@@ -81,11 +81,12 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         ← Your Library
       </Link>
 
-      <header className="mb-6 flex flex-wrap items-end gap-5">
+      <header className="playlist-heading collection-hero music-atmosphere mb-6">
+        <ArtworkAtmosphere src={data.artworkUrl} />
         {data.artworkUrl ? (
-          <Artwork track={{ artworkUrl: data.artworkUrl }} className="size-28 shrink-0 rounded-md sm:size-36" />
+          <Artwork track={{ artworkUrl: data.artworkUrl }} eager className="collection-hero-art" />
         ) : (
-          <span className="grid size-28 shrink-0 place-items-center rounded-md bg-elevated text-faint sm:size-36">
+          <span className="collection-hero-art grid place-items-center bg-elevated text-faint">
             <ListMusic className="size-10" aria-hidden />
           </span>
         )}
@@ -318,7 +319,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
           <button
             type="submit"
             disabled={busy}
-            className="min-h-11 justify-self-start rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
+            className="ui-primary min-h-11 justify-self-start rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
           >
             Save changes
           </button>
@@ -327,7 +328,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
 
       {!data.rules && (
         <details className="mb-7 border-b border-line pb-5">
-          <summary className="cursor-pointer font-semibold">Add songs from your library</summary>
+          <summary className="flex min-h-11 cursor-pointer items-center font-semibold">Add songs from your library</summary>
           <form
             className="mt-5 flex flex-wrap items-end gap-3"
             onSubmit={(e) => {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { TrackView } from "@mint/core/events";
 import { Download, Heart, Play, Shuffle } from "lucide-react";
+import { ArtworkAtmosphere } from "@/components/artwork";
 import { importLikedSongs, musicRequest } from "@/lib/music-client";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { MusicTrackList } from "./music-track-list";
@@ -71,8 +72,9 @@ export function NativeLikes({ importedLikes = { tracks: [], nextCursor: null } }
 
   return (
     <section aria-labelledby="mint-likes-heading">
-      <div className="mb-6 flex flex-wrap items-end gap-5">
-        <div className="grid size-28 shrink-0 place-items-center rounded-md bg-mint text-mint-ink sm:size-36" aria-hidden>
+      <div className="liked-heading collection-hero music-atmosphere mb-6">
+        <ArtworkAtmosphere src={tracks?.find((track) => track.artworkUrl)?.artworkUrl} />
+        <div className="liked-sleeve collection-hero-art grid place-items-center" aria-hidden>
           <Heart className="size-12 fill-current" />
         </div>
         <div className="min-w-0 flex-1">
@@ -91,7 +93,7 @@ export function NativeLikes({ importedLikes = { tracks: [], nextCursor: null } }
               type="button"
               disabled={!player?.ready || player.busy || !items.length}
               onClick={() => player?.command({ action: "items", items })}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
+              className="ui-primary inline-flex min-h-11 items-center gap-2 rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
             >
               <Play className="size-4" aria-hidden />
               Play

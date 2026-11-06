@@ -160,7 +160,7 @@ export function ManageView({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="admin-frame mx-auto max-w-7xl space-y-8">
       <PageHeader title="Admin portal" sub="Membership, library activity and the services behind your music.">
         <div className="flex flex-wrap gap-3">
           <Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">

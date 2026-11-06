@@ -24,7 +24,7 @@ function SongShelf({ title, tracks, href, linkLabel }: {
 }) {
   if (!tracks.length) return null;
   return (
-    <section className="mt-10">
+    <section className="song-shelf">
       <div className="mb-4 flex items-center justify-between gap-4">
         <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
         {href && <Link href={href} className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">
@@ -68,6 +68,7 @@ export default async function Home() {
 
   return (
     <>
+      <header className="home-heading">
       <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{greeting()}</h1>
       <nav aria-label="Browse music" className="mt-6 flex flex-wrap gap-2">
         <Link href="/app/library" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
@@ -80,11 +81,12 @@ export default async function Home() {
           Liked songs
         </Link>
       </nav>
+      </header>
 
       <SongShelf title="Recently played" tracks={recentlyPlayed} href="/app/collection?tab=history" />
       <SongShelf title="Recommended for you" tracks={recommended} href="/app/discover" linkLabel="Explore" />
       {newArrivals.length > 0 && (
-        <section className="mt-10">
+        <section className="song-shelf">
           <div className="mb-4 flex items-center justify-between gap-4">
             <h2 className="text-2xl font-bold tracking-tight">Recently added</h2>
             <Link href="/app/library" className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">
@@ -94,7 +96,7 @@ export default async function Home() {
           <div role="region" aria-label="Recently added" tabIndex={0}
             className="overflow-x-auto overscroll-x-contain pb-3 scrollbar-thin">
             <FreshShelf initial={newArrivals} feature={false}
-              className="grid-cols-none! grid-flow-col! auto-cols-[min(44vw,14rem)]" />
+              className="grid-cols-none! grid-flow-col! auto-cols-[min(44vw,12rem)]" />
           </div>
         </section>
       )}

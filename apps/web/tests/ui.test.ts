@@ -12,6 +12,8 @@ import { AlbumLink, ArtistLink } from "../src/components/app/music-links";
 import { PlaybackControls } from "../src/components/app/player-controls";
 import { artistPlayerId, albumPlayerId, type PlayerState } from "../src/lib/player-protocol";
 import { SidebarPlaylistLinks } from "../src/components/app/sidebar-nav";
+import { Artwork, ArtworkAtmosphere } from "../src/components/artwork";
+import { PageHeader } from "../src/components/app/page-header";
 
 test("sidebar playlists keep native, smart and collaborative links accessible in the compact rail", () => {
   const playlists = [
@@ -42,6 +44,28 @@ test("buttons expose pending state and retain an accessible action label", () =>
   assert.match(html, /aria-busy="true"/);
   assert.match(html, /disabled=""/);
   assert.match(html, />Saving changes<\/button>/);
+});
+
+test("artwork atmosphere is decorative, privacy-preserving and safe without a cover", () => {
+  const html = renderToStaticMarkup(createElement(ArtworkAtmosphere, { src: "/api/artwork/fictional" }));
+  assert.match(html, /class="artwork-atmosphere" aria-hidden="true"/);
+  assert.match(html, /src="\/api\/artwork\/fictional"/);
+  assert.match(html, /alt=""/);
+  assert.match(html, /referrerPolicy="no-referrer"/i);
+  assert.doesNotMatch(renderToStaticMarkup(createElement(ArtworkAtmosphere)), /<img/);
+  assert.doesNotMatch(renderToStaticMarkup(createElement(Artwork, { track: { artworkUrl: "" } })), /<img/);
+});
+
+test("page headings opt into artwork without changing actions or neutral headings", () => {
+  const html = renderToStaticMarkup(createElement(PageHeader, {
+    title: "Fictional playlist", backdrop: "/api/artwork/fictional",
+  }, createElement(Button, { variant: "primary" }, "Play")));
+  assert.match(html, /music-atmosphere/);
+  assert.match(html, /artwork-atmosphere/);
+  assert.match(html, /ui-primary/);
+  assert.match(html, />Play<\/button>/);
+  const neutral = renderToStaticMarkup(createElement(PageHeader, { title: "Settings" }));
+  assert.doesNotMatch(neutral, /artwork-atmosphere|music-atmosphere/);
 });
 
 test("inputs associate their visible label and error with the field", () => {

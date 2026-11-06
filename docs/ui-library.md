@@ -1,6 +1,6 @@
 # Mint UI library
 
-The web UI uses a single **Listening room** design language: charcoal background/surface/elevated/hover layers, Figtree, square artwork, and mint reserved for primary action and focus. Artwork—not extra chrome—provides color. This library is built on Tailwind 4, CSS variables and native HTML; it adds no UI dependency.
+The web UI uses a single **Listening room** design language: cool charcoal background/surface/elevated/hover layers, Figtree, square artwork, and mint reserved for primary action and focus. A restrained teal/blue header wash and artwork-derived atmosphere enrich music surfaces; settings and administration remain quieter. This library is built on Tailwind 4, CSS variables and native HTML; it adds no UI dependency.
 
 ## Tokens
 
@@ -10,8 +10,11 @@ Tokens are defined in `apps/web/src/app/globals.css`. Prefer semantic Tailwind n
 | --- | --- |
 | Surfaces | `background` (`bg` compatibility alias), `surface`, `elevated`, `hover` |
 | Content and state | `text` (`fg` compatibility alias), `muted`, `faint`, `action` (`mint` compatibility alias), `success`, `danger`, `warn`, `line` |
+| Complementary color | `info` (soft blue), `accent` (lavender); use sparingly, never in place of semantic error/warning colors |
+| Gradients | `--gradient-action` for primary actions, `--gradient-atmosphere` for music headers, `--gradient-liked` for the favorites sleeve; no gradient text |
 | Type | Figtree only; title 32/48/64px, section 24/32px, body 14/16px |
-| Spacing | 4px base Tailwind spacing scale; 20px phone and up to 48px wide page gutters; 40–64px section rhythm |
+| Spacing | 4px base Tailwind spacing scale; 20px phone and up to 48px wide page gutters; 40–48px section rhythm |
+| Composition | `--space-panel` for 16–24px panel padding, `--space-control-gap` for related controls, `--content-max` for bounded wide listening content |
 | Shape and depth | `radius-control`, `radius-surface`, `radius-pill`, `shadow-raised`, `shadow-floating`; sleeves remain square |
 | Motion | `duration-fast`, `duration-standard`, `duration-emphasis`, `ease-standard`, `ease-out-expo`; reduced motion disables nonessential animation |
 | Layers | `--z-sticky`, `--z-player`, `--z-navigation`, `--z-overlay`, `--z-toast` |
@@ -43,11 +46,12 @@ Import from `@/components/ui` or a direct module when preserving a server/client
 | `Card` | Neutral content grouping; supports div/article/section | Use sparingly as a real grouping | Nested cards as page scaffolding |
 | `Sleeve` | Square clipped composition for album/collection artwork | Use actual album art or a real virtual collection cover | Rounded-square sleeves or invented artwork |
 | `Artwork` | Shared square art with a neutral music-tile fallback | Use only real library art or a real virtual-playlist sleeve | Invented album covers |
+| `ArtworkAtmosphere` | Optional `src` in a `music-atmosphere` parent; clipped decorative image blur and dark scrim | Reuse the existing authorized artwork URL/cache; keep text above the scrim | Pixel sampling, third-party color services, full-screen blur or transparent form/menu surfaces |
 | `Skeleton` | Loading placeholder | Match final geometry to prevent layout shift | Using a skeleton for a failed request |
 | `EmptyState` / `ErrorState` | Distinct empty and failed states, with optional recovery action | Say what happened and what to do next | Making a failure resemble an empty success |
 | `ProgressBar` / `Slider` | Labeled progress or native range control | Expose numeric range/value and keyboard control | Replacing a range input with a pointer-only slider |
 | `Row` | Compact ranked/list row with optional rank and textual status | Preserve rank, availability and state in text | Hiding meaning in color |
-| `Page` / `Section` | Width-safe content wrapper and 40–64px section rhythm | Keep the route's existing landmark ownership | Nesting main landmarks |
+| `Page` / `Section` | Width-safe content wrapper and 40–48px section rhythm | Keep the route's existing landmark ownership | Nesting main landmarks |
 | `Shelf` | Touch-scrollable horizontal list with focus and arrow/Home/End keyboard scrolling | Label the region and provide useful headings outside the rail | Letting the page itself overflow horizontally |
 | `Grid` / `Stack` / `Cluster` | Responsive layout composition with named spacing steps | Prefer composition to component prop proliferation | One-off spacing constants |
 
@@ -61,6 +65,7 @@ Import from `@/components/ui` or a direct module when preserving a server/client
 - Body and secondary text must meet WCAG AA contrast. Keep Figtree as the only family.
 - Respect safe-area insets for persistent mobile navigation and transport. Reduced-motion mode removes nonessential animation and transitions.
 - Failed artwork uses the shared neutral music tile. Loading uses final-size skeletons. Neither state fabricates availability or metadata.
+- Artwork atmosphere has no interaction or accessible content. It uses the existing no-referrer image policy, is bounded to header height, and falls back to a neutral dark field on failure. An opaque dark scrim protects text contrast even on white covers. Menus, controls and queue/lyrics panels remain readable opaque surfaces.
 
 ## Component and route inventory
 

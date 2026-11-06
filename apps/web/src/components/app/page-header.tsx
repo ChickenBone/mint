@@ -1,6 +1,7 @@
 import type { TrackView } from "@mint/core/events";
 import clsx from "clsx";
-import { Artwork } from "../artwork";
+import * as React from "react";
+import { Artwork, ArtworkAtmosphere } from "../artwork";
 
 export function PageHeader({
   title,
@@ -18,12 +19,13 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={clsx("page-heading mb-10 flex flex-col gap-7 pt-3 sm:flex-row sm:items-end", className)} data-artwork={backdrop ? "present" : undefined}>
+    <div className={clsx("page-heading mb-10 flex flex-col gap-7 pt-3 sm:flex-row sm:items-end", backdrop && "music-atmosphere", className)} data-artwork={backdrop ? "present" : undefined}>
+      {backdrop && <ArtworkAtmosphere src={backdrop} />}
       {art}
       <div className="min-w-0 flex-1">
         <h1 className="text-4xl leading-[1.05] font-bold tracking-[-0.035em] sm:text-5xl xl:text-6xl">{title}</h1>
         {sub && <div className="mt-4 max-w-prose text-sm leading-relaxed text-muted">{sub}</div>}
-        {children && <div className="mt-6">{children}</div>}
+        {children && <div className="mt-5 flex flex-wrap items-center gap-2">{children}</div>}
       </div>
     </div>
   );

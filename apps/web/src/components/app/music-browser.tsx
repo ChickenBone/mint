@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowDownCircle, ChevronLeft, ChevronRight, Clock3, Play, Search, Shuffle, Volume2, X } from "lucide-react";
-import { Artwork } from "@/components/artwork";
+import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
 import { artistPlayerId, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
 import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKeys } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
@@ -125,7 +125,8 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     {identity?.key === identityKey && identity.error && <p role="status" className="mb-4 text-sm text-warn">Artwork and details could not load. {identity.error} Reopen this page to retry.</p>}
     {collection.kind === "library" ? <header className="mb-6">
       <h1 className="text-3xl font-extrabold tracking-tight sm:text-5xl">All music</h1>
-    </header> : <header className={collection.kind === "artist" ? "artist-hero mb-6" : "collection-hero mb-6"}>
+    </header> : <header className={collection.kind === "artist" ? "artist-hero mb-6" : "collection-hero music-atmosphere mb-6"}>
+      {collection.kind === "album" && <ArtworkAtmosphere src={first?.thumb} />}
       {collection.kind === "album" && <div className="collection-hero-art">
         <Artwork track={{ artworkUrl: first?.thumb ?? "" }} eager className="h-full w-full rounded-none" />
       </div>}
@@ -134,8 +135,7 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/65 to-transparent" />
       </div>}
       <div className="min-w-0">
-        <p className="text-sm font-semibold">{collection.kind === "artist" ? "Artist" : "Album"}</p>
-        <h1 className="mt-2 break-words text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl">{title}</h1>
+        <h1 className="break-words text-4xl font-extrabold tracking-tight sm:text-6xl">{title}</h1>
         <p className={`mt-4 flex flex-wrap items-center gap-x-1.5 text-sm tabular ${collection.kind === "artist" ? "text-fg/80" : "text-muted"}`}>
           {collection.kind === "album" && first && <span className="font-semibold text-fg"><ArtistLink item={first} /></span>}
           {itemCount !== undefined && <span>{collection.kind === "album" && first ? "• " : ""}{countLabel(itemCount, collection.kind === "artist" ? type : "track")}</span>}

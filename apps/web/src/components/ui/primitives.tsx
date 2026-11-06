@@ -11,7 +11,7 @@ import type {
 import { useId } from "react";
 
 const buttonVariants = {
-  primary: "bg-action text-action-ink hover:bg-action-strong",
+  primary: "ui-primary bg-action text-action-ink hover:bg-action-strong",
   secondary: "bg-elevated text-fg hover:bg-hover",
   quiet: "bg-transparent text-muted hover:bg-surface hover:text-fg",
   danger: "bg-danger/15 text-danger hover:bg-danger/25",
@@ -45,7 +45,7 @@ export function Button({
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={clsx(
-        "inline-flex items-center justify-center gap-2 rounded-control font-semibold transition-colors duration-standard disabled:cursor-not-allowed disabled:opacity-55",
+        "ui-control inline-flex items-center justify-center gap-2 rounded-control font-semibold transition-colors duration-standard disabled:cursor-not-allowed disabled:opacity-55",
         buttonVariants[variant],
         buttonSizes[size],
         className,
@@ -89,7 +89,7 @@ export function Link({
     <NextLink
       {...props}
       className={clsx(
-        "inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-3 font-semibold transition-colors duration-standard",
+        "ui-control inline-flex min-h-11 items-center justify-center gap-2 rounded-control px-3 font-semibold transition-colors duration-standard",
         buttonVariants[variant],
         className,
       )}
@@ -133,7 +133,7 @@ export function Input({
         aria-invalid={error ? true : props["aria-invalid"]}
         aria-describedby={describedBy}
         className={clsx(
-          "min-h-11 w-full rounded-control bg-elevated px-4 text-fg placeholder:text-faint ring-1 transition-colors duration-standard focus-visible:ring-2 focus-visible:ring-action",
+          "ui-field min-h-11 w-full rounded-control bg-elevated px-4 text-fg placeholder:text-faint ring-1 transition-colors duration-standard focus-visible:ring-2 focus-visible:ring-action",
           error ? "ring-danger" : "ring-line hover:ring-faint",
         )}
       />
@@ -169,7 +169,7 @@ export function Select({
         id={selectId}
         name={name}
         className={clsx(
-          "min-h-11 w-full rounded-control bg-elevated px-4 text-fg ring-1 ring-line focus-visible:ring-2 focus-visible:ring-action",
+          "ui-field min-h-11 w-full rounded-control bg-elevated px-4 text-fg ring-1 ring-line focus-visible:ring-2 focus-visible:ring-action",
         )}
       >
         {children}
@@ -232,7 +232,7 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <Element className={clsx("rounded-surface bg-surface", className)}>
+    <Element className={clsx("ui-card rounded-surface bg-surface", className)}>
       {children}
     </Element>
   );
