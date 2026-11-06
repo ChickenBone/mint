@@ -119,8 +119,6 @@ Current desktop and mobile views, captured from a local demo instance. All names
   <img src="docs/screenshots/mobile-discover.png" alt="Swipeable Discover shelves with generated playlist covers, titles and descriptions" width="260">
   &nbsp;
   <img src="docs/screenshots/mobile-player.png" alt="Mint mobile Now playing screen with album cover and pinned playback controls" width="260">
-  &nbsp;
-  <img src="docs/screenshots/mobile-search.png" alt="Unified Search with a fictional recording request on a phone" width="260">
 </p>
 
 <details>
