@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { chartSnapshotSchema, type ChartDefinition } from "./charts";
-import { boundedProviderJson, ChartProviderError } from "./chart-providers";
+import { boundedProviderJson, ChartProviderError, validChartArtwork } from "./chart-providers";
 import { CHART_KEEP_SECONDS, type CachedChart } from "./chart-cache";
 
 export const chartSourceResponseSchema = z.object({
@@ -37,7 +37,7 @@ export async function fetchChartSource(chart: ChartDefinition, origin: string, t
     const age = now - Date.parse(snapshot.fetchedAt);
     if (age >= CHART_KEEP_SECONDS * 1000 || age < -300_000 ||
       new Set(snapshot.entries.map((entry) => entry.id)).size !== snapshot.entries.length ||
-      snapshot.entries.some((entry, index) => entry.rank !== index + 1 || entry.artwork !== null))
+      snapshot.entries.some((entry, index) => entry.rank !== index + 1 || !validChartArtwork(chart.provider, entry.artwork)))
       throw new ChartProviderError("The chart source returned an invalid or expired ranking.");
   }
   if (response.ok !== !!snapshot || (!!snapshot && parsed.status === "error") ||

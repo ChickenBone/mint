@@ -127,29 +127,33 @@ test("Apple uses a real storefront feed plus one bounded metadata lookup, never 
   }, now);
   assert.equal(calls.length, 2); assert.equal(calls[0]!.pathname, "/api/v2/us/music/most-played/50/songs.json");
   assert.equal(result.entries[0]!.durationSec, 180); assert.equal(result.entries[0]!.album, entry.album);
-  assert.equal(result.entries[0]!.artwork, null, "Apple promotional artwork is not repurposed as local-library cover art");
+  assert.equal(result.entries[0]!.artwork, "https://is1-ssl.mzstatic.com/fixture.jpg",
+    "Apple artwork is retained for its chart row, not saved as local-library art");
   assert.ok(!JSON.stringify(result).includes("preview")); assert.match(result.period, /not published/);
   assert.ok(CHARTS.filter((chart) => chart.provider === "apple").every((chart) => !chart.territory.includes("Worldwide")));
 });
 test("community charts retain their actual dates and Audius genres remain provider scoped", async () => {
   const brainz = await fetchChart(CHARTS.find((chart) => chart.id === "listenbrainz-week")!, async () => Response.json({
     payload: { from_ts: 1791763200, to_ts: 1792368000, last_updated: 1792818907, recordings: [
-      ...["release-a", "release-b"].map((release) => ({ track_name: entry.title, artist_name: entry.artist,
+      ...["9b16c594-19cd-4ac4-86b2-303114b97045", "8b16c594-19cd-4ac4-86b2-303114b97045"].map((release) => ({ track_name: entry.title, artist_name: entry.artist,
         recording_mbid: "9b16c594-19cd-4ac4-86b2-303114b97045", release_name: entry.album, caa_release_mbid: release })),
     ] },
   }), now);
   assert.match(brainz.period, /2026-10-12.*2026-10-19/);
   assert.equal(brainz.entries[0]!.recordingId, "9b16c594-19cd-4ac4-86b2-303114b97045");
+  assert.equal(brainz.entries[0]!.artwork, "https://coverartarchive.org/release/9b16c594-19cd-4ac4-86b2-303114b97045/front-250");
   assert.equal(new Set(brainz.entries.map((entry) => entry.id)).size, 2);
   assert.deepEqual(brainz.entries.map((entry) => entry.rank), [1, 2], "Keep provider ranks even when release variants share a recording identity");
   assert.match(brainz.notice!, /original ranks/);
   const audius = await fetchChart(CHARTS.find((chart) => chart.id === "audius-electronic")!, async (input) => {
     const url = new URL(String(input)); assert.equal(url.searchParams.get("genre"), "Electronic"); assert.equal(url.searchParams.get("time"), "week");
     assert.equal(url.searchParams.get("limit"), "50");
-    return Response.json({ data: [{ id: "fictional", title: entry.title, duration: 180, genre: "Electronic", user: { name: entry.artist } }] });
+    return Response.json({ data: [{ id: "fictional", title: entry.title, duration: 180, genre: "Electronic",
+      artwork: { "480x480": "https://creatornode3.audius.co/tracks/fictional/image" }, user: { name: entry.artist } }] });
   }, now);
   assert.equal(audius.providerUpdatedAt, null);
   assert.equal(audius.entries[0]!.url, "https://audius.co/trending");
+  assert.equal(audius.entries[0]!.artwork, "https://creatornode3.audius.co/tracks/fictional/image");
 });
 test("cache bounds storage, coalesces refresh, preserves stale data and honors provider-wide cooldown", async () => {
   const { data, store } = memory(), chart = CHARTS[0]!;

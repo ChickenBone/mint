@@ -12,7 +12,8 @@ const chart = CHARTS[0]!;
 const snapshot: ChartSnapshot = {
   entries: [1, 2].map((rank) => ({
     id: `fictional-${rank}`, rank, title: `Fictional Song ${rank}`, artist: "Fictional Artist", album: null,
-    durationSec: 180, recordingId: null, isrc: null, url: "https://music.apple.com/", artwork: null, genres: [],
+    durationSec: 180, recordingId: null, isrc: null, url: "https://music.apple.com/",
+    artwork: rank === 1 ? "https://is1-ssl.mzstatic.com/fictional-cover.jpg" : null, genres: [],
   })),
   fetchedAt: new Date(now).toISOString(), providerUpdatedAt: new Date(now).toISOString(),
   revision: "fixture", period: "Provider-defined period", notice: null,
@@ -54,6 +55,7 @@ test("standalone API serves only supported chart metadata and a rank-preserving 
   const body = await top.json();
   assert.equal(body.chart.territory, chart.territory);
   assert.deepEqual(body.snapshot.entries.map((entry: { rank: number }) => entry.rank), [1]);
+  assert.equal(body.snapshot.entries[0].artwork, "https://is1-ssl.mzstatic.com/fictional-cover.jpg");
   assert.equal(body.snapshot.revision, snapshot.revision);
   const result = await fetchChartSource(chart, origin, fetch, now);
   assert.equal(result.status, "fresh"); assert.equal(result.snapshot?.entries.length, 2);
@@ -134,7 +136,12 @@ test("remote source validates origin, scope, bounded data, cache states and rank
     { ...valid, snapshot: { ...snapshot, fetchedAt: new Date(now + 600_000).toISOString() } },
     { ...valid, snapshot: { ...snapshot, entries: [snapshot.entries[0], snapshot.entries[0]] } },
     { ...valid, snapshot: { ...snapshot, entries: [{ ...snapshot.entries[0], rank: 2 }] } },
+    { ...valid, snapshot: { ...snapshot, entries: [{ ...snapshot.entries[0], artwork: "https://untrusted.example/cover.jpg" }, snapshot.entries[1]] } },
   ]) await assert.rejects(fetchChartSource(chart, "http://chart-source:3090", async () => Response.json(value), now));
+  const withArtwork = await fetchChartSource(chart, "http://chart-source:3090", async () => Response.json({
+    ...valid, snapshot: { ...snapshot, entries: [{ ...snapshot.entries[0], artwork: "https://is1-ssl.mzstatic.com/cover.jpg" }, snapshot.entries[1]] },
+  }), now);
+  assert.equal(withArtwork.snapshot?.entries[0]?.artwork, "https://is1-ssl.mzstatic.com/cover.jpg");
   const delayed = await fetchChartSource(chart, "http://chart-source:3090", async () => Response.json({
     ...valid, snapshot: { ...snapshot, providerUpdatedAt: new Date(now - 9 * 86400_000).toISOString() },
   }), now);

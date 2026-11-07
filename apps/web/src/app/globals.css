@@ -162,11 +162,6 @@
   background: linear-gradient(var(--color-bg), var(--color-bg));
   opacity: .8;
 }
-.home-heading {
-  padding: 1rem var(--space-panel);
-  background: var(--gradient-atmosphere);
-  border-radius: var(--radius-surface);
-}
 .song-shelf { margin-top: var(--space-section); }
 .liked-sleeve { background: var(--gradient-liked); color: var(--color-fg); }
 .liked-heading { padding: var(--space-panel); }

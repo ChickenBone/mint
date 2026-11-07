@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Search, Volume2, VolumeX, X } from "lucide-react";
+import { ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
 import { analysisSchema } from "@mint/core/analysis";
@@ -38,7 +38,7 @@ const ShellContext = createContext<ShellContext | null>(null);
 export const usePlayer = () => useContext(Context);
 const empty: PlayerState = { playing: false, time: 0, duration: 0, volume: 100, shuffle: false, repeat: 0, track: null, queue: [], queueTotal: 0, queueOffset: 0 };
 
-export function MusicNavigation() {
+export function SearchShortcut() {
   const pathname = usePathname(), router = useRouter();
   useEffect(() => {
     const keydown = (event: globalThis.KeyboardEvent) => {
@@ -54,13 +54,7 @@ export function MusicNavigation() {
     window.addEventListener("keydown", keydown);
     return () => window.removeEventListener("keydown", keydown);
   }, [pathname, router]);
-  return <nav aria-label="Search" className="flex min-w-0 flex-1 justify-end lg:justify-start">
-    <Link href="/app/search" className="flex min-h-11 w-full max-w-sm items-center gap-3 rounded-full px-3 text-sm text-muted hover:bg-elevated hover:text-fg focus-visible:outline-action sm:bg-elevated sm:px-5">
-      <Search className="size-4 shrink-0" aria-hidden />
-      <span className="min-w-0 flex-1 truncate">Search songs, artists or albums</span>
-      <kbd className="hidden rounded bg-hover px-1.5 py-0.5 text-xs text-faint md:inline">/</kbd>
-    </Link>
-  </nav>;
+  return null;
 }
 
 export function PlayerProvider({ children, memberId }: { children: React.ReactNode; memberId: string }) {

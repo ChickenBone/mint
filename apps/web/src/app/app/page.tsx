@@ -68,19 +68,19 @@ export default async function Home() {
 
   return (
     <>
-      <header className="home-heading">
-      <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{greeting()}</h1>
-      <nav aria-label="Browse music" className="mt-6 flex flex-wrap gap-2">
-        <Link href="/app/library" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+      <header className="mb-10 flex flex-wrap items-end justify-between gap-5">
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{greeting()}</h1>
+        <nav aria-label="Browse music" className="flex flex-wrap gap-2">
+        <Link href="/app/library" className="inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold text-muted hover:bg-elevated hover:text-fg">
           Browse all music
         </Link>
-        <Link href="/app/search" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+        <Link href="/app/search" className="inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold text-muted hover:bg-elevated hover:text-fg">
           Search
         </Link>
-        <Link href="/app/collection?tab=likes" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+        <Link href="/app/collection?tab=likes" className="inline-flex min-h-11 items-center rounded-full px-4 text-sm font-semibold text-muted hover:bg-elevated hover:text-fg">
           Liked songs
         </Link>
-      </nav>
+        </nav>
       </header>
 
       <SongShelf title="Recently played" tracks={recentlyPlayed} href="/app/collection?tab=history" />
