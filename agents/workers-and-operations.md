@@ -42,6 +42,15 @@ Update the pipeline worker first and wait for migrations/health before updating 
 
 All-in-one Compose is the recommended complete deployment. Vercel cannot resolve Docker's private worker hostname and is not a drop-in native streaming/artwork solution; separately validate private connectivity and platform limits.
 
+Android application distribution is separate: [EAS Build/Update](../docs/android-builds.md)
+hosts APKs and compatible JavaScript/assets, not music or backend services.
+There is no self-hosted OTA endpoint or storage dependency. Retain Android
+signing credentials and `EXPO_TOKEN`; retire only obsolete custom OTA settings.
+Gate updates on a finished APK matching the native fingerprint, production
+channel/runtime and validated signer. EAS quotas apply. A queued build, verified
+APK or published update is not proof of installation, cold-launch update
+application, lockscreen artwork or background playback on a physical device.
+
 ## Networking lessons from troubleshooting
 
 1. **Identify the layer before prescribing a fix.** PostgreSQL ready logs establish server startup, not worker DNS/routing. A correct Compose declaration does not prove a running network attachment.

@@ -2,7 +2,7 @@
 
 ## What Mint is
 
-Mint is a self-hosted music service: local files, a Plex-backed shared library, personal collections and discovery in Mint's own browser player. Docker Compose is the primary deployment path; prebuilt multi-architecture images are published to GHCR through GitHub Actions.
+Mint is a self-hosted music service: local files, a Plex-backed shared library, personal collections and discovery. The Expo Android/mobile app is the primary consumer surface; the independently implemented browser player and Next.js administration remain supported. Docker Compose deploys the backend; GitHub Actions publishes multi-architecture images to GHCR.
 
 There are three audiences:
 
@@ -37,6 +37,8 @@ An account request is not playback approval. A member can listen to existing mus
 | Listening-room redesign | Home, Discover and Library lead. Collections stay nearby; technical operations move into Settings/Management without disappearing. |
 | Chart discovery | Real US/country and clearly scoped international/genre charts become virtual collections. Local songs play; missing songs are muted with explicit acquisition. Provider scope must be honest. |
 | Consumer-first direction | The listener experience should feel familiar to Spotify and Apple Music users, with standard labels such as "Liked songs" and "Create playlist" rather than repetitive Mint qualifiers. Use Mint branding and independently implemented UI and assets. Administration stays in an admin-only area of the same application. Preserve existing provider data and integrations while moving sync out of the consumer experience. An optional self-hosted MusicBrainz mirror must retain a public fallback. Use supported chart feeds or permitted scraping, not sources that prohibit it. Commercial-service parity is a goal, not a claim of implemented features. |
+| Expo consumer surface | Home, Search and Your Library lead in the native app. Search includes data-backed Browse all categories and read-only charts; browsing never acquires music. Explicit recording requests remain separate. The Next.js backend, browser listening and admin-only management retain their features. |
+| Android distribution | EAS Build supplies APKs; EAS Update supplies compatible JavaScript/assets. The self-hosted OTA endpoint/volume is retired. Native runtime changes require a new, signer-verified APK; compare with a finished compatible EAS build, not the last commit. EAS quotas apply; publication is not device verification. |
 
 Historical requests for proprietary Plexamp features do **not** authorize entitlement bypasses, pretending Plex Pass is enabled or labeling independent algorithms as Plexamp technology. The current decision is an independent Mint implementation with truthful capability/fallback states.
 
@@ -46,6 +48,6 @@ Public audio previews were removed. Do not restore public 30-second streaming be
 
 Preserve editable/smart/collaborative playlists, source-managed imports, private history, radios/mixes, lyrics corrections, DSP, device control, explicit handoff, single-output parties and account-scoped offline downloads.
 
-Do not promise DJ-grade beat/phrase mixing, pitch-preserving tempo sync, synchronized multi-device audio, a native Android background service, Android Auto, neural similarity or exact gapless playback. These were deferred or remain outside verified browser guarantees.
+Do not promise DJ-grade beat/phrase mixing, pitch-preserving tempo sync, synchronized multi-device audio, Android Auto, neural similarity or exact gapless playback. Browser background guarantees remain limited. Expo's configured background audio is distinct from the historically deferred custom Android playback/download service; physical-device suspension and lockscreen behavior need device evidence. Browser DSP/Smart Fades support does not imply native feature parity.
 
 See [PRODUCT.md](../PRODUCT.md) for detailed scope and [README.md](../README.md) for supported setup paths.

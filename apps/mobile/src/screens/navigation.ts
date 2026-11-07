@@ -5,7 +5,7 @@ export const consumerTabs = [
 ] as const;
 
 export function activeTab(path: string) {
-  if (path === "/search") return "/search";
+  if (path === "/search" || /^\/browse(\/|$)/.test(path)) return "/search";
   if (/^\/(library|album|artist|collection)(\/|$)/.test(path)) return "/library";
   return "/";
 }

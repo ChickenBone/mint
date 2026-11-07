@@ -13,6 +13,13 @@
 
 See `apps/web/src/lib/native-player.ts`, browser/catalog helpers and native-player tests before modifying queue semantics.
 
+Here, the historical "native player" means Mint's independent **browser**
+engine, not Expo. The [mobile playback card](domains/mobile-playback.md) and
+[native playback notes](../docs/mobile-playback.md) own the Expo engine. Reuse
+`@mint/client` queue/catalog contracts without assuming browser DSP or device
+bridge parity. Native metadata must use the selected public Mint server's
+artwork URL; relative browser URLs are not proof of Android lockscreen artwork.
+
 ## Playback continuity and access
 
 Preserve one native two-deck HTMLAudio/Web Audio engine across member navigation. Reload restores account-scoped queues paused, not autoplaying. Signing out, account changes and revocation must not leak playback or private state.
@@ -55,4 +62,4 @@ Preserve private sessions/history deletion. Deleted/private episodes must not be
 
 Device handoff requires an awake connected destination and successful playback acknowledgement before pausing the source. Parties have one output device, not synchronized multi-device audio. See [devices](../docs/devices.md).
 
-Offline music is explicitly downloaded, account-scoped IndexedDB content. The service worker caches only the generic offline shell, not authenticated pages/APIs. Preserve storage budgets, cancellation/retry, access renewal and logout cleanup. Browser eviction and Android suspension remain possible; disconnected audio cannot be remotely revoked.
+Browser offline music is explicitly downloaded, account-scoped IndexedDB content. The service worker caches only the generic offline shell, not authenticated pages/APIs. Expo uses its platform-specific account/server-scoped offline store, not the browser service worker. Preserve storage budgets, cancellation/retry, access renewal and logout cleanup on both surfaces. Browser eviction and Android suspension remain possible; disconnected audio cannot be remotely revoked.

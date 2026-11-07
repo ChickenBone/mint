@@ -30,7 +30,7 @@ export function ConsumerShell({ children }: { children: ReactNode }) {
       <View style={s.main}>
         {!primaryPage ? <View style={s.accountRow}>
           <Pressable accessibilityRole="button" accessibilityLabel="Go back" style={s.avatar}
-            onPress={() => router.canGoBack() ? router.back() : router.replace("/library")}><Ionicons name="arrow-back" color={colors.text} size={22} /></Pressable>
+            onPress={() => router.canGoBack() ? router.back() : router.replace(selected === "/search" ? "/search" : "/library")}><Ionicons name="arrow-back" color={colors.text} size={22} /></Pressable>
           <Pressable accessibilityRole="button" accessibilityLabel="Account and settings" onPress={() => router.push("/settings")} style={s.avatar}>
             <Text style={s.initial}>{user?.name?.slice(0, 1).toUpperCase() || "U"}</Text>
           </Pressable>

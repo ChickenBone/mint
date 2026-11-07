@@ -1,6 +1,10 @@
 # Connected devices and parties
 
-Open **Devices & parties** in the member app. An approved, signed-in Mint player registers its current browser tab. Rename it to identify its room or device. A device must remain awake, online and signed in; Mint cannot wake a closed browser. Background tabs may be suspended by the operating system.
+Open **Settings → Devices** in the browser member app. An approved, signed-in Mint player registers its current browser tab. Rename it to identify its room or device. A device must remain awake, online and signed in; Mint cannot wake a closed browser. Background tabs may be suspended by the operating system.
+
+This describes the **browser device bridge**, not certified Expo remote-control
+or party parity. The native app preserves its own persistent audio engine and
+account-scoped downloads; see [native playback limits](mobile-playback.md).
 
 Remote play/pause, previous/next, seek, volume and queue changes wait for the receiving device's acknowledgment. Browser autoplay restrictions still apply. Open Mint and press Play on the receiving device if playback is blocked.
 

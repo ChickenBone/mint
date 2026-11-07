@@ -1,6 +1,11 @@
 # UX rebuild target: foundations, core listening, your music, settings, management and onboarding
 
-> **Assumption note:** The originally referenced target UX document was not present in this checkout. This plan records the route and measurement assumptions used to implement Prompt 1 and Prompt 2 scope. It does not claim to reproduce unavailable wireframes, state-matrix details, or section 8 measures.
+> This records the earlier **browser rebuild** plan and its historical isolated
+> measurements, not current native certification. The current cross-surface
+> contract is [DESIGN.md](../../DESIGN.md); the primary Expo app's three
+> destinations, Browse all grid and native limitations are specified in
+> [mobile design](../mobile-design.md) and [native playback](../mobile-playback.md).
+> Existing Next.js routes and admin capabilities remain supported.
 
 ## 1. Information architecture
 

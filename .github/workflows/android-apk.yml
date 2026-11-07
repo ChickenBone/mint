@@ -52,12 +52,16 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: build-tools;36.0.0
+          packages: "build-tools;36.0.0 platforms;android-36"
       - name: Require Expo authentication
         run: test -n "$EXPO_TOKEN" || { echo '::error::Configure the EXPO_TOKEN GitHub Actions secret.'; exit 1; }
       - run: npm ci --no-audit --no-fund
       - run: npm install --global eas-cli@27.5.0 --no-audit --no-fund
-      - run: node --test deploy/mobile/eas-distribution.test.mjs
+      - name: Test distribution guards with compiled Android binary XML
+        run: |
+          AAPT2="$ANDROID_HOME/build-tools/36.0.0/aapt2" \
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-36/android.jar" \
+          node --test deploy/mobile/eas-distribution.test.mjs
       - name: Apply the guarded audio patch before calculating the native fingerprint
         run: node deploy/mobile/eas-distribution.mjs patch-audio
       - name: Link and validate Expo project
@@ -125,7 +129,7 @@ jobs:
         working-directory: apps/mobile
         run: |
           eas env:exec production 'EXPO_NO_DOTENV=1 node ../../node_modules/expo-updates/bin/cli.js runtimeversion:resolve --platform android --workflow managed > ../../.android-ci/update-runtime.json' --non-interactive
-          node -e 'const fs=require("fs"); const a=JSON.parse(fs.readFileSync("../../.android-ci/runtime.json")); const b=JSON.parse(fs.readFileSync("../../.android-ci/update-runtime.json")); if (!a.runtimeVersion || a.runtimeVersion!==b.runtimeVersion) throw Error("Runtime changed; refusing publication")'
+          (cd ../.. && node deploy/mobile/eas-distribution.mjs validate-update-runtime)
           eas update --platform android --channel production --environment production --message "GitHub ${GITHUB_SHA}" --non-interactive
       - name: Delivery summary
         env:
@@ -136,6 +140,19 @@ jobs:
           else
             echo 'The matching finished EAS APK and its signer were verified; a production Android update was published. Updates are downloaded on launch and applied on a subsequent launch; embedded recovery remains available.' >> "$GITHUB_STEP_SUMMARY"
           fi
+      - name: Preserve downloaded APK and binary parser diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mint-android-verification-diagnostics
+          path: |
+            .android-ci/mint.apk
+            .android-ci/manifest-tree.txt
+            .android-ci/resources.txt
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+          compression-level: 0
       - name: Remove local signing credentials
         if: always()
         run: |

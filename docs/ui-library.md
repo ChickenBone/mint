@@ -2,6 +2,12 @@
 
 The web UI uses a single **Listening room** design language: cool charcoal background/surface/elevated/hover layers, Figtree, square artwork, and mint reserved for primary action and focus. A restrained teal/blue header wash and artwork-derived atmosphere enrich music surfaces; settings and administration remain quieter. This library is built on Tailwind 4, CSS variables and native HTML; it adds no UI dependency.
 
+This is the **Next.js/browser** component contract. The primary Expo consumer
+app has platform-native primitives and semantic tokens in
+`apps/mobile/src/components/ui` and `apps/mobile/src/theme/tokens.ts`, with
+platform typography. See [mobile design](mobile-design.md); do not import these
+HTML/Tailwind components into the native runtime or assume feature parity.
+
 ## Tokens
 
 Tokens are defined in `apps/web/src/app/globals.css`. Prefer semantic Tailwind names in components (`bg-surface`, `text-muted`, `bg-action`, `ring-danger`) over raw colors.

@@ -2,8 +2,10 @@
 
 The Expo app is a listener-only experience. It shares Mint's music and account
 contracts with the web service, not the web administration interface. Existing
-web charts, provider integrations and operator controls remain unchanged; none
-are promoted or routed inside the mobile app, even for an administrator account.
+web charts, provider integrations and operator controls remain unchanged. The
+only chart surface in the app is a read-only Search category; chart acquisition,
+provider setup and operator controls are never routed in the mobile app, even
+for an administrator account.
 
 ## Visual contract
 
@@ -37,6 +39,19 @@ color belongs to the current listening context, not the entire app chrome.
   provider failure does not hide working library results. Only an explicit
   **Add to library** action requests missing music. Browsing and Play never
   acquire audio. A requested recording is not labeled playable.
+- **Browse all:** an empty Search shows a virtualized grid of category cards
+  (two columns on phones, up to five on wide screens) in fixed section order:
+  For you, Charts, Decades, Moods, Genres. Every card comes from real
+  data: discovery mixes appear only when they have songs, New arrivals only
+  when albums exist, and decades/moods/genres are paginated from playable songs
+  and mint-dsp analysis with true song counts. Card color is a deterministic
+  deep tone that keeps white titles above 4.5:1 contrast; a rotated cover is a
+  real sample from that category, otherwise a glyph. Categories open
+  `/browse/[facet]` inside the Search tab: filtered categories offer full
+  Play/Shuffle, an album shelf and paged songs; charts show provider ranks,
+  period and per-row library status. Available chart songs play; missing ones
+  offer a Search shortcut, never automatic acquisition. A chart that updates
+  while paging asks to reload instead of mixing revisions.
 - **Your Library:** liked songs, native and collaborative playlists, smart
   playlists, source-managed imports, existing folders/pins, playlist invitations,
   albums, artists and songs. Native playlist

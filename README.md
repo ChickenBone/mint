@@ -2,7 +2,7 @@
 
 **Your music library. Your server. Your player.**
 
-Mint is a self-hosted music service for listening, discovering and collecting music from your own library. Listen in Mint's persistent player, explore real charts and keep server tools in the admin area. Your music files stay on your server; Plex remains the library server, not an embedded player.
+Mint is a self-hosted music service for listening, discovering and collecting music from your own library. The Expo Android/mobile app leads the consumer experience with Home, Search and Your Library; browser listening and Next.js admin tools remain supported. Your music files stay on your server; Plex remains the library server, not an embedded player.
 
 Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are published to **GitHub Container Registry** for amd64 and arm64. You can connect an existing Plex library read-only or start with the bundled Plex server.
 
@@ -18,8 +18,8 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | **Use the Android app** | Consumer-focused Expo app with persistent playback and account-scoped downloads. EAS Build creates installable APKs; EAS Update delivers compatible JavaScript updates. [Setup and downloads](docs/android-builds.md). |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
 | **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
-| **Search and discover** | Search your library and more recordings, then browse personalized mixes, artist radio, genres and real charts without changing destinations. |
-| **Shape your listening** | Equalizer, loudness normalization, waveform, Mint Smart Fades, lyrics and personal lyric corrections. Mint's own analysis does not require Plex Pass. |
+| **Search and discover** | Search your library and more recordings. Native Browse all adds real recommendations, new arrivals, paged genres/moods/decades and read-only charts. Missing music requires an explicit request; browsing never downloads it. |
+| **Shape browser listening** | Equalizer, loudness normalization, waveform, Mint Smart Fades, lyrics and personal lyric corrections. Mint's own analysis does not require Plex Pass; this is not a claim of native DSP parity. |
 | **Bring existing playlists** | YouTube Music linking and Spotify playlist metadata are optional integrations. Spotify imports play local matches only; they do not stream Spotify audio or automatically download missing songs. [Provider requirements](docs/spotify.md). |
 | **Explore real charts** | Keyless Apple Music country Top 50s, ListenBrainz community rankings and Audius trending/genre collections. Play local matches or explicitly request missing recordings; never automatic downloads. [Coverage, providers and setup](docs/charts.md). |
 | **Listen across devices** | Control awake browser clients, hand off playback, or share a party queue with one output device. [How devices work](docs/devices.md). |
@@ -108,7 +108,24 @@ The [complete guide](docs/self-hosting.md#command-line-setup) explains provider 
 
 ## Screenshots
 
-Current desktop and mobile views, captured from a local demo instance. All names, accounts, songs, artwork and activity are fictional; no private library or credentials are shown.
+### Expo consumer app
+
+Search's Browse all on phone and wide layouts. These are **browser-rendered
+Expo with fictional fixture data**, original generated artwork and mock chart
+rankings—not physical-device or live-chart proof. Chart titles and counts in
+these fixtures do not describe production provider coverage.
+
+<p align="center">
+  <img src="docs/screenshots/expo-browse-phone.png" alt="Browser-rendered Expo Search on a phone-sized viewport with fictional Browse all recommendations, charts and decades" width="260">
+</p>
+
+![Browser-rendered Expo Search with fictional Browse all categories and wide-screen navigation](docs/screenshots/expo-browse-wide.png)
+
+### Next.js browser listening and management
+
+Browser desktop and responsive-phone views captured from a local demo instance,
+not current Expo APK/device screenshots. All names, accounts, songs, artwork and
+activity are fictional; no private library or credentials are shown.
 
 | Listening | Running your server |
 | --- | --- |
@@ -152,6 +169,7 @@ flowchart LR
   charts[Public chart metadata] --> mint
   imports[Optional playlist imports] --> mint
   mint --> listener[Approved members]
+  mint --> mobile[Expo consumer app]
 ```
 
 The public web app does not mount your music or receive your Plex administrator token. It sends authorized audio requests to a private worker, which checks membership and reads the files. Album artwork is public and uses Plex first, with free public sources as backup. Public library metadata is intentionally visible; audio is not.
@@ -199,6 +217,8 @@ exact browser origin in the server's `NATIVE_WEB_ORIGINS` setting and a web
 server restart/redeployment; iOS/Android do not require browser CORS.
 
 - [Public agent handbook](agents/README.md) — product decisions, architecture boundaries, design guidance, Playwright fixtures and validation.
+- [Portable starter prompt](agents/starter-prompt.md) — reusable instructions for future chats. `npm run agents -- context "<request>" [paths…]` produces a focused guidance/contract/validation packet; add `--json` for automation.
+- [Native app and account transport](docs/mobile.md) · [Native design](docs/mobile-design.md) · [Playback limits](docs/mobile-playback.md) · [Android APKs and EAS updates](docs/android-builds.md)
 - [Full self-hosting and integration reference](docs/self-hosting.md)
 - [Spotify playlist setup and restrictions](docs/spotify.md)
 - [Chart providers, geographic/genre coverage, caching and explicit requests](docs/charts.md)

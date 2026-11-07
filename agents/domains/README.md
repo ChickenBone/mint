@@ -6,7 +6,7 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 
 | Domain | Scope | Files | Imports from |
 | --- | --- | ---: | --- |
-| [`mobile`](mobile.md) | Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport | 63 | `collections` `library` `mobile-playback` `platform` `playback` `web-shell` |
+| [`mobile`](mobile.md) | Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport | 73 | `collections` `library` `mobile-playback` `platform` `playback` `providers` `web-shell` |
 | [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation | 30 | `mobile` |
 | [`platform`](platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing | 34 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
 | [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `mobile` `platform` `providers` `realtime` `web-shell` |
@@ -20,4 +20,4 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 | [`realtime`](realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components | 9 | `acquisition` `library` `platform` `playback` `web-shell` `workers` |
 | [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 60 | `acquisition` `analysis` `collections` `devices` `library` `mobile` `platform` `playback` `providers` `realtime` `workers` |
 | [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 25 | — |
-| [`handbook`](handbook.md) | README, product/design contracts, agent handbook, domain routing tooling, UX docs and screenshots | 78 | — |
+| [`handbook`](handbook.md) | README, product/design contracts, agent handbook, domain routing tooling, UX docs and screenshots | 81 | — |

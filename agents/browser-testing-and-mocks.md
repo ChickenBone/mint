@@ -62,6 +62,15 @@ The fixture is a one-shot seed/test/capture tool: it closes its gateway/connecti
 
 Do not describe the preview as proof of live Plex, TorBox, Cobalt, provider availability or production private-network connectivity.
 
+The README's `expo-browse-phone.png` and `expo-browse-wide.png` show the
+actual Expo Search UI rendered in Chromium at phone/wide viewport sizes,
+using fictional account/catalog/chart responses and original geometric artwork.
+They are separate from this Next.js fixture and do not establish physical-device
+layout, native playback, live chart coverage or production authorization.
+Keep mock chart names explicitly fictional and provider-scoped; a demo ranking
+must not imply an unsupported worldwide industry chart. Refresh these images
+from the final Expo UI when its visible Browse all layout changes.
+
 For production gateway behavior use existing worker integrations such as `artwork.integration.test.ts` and `playback.integration.test.ts`. These exercise actual worker handlers with isolated databases and controlled upstream responses. For scale use the playback/library-index regressions. Match the test to the claim.
 
 ## Mock at the narrowest boundary

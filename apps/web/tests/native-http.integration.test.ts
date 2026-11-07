@@ -122,6 +122,12 @@ test("real Next native login, consumer mutations and signed private audio retain
     assert.equal((await api.history()).entries[0]?.track.id, track!.id);
     assert.equal((await api.trackInfo(track!.id)).track.id, track!.id);
     assert.equal((await fetch(`${origin}/api/native/player/offline`, { headers })).status, 200);
+    assert.equal((await fetch(`${origin}/api/native/browse?facet=decade`)).status, 401, "Browse categories require a native session.");
+    assert.equal((await fetch(`${origin}/api/native/charts`)).status, 401, "Charts require a native session.");
+    assert.deepEqual((await api.browseCategories("genre")).items, []);
+    assert.equal((await fetch(`${origin}/api/native/browse?facet=podcast`, { headers })).status, 400);
+    assert.ok(Array.isArray((await api.charts()).charts));
+    assert.equal((await fetch(`${origin}/api/native/charts/request`, { method: "POST", headers })).status, 404, "Native charts stay read-only.");
     assert.equal((await fetch(`${origin}/api/native/admin`, { headers })).status, 404);
     assert.equal((await fetch(`${origin}/api/music/preferences`, { headers })).status, 401, "Native bearer cannot authenticate ordinary web routes.");
     assert.equal((await fetch(`${origin}/api/music/preferences`, { headers: { cookie: `mint_session=${credential.token}` } })).status, 401);

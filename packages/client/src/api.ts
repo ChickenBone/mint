@@ -2,7 +2,8 @@ import { z } from "zod";
 import { connectionErrorMessage, nativeTokenSchema, normalizeServerUrl } from "./auth";
 import { catalogPageSchema, queuePageSchema, type QueueEdit, type PlayerCollection } from "./playback";
 import {
-  collectionDetailSchema, collectionListSchema, collectionRecordSchema, discoverySchema, historySchema,
+  browseCategoryPageSchema, chartListSchema, chartPageSchema, collectionDetailSchema, collectionListSchema,
+  collectionRecordSchema, discoverySchema, historySchema, type BrowseFacet,
   lyricsResponseSchema, offlineEntitlementSchema, preferencesSchema, recordingSearchItemSchema,
   trackInfoSchema, trackViewSchema, type CollectionMutation, type DiscoveryMode, type HistoryEvent, type IssueReportInput,
 } from "./music";
@@ -10,9 +11,10 @@ import {
 export class ApiError extends Error {
   constructor(message: string, readonly status: number) { super(message); this.name = "ApiError"; }
 }
+export type CatalogFilters = { genre?: string; mood?: string; minYear?: number; maxYear?: number };
 export type CatalogQuery = {
   type?: "track" | "album" | "artist" | "playlist"; kind?: PlayerCollection["kind"]; id?: string; q?: string;
-  start?: number; size?: number; sort?: "title" | "artist" | "album" | "newest";
+  start?: number; size?: number; sort?: "title" | "artist" | "album" | "newest"; filters?: CatalogFilters;
 };
 export type MediaSource = { uri: string; headers: Record<string, string> };
 type ApiOptions = {
@@ -65,9 +67,20 @@ export class MintApi {
     return this.request(path, schema, { method, signal, headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
   }
   catalog(query: CatalogQuery = {}, signal?: AbortSignal) {
+    const { filters, ...rest } = query;
     const params = new URLSearchParams();
-    for (const [key, value] of Object.entries(query)) if (value !== undefined) params.set(key, String(value));
+    for (const [key, value] of Object.entries({ ...rest, ...filters })) if (value !== undefined && value !== "") params.set(key, String(value));
     return this.request(`player/catalog?${params}`, catalogPageSchema, { signal });
+  }
+  browseCategories(facet: BrowseFacet, offset = 0, limit = 24, signal?: AbortSignal) {
+    const params = new URLSearchParams({ facet, offset: String(offset), limit: String(limit) });
+    return this.request(`browse?${params}`, browseCategoryPageSchema, { signal });
+  }
+  charts(signal?: AbortSignal) { return this.request("charts", chartListSchema, { signal }); }
+  chart(id: string, offset = 0, revision?: string | null, signal?: AbortSignal) {
+    const params = new URLSearchParams({ chart: id, offset: String(offset), limit: "25" });
+    if (revision) params.set("revision", revision);
+    return this.request(`charts?${params}`, chartPageSchema, { signal });
   }
   discover(mode: DiscoveryMode = "for-you", signal?: AbortSignal) {
     return this.request(`music/discover?mode=${mode}`, discoverySchema, { signal });

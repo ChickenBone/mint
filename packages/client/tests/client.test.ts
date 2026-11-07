@@ -108,3 +108,39 @@ test("client exports contain no server dependencies", () => {
     assert.doesNotMatch(source, /from\s+["'](?:@mint\/core|node:|next|drizzle-orm|ioredis|pg|server-only)/);
   }
 });
+test("search browsing sends bounded category, filter and chart reads through the native facade", async () => {
+  const requested: string[] = [];
+  const chartRow = { id: "entry-1", rank: 1, title: "Fixture song", artist: "Fixture artist", album: null, durationSec: 200,
+    artwork: null, availability: "missing", reason: "Not in the library", progress: null, item: null, url: "https://example.com/1", isrc: null };
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url) => {
+    const target = new URL(String(url));
+    requested.push(`${target.pathname}${target.search}`);
+    if (target.pathname.endsWith("/browse")) return Response.json({ facet: "genre", offset: 24, total: 30, nextOffset: null,
+      items: [{ value: "ambient", label: "Ambient", tracks: 3, artwork: null }] });
+    if (target.pathname.endsWith("/charts") && !target.searchParams.has("chart")) {
+      return Response.json({ charts: [{ id: "fixture-week", provider: "fixture", providerName: "Fixture", title: "Fixture Top 50",
+        territory: "Worldwide · Fixture", description: "Fictional chart.", url: "https://example.com/" }] });
+    }
+    if (target.pathname.endsWith("/charts")) return Response.json({ chart: { id: "fixture-week", provider: "fixture", providerName: "Fixture",
+      title: "Fixture Top 50", territory: "Worldwide · Fixture", description: "Fictional chart." }, status: "fresh", period: "This week",
+      providerUpdatedAt: null, fetchedAt: null, revision: "r1", notice: null, retryAt: null, items: [chartRow], offset: 25, total: 26,
+      nextOffset: null, member: true });
+    return Response.json({ items: [], total: 0, start: 0 });
+  } });
+  const page = await api.browseCategories("genre", 24);
+  assert.equal(page.items[0]?.label, "Ambient");
+  assert.equal((await api.charts()).charts[0]?.title, "Fixture Top 50");
+  const chart = await api.chart("fixture-week", 25, "r1");
+  assert.equal(chart.items[0]?.availability, "missing");
+  assert.equal("url" in chart.items[0]!, false, "Provider links are not part of the client contract.");
+  await api.catalog({ type: "track", filters: { minYear: 1990, maxYear: 1999, genre: "" }, start: 50, size: 50 });
+  assert.deepEqual(requested, [
+    "/api/native/browse?facet=genre&offset=24&limit=24",
+    "/api/native/charts",
+    "/api/native/charts?chart=fixture-week&offset=25&limit=25&revision=r1",
+    "/api/native/player/catalog?type=track&start=50&size=50&minYear=1990&maxYear=1999",
+  ]);
+  const invalid = new MintApi({ serverUrl: "https://mint.example.com", token,
+    fetch: async () => Response.json({ facet: "genre", offset: 0, total: 1, nextOffset: null, items: [{ value: "", label: "", tracks: -1, artwork: null }] }) });
+  await assert.rejects(invalid.browseCategories("genre"), /incompatible/);
+});

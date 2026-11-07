@@ -29,7 +29,12 @@ Generated visual elements are decorative (`aria-hidden`) where an adjacent linke
 
 ## Shelf behavior
 
-Discover begins with playlist-led shelves: daily/library mixes, artist radio, provider charts, genre discovery and country exploration. Provider controls and detailed rank rows belong inside the selected chart, not in a dense discovery form.
+Search discovery begins with playlist-led shelves: daily/library mixes, artist radio, provider charts, genre discovery and country exploration. The old Discover landing redirects to Search. Provider controls and detailed rank rows belong inside the selected chart, not in a dense discovery form.
+
+Expo Search also provides a Browse all grid using its shared `BrowseCard`
+primitive: real sample covers or neutral glyphs, true counts and distinct
+paginated categories. Reuse the native component/token contract rather than
+copying browser CSS. See [mobile design](../docs/mobile-design.md).
 
 - Use native links for opening a collection, with stable route/state.
 - A mix Play action plays a real playable selection; it must not be a decorative button.

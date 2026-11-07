@@ -20,6 +20,12 @@ export function runtimeFromResolution(result) {
   return result.runtimeVersion;
 }
 
+export function validateUpdateRuntime(current, update) {
+  if (runtimeFromResolution(current) !== runtimeFromResolution(update)) {
+    throw new Error("Runtime changed; refusing publication.");
+  }
+}
+
 export function compatibleBuild(build, runtime) {
   return build?.status === "FINISHED" && build.platform === "ANDROID" &&
     build.distribution === "INTERNAL" && build.buildProfile === "production" &&
@@ -55,26 +61,84 @@ export function selectBuild(builds, runtime) {
   return builds.find((build) => compatibleBuild(build, runtime)) ?? null;
 }
 
-export function verifyManifest(manifest) {
+export function parseManifestTree(tree) {
+  const nodes = [];
+  const stack = [];
+  for (const line of tree.split("\n")) {
+    const element = line.match(/^(\s*)E: ([^\s(]+) \(line=\d+\)$/);
+    if (element) {
+      const depth = element[1].length;
+      while (stack.length && stack.at(-1).depth >= depth) stack.pop();
+      const node = { name: element[2], depth, parent: stack.at(-1), attributes: new Map() };
+      nodes.push(node);
+      stack.push(node);
+      continue;
+    }
+    const attribute = line.match(/^(\s*)A: ([^=]+)=(.*)$/);
+    if (!attribute) continue;
+    const node = stack.at(-1);
+    if (!node || attribute[1].length <= node.depth) throw new Error("Invalid aapt2 manifest attribute.");
+    const name = attribute[2].replace(/\(0x[a-fA-F0-9]+\)$/, "")
+      .replace("http://schemas.android.com/apk/res/android:", "android:");
+    // aapt2's tree dump is not XML: JSON quotes are literal inside string values.
+    const string = attribute[3].match(/^"(.*)" \(Raw: ".*"\)$/)?.[1]
+      ?? attribute[3].match(/^"(.*)"$/)?.[1];
+    const value = string ?? (attribute[3] === "true" ? true : attribute[3] === "false" ? false :
+      /^-?\d+$/.test(attribute[3]) ? Number(attribute[3]) : attribute[3]);
+    if (node.attributes.has(name)) throw new Error("Duplicate APK manifest attribute.");
+    node.attributes.set(name, value);
+  }
+  return nodes;
+}
+
+export function verifyManifest(tree, resources) {
+  const nodes = parseManifestTree(tree);
+  const manifests = nodes.filter(node => node.name === "manifest" && !node.parent);
+  const applications = nodes.filter(node => node.name === "application" && node.parent === manifests[0]);
+  if (manifests.length !== 1 || applications.length !== 1 ||
+      manifests[0].attributes.get("package") !== "org.mintmusic.mobile" ||
+      ![undefined, false].includes(applications[0].attributes.get("android:debuggable"))) {
+    throw new Error("APK package or debug state does not match the release gate.");
+  }
   const entries = new Map();
-  for (const tag of manifest.match(/<meta-data\b[^>]*\/?>/g) ?? []) {
-    const name = tag.match(/android:name="([^"]*)"/)?.[1];
-    const value = tag.match(/android:value="([^"]*)"/)?.[1]
-      ?.replaceAll("&quot;", '"').replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">");
-    if (name) entries.set(name, value);
+  for (const node of nodes.filter(node => node.name === "meta-data" && node.parent === applications[0])) {
+    const name = node.attributes.get("android:name");
+    if (entries.has(name)) throw new Error("Duplicate APK update metadata.");
+    entries.set(name, node.attributes.get("android:value"));
   }
   const prefix = "expo.modules.updates.";
-  if (entries.get(`${prefix}ENABLED`) !== "true" ||
+  if (entries.get(`${prefix}ENABLED`) !== true ||
       entries.get(`${prefix}EXPO_UPDATE_URL`) !== "https://u.expo.dev/5a1e1df0-825c-4b34-8f29-21747fb78b97" ||
       !entries.has(`${prefix}EXPO_RUNTIME_VERSION`) ||
-      entries.get(`${prefix}HAS_EMBEDDED_UPDATE`) === "false" ||
-      entries.get(`${prefix}DISABLE_ANTI_BRICKING_MEASURES`) === "true") {
+      ![undefined, true].includes(entries.get(`${prefix}HAS_EMBEDDED_UPDATE`)) ||
+      ![undefined, false].includes(entries.get(`${prefix}DISABLE_ANTI_BRICKING_MEASURES`)) ||
+      ![undefined, "ALWAYS"].includes(entries.get(`${prefix}EXPO_UPDATES_CHECK_ON_LAUNCH`)) ||
+      ![undefined, 0].includes(entries.get(`${prefix}EXPO_UPDATES_LAUNCH_WAIT_MS`))) {
     throw new Error("APK manifest has unsafe or missing Expo Updates configuration.");
   }
   let headers;
   try { headers = JSON.parse(entries.get(`${prefix}UPDATES_CONFIGURATION_REQUEST_HEADERS_KEY`) ?? ""); }
   catch { throw new Error("APK manifest has missing or invalid update channel headers."); }
-  if (headers["expo-channel-name"] !== "production") throw new Error("APK update channel is not production.");
+  if (!headers || headers["expo-channel-name"] !== "production") throw new Error("APK update channel is not production.");
+  const runtimeResources = [];
+  const resourceLines = resources.split("\n");
+  for (let index = 0; index < resourceLines.length; index++) {
+    const resource = resourceLines[index].match(/^([ \t]*)resource (0x[a-fA-F0-9]+) string\/expo_runtime_version(?: PUBLIC)?$/);
+    if (!resource) continue;
+    const values = [];
+    for (let next = index + 1; next < resourceLines.length; next++) {
+      const line = resourceLines[next];
+      if (!line.trim()) continue;
+      if (line.match(/^[ \t]*/)[0].length <= resource[1].length) break;
+      values.push(line.trim());
+    }
+    runtimeResources.push({ id: resource[2], values });
+  }
+  if (runtimeResources.length !== 1 ||
+      entries.get(`${prefix}EXPO_RUNTIME_VERSION`) !== `@${runtimeResources[0].id}` ||
+      !isDeepStrictEqual(runtimeResources[0].values, ['() "file:fingerprint"'])) {
+    throw new Error("APK runtime metadata must resolve exclusively to the default file:fingerprint string.");
+  }
 }
 
 function certificate(env) {
@@ -128,24 +192,29 @@ export function verifyArm64Elf(elf) {
 }
 
 function verifyApk(env) {
-  execFileSync(resolve(env.ANDROID_HOME, "build-tools/36.0.0/zipalign"),
+  if (!env.ANDROID_HOME) throw new Error("Missing ANDROID_HOME for APK verification.");
+  const tool = name => resolve(env.ANDROID_HOME, "build-tools/36.0.0", name);
+  execFileSync(tool("zipalign"),
     ["-c", "-P", "16", "4", ".android-ci/mint.apk"], { stdio: "pipe" });
-  const output = execFileSync(resolve(env.ANDROID_HOME, "build-tools/36.0.0/apksigner"),
+  const output = execFileSync(tool("apksigner"),
     ["verify", "--verbose", "--print-certs", ".android-ci/mint.apk"], { encoding: "utf8" });
   const digests = [...output.matchAll(/Signer #\d+ certificate SHA-256 digest: ([a-fA-F0-9]+)/g)];
   if (digests.length !== 1 || digests[0][1].toLowerCase() !== certificate(env)) {
     throw new Error("APK signer differs from the configured stable release certificate.");
   }
-  const query = (...args) => execFileSync("apkanalyzer", [...args, ".android-ci/mint.apk"], { encoding: "utf8" }).trim();
+  const dump = (...args) => execFileSync(tool("aapt2"), ["dump", ...args, ".android-ci/mint.apk"],
+    { encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
   const expectedRuntime = runtimeFromResolution(JSON.parse(readFileSync(".android-ci/runtime.json", "utf8")));
-  if (query("manifest", "application-id") !== "org.mintmusic.mobile" ||
-      query("manifest", "debuggable") !== "false" ||
-      query("resources", "value", "--config", "default", "--type", "string", "--name", "expo_runtime_version") !== "file:fingerprint" ||
-      query("files", "cat", "--file", "/assets/fingerprint") !== expectedRuntime) {
-    throw new Error("APK package, debug state or actual embedded runtime does not match the gate.");
+  const manifest = dump("xmltree", "--file", "AndroidManifest.xml");
+  const resources = dump("resources");
+  writeFileSync(".android-ci/manifest-tree.txt", manifest);
+  writeFileSync(".android-ci/resources.txt", resources);
+  verifyManifest(manifest, resources);
+  if (execFileSync("unzip", ["-p", ".android-ci/mint.apk", "assets/fingerprint"], { encoding: "utf8" }) !== expectedRuntime) {
+    throw new Error("APK actual embedded runtime does not match the gate.");
   }
-  verifyManifest(query("manifest", "print"));
   const files = execFileSync("zipinfo", ["-1", ".android-ci/mint.apk"], { encoding: "utf8" }).split("\n");
+  if (!files.includes("assets/app.manifest")) throw new Error("APK is missing its embedded recovery manifest.");
   const libraries = files.filter(file => /^lib\/.*\.so$/.test(file));
   if (!libraries.length || libraries.some(file => !file.startsWith("lib/arm64-v8a/"))) {
     throw new Error("APK must include native libraries for arm64-v8a only.");
@@ -181,7 +250,9 @@ function main(command) {
       read(".android-ci/link.json"));
   } else if (command === "credentials") prepareCredentials(process.env);
   else if (command === "verify-apk") verifyApk(process.env);
-  else if (command === "gate") {
+  else if (command === "validate-update-runtime") {
+    validateUpdateRuntime(read(".android-ci/runtime.json"), read(".android-ci/update-runtime.json"));
+  } else if (command === "gate") {
     const current = runtime();
     const baseline = process.env.FORCE_REBUILD === "true" ? null : selectBuild(read(".android-ci/builds.json"), current);
     writeFileSync(".android-ci/baseline.json", JSON.stringify(baseline));

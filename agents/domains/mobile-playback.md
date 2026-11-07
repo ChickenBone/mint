@@ -13,6 +13,7 @@
 - Stream/download only through authenticated public Mint proxies with header credentials, bounded file/metadata budgets and explicit cancellation/errors.
 - Native background play extends only through successfully loaded native queue horizons. Do not promise entire-library suspended playback or physical-device behavior from a web build.
 - Cover palettes derive from actual proxied artwork using bounded processing/caches; failures retain an explicit neutral visual fallback without exposing secrets.
+- Lockscreen artwork resolves against the selected public Mint origin, never a relative browser path, private worker host or bearer-bearing URL. Do not claim device display from a unit test; preserve the audited native audio plugin and its compatibility gate.
 - Offline expiry/revalidation stays consistent with the server entitlement. Offline audio cannot be remotely revoked while disconnected.
 
 ## Validation
@@ -24,7 +25,7 @@ Run mobile typecheck/lint and `npm test -w @mint/mobile`. Native development bui
 ## Generated map
 
 - **Scope:** Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation.
-- **Read before editing:** [docs/mobile.md](../../docs/mobile.md), [agents/architecture.md](../architecture.md), [agents/playback-and-library.md](../playback-and-library.md).
+- **Read before editing:** [docs/mobile.md](../../docs/mobile.md), [docs/mobile-playback.md](../../docs/mobile-playback.md), [agents/architecture.md](../architecture.md), [agents/playback-and-library.md](../playback-and-library.md).
 - **Imports from:** [`mobile`](mobile.md)
 - **Imported by:** [`mobile`](mobile.md)
 - **Live detail:** `npm run agents -- map mobile-playback` (exports, line counts, cross-domain import edges).

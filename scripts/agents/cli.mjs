@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Agent domain tooling. Usage: npm run agents -- <command>  (see `help`).
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -11,13 +11,14 @@ import {
   TEST_FILE,
   applyToSafe,
   compileManifest,
+  contextPathAllowed,
   exportedNames,
   importSpecifiers,
   loadWorkspaces,
   replaceBlock,
   resolveImport,
   resolveOwnership,
-  routeQuery,
+  routingPlan,
   splitCard,
   workspaceFor,
 } from "./lib.mjs";
@@ -361,7 +362,7 @@ function cmdSync() {
 
 function markdownLinkErrors(ctx) {
   const errors = [];
-  const docs = ctx.files.filter((f) => f.endsWith(".md") && (f === "AGENTS.md" || f.startsWith("agents/") || f.startsWith(INSTRUCTIONS_DIR)));
+  const docs = ctx.files.filter((f) => f.endsWith(".md") && (["AGENTS.md", "README.md", "PRODUCT.md", "DESIGN.md"].includes(f) || f.startsWith("agents/") || f.startsWith("docs/") || f.startsWith(INSTRUCTIONS_DIR)));
   for (const doc of docs) {
     for (const m of read(doc).matchAll(/\]\(([^)\s]+)\)/g)) {
       const target = m[1];
@@ -422,18 +423,9 @@ function cmdCheck({ strict = false, quiet = false } = {}) {
 function cmdRoute(args, { json }) {
   if (!args.length) throw new Error('usage: npm run agents -- route "<task description>" [paths...]');
   const ctx = loadContext();
-  const ranked = routeQuery(ctx.compiled, ctx.owners, args);
-  const top = ranked[0]?.score ?? 0;
-  const picked = ranked.filter((r) => r.score >= Math.max(3, top * 0.4)).slice(0, 4);
-  const byId = new Map(ctx.compiled.domains.map((d) => [d.id, d]));
-  const guides = [...new Set(picked.flatMap((r) => byId.get(r.id).guides))];
-  const result = {
-    domains: picked.map((r) => ({ ...r, card: `${CARDS_DIR}/${r.id}.md` })),
-    read: [...(ctx.manifest.alwaysRead ?? []), ...picked.map((r) => `${CARDS_DIR}/${r.id}.md`), ...guides],
-    multiDomain: picked.length > 1,
-  };
+  const result = routingPlan(ctx.compiled, ctx.owners, args);
   if (json) return console.log(JSON.stringify(result, null, 2));
-  if (!picked.length) {
+  if (!result.domains.length) {
     console.log("No confident match. Read agents/domains/README.md and pick domains manually, or pass file paths.");
     return;
   }
@@ -442,6 +434,63 @@ function cmdRoute(args, { json }) {
   console.log("\nRead, in order:");
   for (const p of [...new Set(result.read)]) console.log(`  ${p}`);
   if (result.multiDomain) console.log("\nSpans several domains: follow the large-task protocol in AGENTS.md (contracts first, then one sub-task per domain).");
+}
+
+function cmdContext(args, { json }) {
+  if (!args.length) throw new Error('usage: npm run agents -- context "<task description>" [paths...] [--json]');
+  const ctx = loadContext();
+  const allowed = (file) => contextPathAllowed(file)
+    && !ctx.compiled.ignoreRes.some((re) => re.test(file))
+    && (!existsSync(abs(file)) || !file.split("/").some((_, i, parts) => lstatSync(abs(parts.slice(0, i + 1).join("/"))).isSymbolicLink()));
+  ctx.files = ctx.files.filter(allowed);
+  ctx.fileSet = new Set(ctx.files);
+  ctx.owners = new Map([...ctx.owners].filter(([file]) => ctx.fileSet.has(file)));
+  const safePaths = args.slice(1).map((p) => p.replace(/^\.\//, "").replace(/\/$/, "")).filter(allowed);
+  const plan = routingPlan(ctx.compiled, ctx.owners, [args[0], ...safePaths]);
+  const graph = importGraph(ctx);
+  const domains = plan.domains.map((r) => {
+    const d = ctx.compiled.domains.find((d) => d.id === r.id);
+    const edges = [...(graph.get(r.id) ?? [])].flatMap(([owner, pairs]) => pairs.map(([from, to]) => ({ from, to, owner })));
+    const { out, inn } = dependencies(ctx, r.id);
+    return {
+      id: r.id, card: r.card, summary: d.summary,
+      importsFrom: out, importedBy: inn,
+      contracts: edges.slice(0, 12), remainingContracts: Math.max(0, edges.length - 12),
+      validation: validationFor(ctx, filesOf(ctx, r.id), d.validate),
+      mapCommand: `npm run agents -- map ${r.id}`,
+    };
+  });
+  const changed = changedFiles().filter(allowed);
+  const result = {
+    alwaysRead: (ctx.manifest.alwaysRead ?? []).filter(allowed),
+    read: plan.read.filter(allowed),
+    domains,
+    multiDomain: plan.multiDomain,
+    git: { changedFiles: changed.length, affectedDomains: [...new Set(resolveOwnership(ctx.compiled, changed).owners.values())].sort() },
+    notes: [
+      "Read the listed guidance and inspect current contracts/tests; this is metadata, not a source dump or authorization.",
+      "Validation is recommended, not executed. Use agents -- affected after editing; shared contracts require consumer validation.",
+      "Only Git-visible, non-ignored public paths are scanned. Sensitive paths, symlinks and file contents are omitted; never paste secrets into a request.",
+      ...(safePaths.length < args.length - 1 ? ["Some supplied paths were excluded by the public-context filter."] : []),
+      ...(!domains.length ? ["No confident match: pick cards from agents/domains/README.md or supply owned paths."] : []),
+    ],
+  };
+  if (json) return console.log(JSON.stringify(result, null, 2));
+  console.log("# Focused repository context\n\n## Read, in order\n");
+  for (const file of result.read) console.log(`- ${file}`);
+  for (const d of domains) {
+    console.log(`\n## ${d.id}\n\n${d.summary}\n\nCard: ${d.card}`);
+    console.log(`Imports from: ${d.importsFrom.join(", ") || "none"}; imported by: ${d.importedBy.join(", ") || "none"}`);
+    for (const edge of d.contracts) console.log(`- ${edge.from} → ${edge.to} (${edge.owner})`);
+    if (d.remainingContracts) console.log(`- ${d.remainingContracts} more edges; inspect with ${d.mapCommand}`);
+    console.log("\nSuggested validation:\n\n```bash");
+    for (const command of d.validation.cmds) console.log(command);
+    console.log("```");
+    for (const note of d.validation.notes) console.log(`\n${note}`);
+  }
+  console.log(`\n## Working tree\n\n${result.git.changedFiles} public changed files; affected domains: ${result.git.affectedDomains.join(", ") || "none"}`);
+  console.log("\n## Notes\n");
+  for (const note of result.notes) console.log(`- ${note}`);
 }
 
 function changedFiles(base) {
@@ -516,13 +565,15 @@ function cmdOwner(paths, { json }) {
 const HELP = `Mint agent domain tooling
 
   npm run agents -- route "<task>" [paths…]   Which domains/cards to read for a task
+  npm run agents -- context "<task>" [paths…] Focused Markdown context: guidance, contracts, validation, git summary
   npm run agents -- affected [--base <ref>]   Domains touched by local changes + focused validation
   npm run agents -- map <domain>              Live file/export/import map for one domain
   npm run agents -- owner <path…>             Owning domain for files
   npm run agents:sync                         Regenerate cards, index, routing table, path instructions
   npm run agents:check [-- --strict]          Validate ownership, freshness, budgets and links (CI)
 
-Add --json to route/affected/owner for machine-readable output.`;
+Add --json to route/context/affected/owner for machine-readable output.
+Context emits metadata only; no file bodies, secrets, ignored paths or private git identity.`;
 
 const [command, ...rest] = process.argv.slice(2);
 const json = rest.includes("--json");
@@ -537,6 +588,9 @@ try {
       break;
     case "route":
       cmdRoute(args, { json });
+      break;
+    case "context":
+      cmdContext(args, { json });
       break;
     case "affected":
       cmdAffected(args, { json });

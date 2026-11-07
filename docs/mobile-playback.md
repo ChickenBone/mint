@@ -26,6 +26,14 @@ controls is refreshed while JS runs; it can lag native track changes while JS is
 suspended. Neither full background collection preparation nor exact gapless
 playback is promised.
 
+Lock-screen artwork is resolved through the selected server's public artwork URL
+helper before crossing the native bridge, including restored/offline queues and
+track changes. External artwork retains the helper's HTTPS/no-credentials rules;
+no bearer headers are sent with artwork. Missing artwork is omitted. An invalid
+artwork address produces a visible, nonfatal artwork error while title, artist,
+album and playback remain available. This JavaScript-only handling does not
+require a native rebuild.
+
 Audio is requested from Mint's authenticated public proxy with per-source bearer
 headers; private Plex/worker endpoints and credentials are never returned.
 Native range seeks retain proxy authorization. The member session currently

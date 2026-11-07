@@ -2,6 +2,14 @@
 
 Mint uses documented, server-side, keyless public feeds. No paid chart account, Spotify session cookie, private Google endpoint or scraping workaround is required. Open **Search → Charts** for the complete chart catalog, or `/charts` for public, browse-only access. Search's generated covers are virtual collections backed by real library mixes or provider rankings, not fictional track lists.
 
+In the Expo consumer app, **Search → Browse all → Charts** is read-only.
+The native facade exposes chart GET pages and per-account library availability,
+not `/api/charts/request`. Local matches play through authenticated Mint audio;
+missing songs can open Search for a separate explicit recording request.
+Provider scope, revision-aware paging and unavailable/stale states are unchanged.
+See [mobile design](mobile-design.md); browser validation below is not native
+device or live deployment evidence.
+
 ## Coverage and provider research
 
 | Provider | What Mint actually shows | Authentication and limits | Scope and permitted use |

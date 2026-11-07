@@ -26,14 +26,21 @@ test("cookie web requests still require their existing Origin even with forged b
   assert.equal(validConsumerMutation(request, "https://mint.example.com"), false);
   assert.equal(validConsumerMutation(new Request(request.url, { method: "PUT", headers: { origin: "https://mint.example.com" } }), "https://mint.example.com"), true);
 });
-test("consumer allowlist excludes admin, workers, charts and path traversal", () => {
-  for (const path of [["admin"], ["charts"], ["agent"], ["player", "lyrics", "id", "matches"], ["music", "..", "admin"], ["music", "admin"]]) {
+test("consumer allowlist excludes admin, workers, chart acquisition and path traversal", () => {
+  for (const path of [["admin"], ["charts", "request"], ["agent"], ["browse", "genre"], ["player", "lyrics", "id", "matches"], ["music", "..", "admin"], ["music", "admin"]]) {
     assert.equal(nativeRouteAllowed(path, "GET"), false);
   }
   assert.equal(nativeRouteAllowed(["player", "audio", "track"], "HEAD"), true);
   assert.equal(nativeRouteAllowed(["player", "offline"], "GET"), true);
   assert.equal(nativeRouteAllowed(["music", "collections"], "POST"), true);
   assert.equal(nativeRouteAllowed(["player", "audio", "track"], "POST"), false);
+  // Search browsing can read categories and charts, but never write through those routes.
+  assert.equal(nativeRouteAllowed(["browse"], "GET"), true);
+  assert.equal(nativeRouteAllowed(["charts"], "GET"), true);
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    assert.equal(nativeRouteAllowed(["browse"], method), false);
+    assert.equal(nativeRouteAllowed(["charts"], method), false);
+  }
 });
 test("native web CORS is opt-in and never grants cookies", async () => {
   assert.equal(nativeWebOriginAllowed(null, "https://mint.example.com", ""), true);

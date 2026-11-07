@@ -19,8 +19,8 @@
       "id": "mobile",
       "title": "Native consumer app",
       "summary": "Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport",
-      "keywords": ["expo", "native app", "mobile app", "ios", "android", "securestore", "native auth"],
-      "guides": ["docs/mobile.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "keywords": ["expo", "native app", "mobile app", "ios", "android", "securestore", "native auth", "browse all", "search categories"],
+      "guides": ["docs/mobile.md", "docs/mobile-design.md", "agents/architecture.md", "agents/playback-and-library.md"],
       "paths": [
         "apps/mobile/**",
         "packages/client/**",
@@ -36,7 +36,7 @@
       "title": "Native playback and offline",
       "summary": "Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation",
       "keywords": ["expo audio", "native playback", "native offline", "native player", "album colors"],
-      "guides": ["docs/mobile.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "guides": ["docs/mobile.md", "docs/mobile-playback.md", "agents/architecture.md", "agents/playback-and-library.md"],
       "paths": [
         "apps/mobile/src/playback/**",
         "apps/mobile/src/offline/**",
@@ -594,7 +594,8 @@
       "guides": [
         "agents/workers-and-operations.md",
         "agents/architecture.md",
-        "docs/self-hosting.md"
+        "docs/self-hosting.md",
+        "docs/android-builds.md"
       ],
       "paths": [
         "Dockerfile",
@@ -626,7 +627,10 @@
         "product",
         "domain",
         "routing",
-        "instructions"
+        "instructions",
+        "context tooling",
+        "starter prompt",
+        "system prompt"
       ],
       "guides": [
         "agents/README.md",

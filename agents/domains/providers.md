@@ -6,6 +6,7 @@
 
 - Owns chart providers, cache and service (`lib/chart*.ts`, `/api/charts`, `services/chart-source/**`), chart pages, Spotify linking and matching, Google/YouTube OAuth and sync jobs.
 - Chart **acquisition** requests hand off to `acquisition` through its request lifecycle. This domain never downloads anything itself.
+- Expo Search consumes these contracts through the mobile domain's read-only native chart facade. Do not expose `/api/charts/request` as a native chart handler; missing songs may lead to the existing explicit Search request flow.
 
 ## Invariants
 
@@ -30,7 +31,7 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Scope:** Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth.
 - **Read before editing:** [agents/integrations-and-charts.md](../integrations-and-charts.md), [docs/charts.md](../../docs/charts.md), [docs/spotify.md](../../docs/spotify.md) (UI: also check desktop/mobile per DESIGN.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map providers` (exports, line counts, cross-domain import edges).
 
 ### Owned files (41)

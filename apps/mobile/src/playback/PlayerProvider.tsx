@@ -62,7 +62,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     let cancelled = false, removeStatus: (() => void) | undefined;
     let engine: PlaybackEngine | null = null, downloads: OfflineStore | null = null;
     const requireApi = () => {
-      if (!apiRef.current) throw new Error("Sign in to listen.");
+      if (!apiRef.current || apiRef.current.serverUrl !== scopeServer) throw new Error("Sign in to listen.");
       return apiRef.current;
     };
     void (async () => {
@@ -85,6 +85,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         engine = new PlaybackEngine(native.port, {
           openQueue: (input, signal) => requireApi().openQueue(input, signal),
           queuePage: (id, position, signal) => requireApi().queuePage(id, position, signal),
+          artworkUrl: (path) => requireApi().artworkUrl(path),
           source: async (track) => {
             const local = Platform.OS !== "web" && formatRef.current === "original" ? await localDownloads.source(track.id) : null;
             return local ?? { ...requireApi().mediaSource(track.id, formatRef.current), name: track.title };

@@ -1,6 +1,15 @@
 # Mint UX current state
 
-## Verified in app
+The walkthroughs below are **historical isolated browser evidence**, not a
+claim that the current Expo app or a deployed backend passed the same journey.
+Current contracts live in [DESIGN.md](../../DESIGN.md),
+[mobile design](../mobile-design.md) and [native playback](../mobile-playback.md).
+The Expo consumer app now leads with Home/Search/Your Library and Search's
+data-backed Browse all; Next.js listening and admin management remain supported.
+Android APK/EAS compatibility checks do not prove physical-device background
+playback, lockscreen artwork, offline recovery or OTA application.
+
+## Historical browser verification
 
 **Verification date:** 2026-11-04
 **Environment:** disposable `mint_redesign_demo` Postgres database, isolated loopback Redis, fictional seeded catalog, and Chromium at 390×844 and 1440×1000. Sign-in used the fixture account and an ephemeral test-only password. No production service or library was accessed.
@@ -64,6 +73,8 @@ An optional extended screenshot pass also observed a React hydration error on `/
 - **Inside This Recording & Sound Panel**: `TrackAnalysis` displays `v2` detected genres/sub-styles, mood tags, vocal/instrumental badges, Camelot + Open Key notation, BPM + beat stability, danceability, EBU R128 integrated loudness, true peak, loudness range (`LRA`), crest factor, and waveform `introEndSec`/`outroStartSec` cue markers, while falling back cleanly for `v1`-analyzed tracks. `AudioPanel` exposes 8 EQ presets (`Flat`, `Warm`, `Vocal`, `Low listening`, `Bass boost`, `Acoustic`, `Electronic`, `Late night`), true-peak safe limiter (`-0.3 dBFS`), Fletcher-Munson equal-loudness contour, stereo stage (`normal`, `crossfeed`, `wide`), and album/track/auto normalization mode (`normalizeMode`).
 - **Library Filters & Smart Playlists**: `/app/library` filter drawer and `/app/collection/[id]` Smart Rules support filtering by `genre`, `mood`, `minBpm`, `maxBpm`, `camelotKey`, and `vocalType`.
 
-## Spec availability
+## Scope of these measurements
 
-The requested `docs/ux/target-ux.md` and prior `docs/ux/current-state.md` were not present in the checkout. The target route plan and success-measure assumptions are recorded in [target-ux.md](target-ux.md); those assumptions are not claims about a previously approved section 8.
+The [target plan](target-ux.md) records the browser rebuild's route and measurement
+assumptions. Preserve dated results as historical evidence; re-run a scoped
+journey before calling them current or extending them to native devices.

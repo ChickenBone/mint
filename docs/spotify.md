@@ -9,7 +9,12 @@ Spotify is an independent, optional read-only metadata source. Mint does not req
 3. Keep the existing shared `ENCRYPTION_KEY`, PostgreSQL and Redis settings on web and worker. Tokens are AES-256-GCM encrypted in the database with the existing key. Losing/changing that key requires reconnecting accounts. No provider secrets/tokens are passed to browser components.
 4. For the NAS paste-in deployment, edit only `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` and `SPOTIFY_API_MODE` in the top `x-settings` block. The template passes them to web and worker, not Plex, volunteer agents or the public realtime service. Pull/recreate web and worker with the same database/secrets folders after installing a version containing migration `0010_spotify.sql`; the worker runs migrations at startup. Do not delete data.
 5. For standard Compose, use the same entries in `.env`. For a Vercel frontend, set them (and the correct `PUBLIC_URL`) in the server-side Vercel environment **and** the private pipeline worker environment; Redis/PostgreSQL must remain shared. This is separate from Google OAuth.
-6. Open **Settings → Spotify playlists**, connect, and grant only `playlist-read-private playlist-read-collaborative`. Choose playlists or paste a canonical `open.spotify.com/playlist/...` link, Spotify playlist URI, or ID. Initial discovery is queued automatically. Use **Sync now** to check immediately; automatic sync checks every 30 minutes when enabled. The worker's scheduler checks due accounts once per minute.
+6. Open the browser's **Settings → Connected services** for Spotify controls, connect, and grant only `playlist-read-private playlist-read-collaborative`. Choose playlists or paste a canonical `open.spotify.com/playlist/...` link, Spotify playlist URI, or ID. Initial discovery is queued automatically. Use **Sync now** to check immediately; automatic sync checks every 30 minutes when enabled. The worker's scheduler checks due accounts once per minute.
+
+Source-managed playlists remain available to consumer clients through existing
+collection contracts. Provider OAuth/setup and sync management remain on Next.js;
+the Expo app does not duplicate Spotify infrastructure screens or gain Spotify
+audio access. Native collection behavior is documented in [mobile design](mobile-design.md).
 
 ## Spotify's 2026 access restrictions
 

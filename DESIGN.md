@@ -14,6 +14,18 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 
 **Search & Explore:** Search is the single entry for finding music and starting discovery. The focused query searches local and external recordings; the empty-query view includes browse shortcuts, personalized playlist shelves, artist radio, genres and charts. Dedicated mix and chart routes retain their detailed flows, with back links returning to Search. Generated covers carry oversized typography, a confident color palette and small Mint/source credits. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
 
+**Expo consumer app:** Android/mobile leads with Home, Search and Your Library,
+three phone destinations and a responsive wide-screen sidebar. Native primitives
+reuse Mint's semantic charcoal/mint/artwork identity with platform typography;
+the web Figtree/HTML token contract below is not a native component prescription.
+Search's Browse all is a data-backed category grid: recommendations, new arrivals,
+read-only charts, decades, moods and genres. Every card opens a real bounded
+destination; chart scope and availability remain explicit. No podcasts, audiobooks,
+live events or fabricated editorial popularity. Missing chart songs lead to an
+explicit Search request, never automatic acquisition. Native admin/provider setup
+stays on Next.js. See [mobile design](docs/mobile-design.md) and
+[native playback](docs/mobile-playback.md) for platform-specific controls and limits.
+
 ## System
 
 - Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration. `gradient-action` enriches mint primary controls, `gradient-atmosphere` belongs to music headers, and `gradient-liked` identifies personal favorites; never gradient text, glowing borders or rainbow chrome. `info` and `accent` are complementary roles, not a replacement for warning/error semantics.
@@ -67,4 +79,6 @@ Missing recordings are muted but readable and have a labeled Add to library acti
 
 Charts are bounded to 50 entries, paginated in 25-entry windows, server-cached and provider-throttled. Stale rankings, provider failures and genuinely empty results are different states. WebSocket invalidation is supplemented by visible-tab polling so a failed realtime connection never hides progress.
 
-The desktop analysis-worker “Analysis result not accepted fetch failed” report remains an unresolved operational investigation, not a verified redesign fix.
+Builds and screenshots establish only their tested surface. Device lockscreen,
+background/offline recovery, OTA application and deployed-provider behavior need
+separate evidence; do not claim them from browser rendering or CI alone.

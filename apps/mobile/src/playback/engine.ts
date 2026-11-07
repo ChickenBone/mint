@@ -28,6 +28,7 @@ export interface PlaybackApi {
   openQueue(input: { collection: PlayerCollection; shuffle: boolean; trackId?: string; occurrenceId?: string }, signal: AbortSignal): Promise<QueuePage>;
   queuePage(id: string, position: number, signal: AbortSignal): Promise<QueuePage>;
   source(track: MobileTrack): Promise<MediaSource>;
+  artworkUrl(path?: string): string | undefined;
   validate(signal: AbortSignal): Promise<void>;
   metadata?(id: string, signal: AbortSignal): Promise<MobileTrack>;
 }
@@ -185,7 +186,15 @@ export class PlaybackEngine {
     this.persist();
   }
   private lockMetadata(track: MobileTrack) {
-    return { title: track.title || "Mint", artist: track.artist, albumTitle: track.album, artworkUrl: track.thumb };
+    let artworkUrl: string | undefined;
+    if (track.thumb) {
+      try { artworkUrl = this.api.artworkUrl(track.thumb); }
+      catch (error) {
+        this.reportError(new Error(`Lock-screen artwork is unavailable: ${error instanceof Error ? error.message : "Invalid artwork address."}`));
+      }
+    }
+    return { title: track.title || "Mint", artist: track.artist, albumTitle: track.album,
+      ...(artworkUrl ? { artworkUrl } : {}) };
   }
   async playTrack(track: MobileTrack) {
     const generation = this.begin();
@@ -279,11 +288,7 @@ export class PlaybackEngine {
     const oldId = this.state.track?.occurrenceId;
     this.updateQueue();
     if (oldId !== this.state.track?.occurrenceId && this.state.track) {
-      this.playlist.setActiveForLockScreen(true, this.lockMetadata(this.state.track));
-      void this.hydrateCurrent().catch((error: unknown) => {
-        if (isConnectionFailure(error)) this.reportError(new Error("Song details could not refresh while offline."));
-        else this.fail(error);
-      });
+      void this.refreshCurrentMetadata();
     }
     if (Date.now() - this.lastSaved >= 5000) this.persist();
   }
@@ -303,16 +308,29 @@ export class PlaybackEngine {
     this.metadataRequest = index;
     if (this.context && !this.edited) {
       const page = await this.api.queuePage(this.context.id, index, this.request.signal);
-      if (generation !== this.generation || this.disposed) return;
+      if (generation !== this.generation || this.disposed || index !== this.playlist.currentIndex) return;
       this.remember(queueEntries(page));
     } else if (this.api.metadata) {
       const entry = this.entries[index]!;
       const track = await this.api.metadata(entry.id, this.request.signal);
-      if (generation !== this.generation || this.disposed) return;
+      if (generation !== this.generation || this.disposed || index !== this.playlist.currentIndex) return;
       this.remember([{ ...track, occurrenceId: entry.occurrenceId }]);
     }
     this.updateQueue();
     if (this.state.track) this.playlist.setActiveForLockScreen(true, this.lockMetadata(this.state.track));
+  }
+  private async refreshCurrentMetadata() {
+    const generation = this.generation, index = this.playlist.currentIndex;
+    try {
+      if (this.state.track) this.playlist.setActiveForLockScreen(true, this.lockMetadata(this.state.track));
+      await this.hydrateCurrent();
+    }
+    catch (error) {
+      if (generation !== this.generation || this.disposed || index !== this.playlist.currentIndex) return;
+      this.metadataRequest = -1;
+      if (isConnectionFailure(error)) this.reportError(new Error("Song details could not refresh while offline."));
+      else this.fail(error);
+    }
   }
   async toggle() {
     if (!this.entries.length) return;
@@ -333,7 +351,8 @@ export class PlaybackEngine {
     if (!this.entries.length) return;
     if (this.editing || this.state.queueLoading) throw new Error("Wait for the queue to finish preparing before changing playback sources.");
     const generation = this.generation;
-    const entries = [...this.entries], index = this.playlist.currentIndex, time = this.playlist.currentTime, playing = this.playlist.playing;
+    const entries = this.entries.map((entry) => this.metadata.get(entry.occurrenceId) ?? entry);
+    const index = this.playlist.currentIndex, time = this.playlist.currentTime, playing = this.playlist.playing;
     const context = this.context, originalOrder = this.originalOrder;
     await this.replace(entries, index, false);
     if (generation !== this.generation || this.disposed) return;
@@ -343,11 +362,19 @@ export class PlaybackEngine {
     if (playing) this.playlist.play();
     this.publish({ error: null });
   }
-  async next() { this.playlist.next(); this.updateQueue(); this.persist(); }
+  async next() {
+    const oldId = this.state.track?.occurrenceId;
+    this.playlist.next();
+    this.updateQueue();
+    if (oldId !== this.state.track?.occurrenceId) await this.refreshCurrentMetadata();
+    this.persist();
+  }
   async previous() {
+    const oldId = this.state.track?.occurrenceId;
     if (this.playlist.currentTime > 3) await this.playlist.seekTo(0);
     else this.playlist.previous();
     this.updateQueue();
+    if (oldId !== this.state.track?.occurrenceId) await this.refreshCurrentMetadata();
     this.persist();
   }
   async seek(seconds: number) {

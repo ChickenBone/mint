@@ -15,6 +15,7 @@
 - Never use volume or data deletion, host or none network modes, or static container IPs as generic fixes.
 - A successful push does not prove CI passed or images were published. Verify the Release workflow before claiming GHCR availability.
 - Android distribution uses EAS Build and EAS Update. Compare the native fingerprint with a successfully built APK, not the previous commit; compatible JavaScript changes only publish an update, and missing native history builds conservatively.
+- EAS baselines must be finished builds with the exact runtime/channel/fingerprint and validated signer; submitted or queued builds authorize no update. Do not restore the retired self-hosted OTA API/volume. EAS hosts application assets, not private media or backend secrets.
 - Preserve stable APK signing, exact native runtimes, default-branch publication and embedded/offline recovery. Never distribute Expo's debug-signed release default or claim an APK/device check from prebuild alone. EAS quotas still apply. See [Android builds](../../docs/android-builds.md).
 
 Details: [workers and operations](../workers-and-operations.md#self-hosting-and-upgrades).
@@ -29,7 +30,7 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 ## Generated map
 
 - **Scope:** Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs.
-- **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md), [docs/self-hosting.md](../../docs/self-hosting.md).
+- **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md), [docs/self-hosting.md](../../docs/self-hosting.md), [docs/android-builds.md](../../docs/android-builds.md).
 - **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).

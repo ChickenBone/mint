@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   GEN_END,
   GEN_START,
   applyToSafe,
   compileManifest,
+  contextPathAllowed,
   exportedNames,
   importSpecifiers,
   replaceBlock,
   resolveImport,
   resolveOwnership,
   routeQuery,
+  routingPlan,
   specificity,
   globToRegExp,
 } from "./lib.mjs";
@@ -98,6 +102,59 @@ test("routeQuery ranks by paths, keywords and file names", () => {
   assert.equal(routeQuery(m, owners, ["web/chart-service.ts"])[0].id, "charts");
   assert.equal(routeQuery(m, owners, ["web/chart-new.ts"])[0].id, "charts");
   assert.deepEqual(routeQuery(m, owners, ["unrelated words"]), []);
+});
+
+test("routingPlan preserves explicit paths, deduplicates guidance and adapts to new domains", () => {
+  const m = compileManifest({
+    alwaysRead: ["agents/engineering.md"],
+    domains: [
+      { id: "music", paths: ["music/**"], keywords: ["music", "queue", "shuffle", "audio"], guides: ["agents/engineering.md", "docs/music.md"] },
+      { id: "future", paths: ["future/**"], keywords: [], guides: ["docs/future.md"] },
+    ],
+  });
+  const plan = routingPlan(m, new Map([["music/player.ts", "music"], ["future/a.ts", "future"]]), ["music queue shuffle audio", "future/a.ts"]);
+  assert.deepEqual(new Set(plan.domains.map((d) => d.id)), new Set(["music", "future"]));
+  assert.equal(plan.read.filter((p) => p === "agents/engineering.md").length, 1);
+  assert.ok(plan.read.includes("docs/future.md"));
+  assert.equal(plan.multiDomain, true);
+  assert.deepEqual(routingPlan(m, new Map(), ["unrelated"]).read, ["agents/engineering.md"]);
+});
+
+test("routingPlan never drops a low-scoring explicit owner", () => {
+  const domains = Array.from({ length: 6 }, (_, i) => ({ id: `area-${i}`, paths: [`area-${i}/**`], keywords: [`topic-${i}`] }));
+  const m = compileManifest({ domains });
+  const plan = routingPlan(m, new Map(), ["topic-0 topic-1 topic-2 topic-3 topic-4", "area-5/new.ts"]);
+  assert.ok(plan.domains.some((d) => d.id === "area-5"));
+  assert.ok(plan.domains.length <= 5);
+});
+
+test("contextPathAllowed excludes secrets, local artifacts and escaping paths", () => {
+  for (const file of [".env", "apps/web/.env.local", "data/library.json", "private/a.ts", ".copilot/session.json", ".ssh/id_rsa", "keys/release.pem", "keys/release.KEY", "mint.keystore", "credentials.json", "operator-credentials.json", "run.log", "library.sqlite", "package-lock.json", "../README.md", "/etc/passwd", "apps\\secret", "a\nb"]) {
+    assert.equal(contextPathAllowed(file), false, file);
+  }
+  for (const file of ["README.md", ".env.example", "apps/web/.env.production.example", "apps/mobile/app/browse/[facet].tsx", "future/feature.ts"]) {
+    assert.equal(contextPathAllowed(file), true, file);
+  }
+});
+
+test("context CLI emits bounded metadata and excludes supplied private paths", () => {
+  const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
+  const run = (...args) => execFileSync(process.execPath, [cli, "context", ...args, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const raw = run("context tooling", "scripts/agents/lib.mjs", ".env", "../private-secret", "/etc/passwd");
+  const packet = JSON.parse(raw);
+  assert.ok(packet.alwaysRead.includes("agents/engineering.md"));
+  assert.ok(packet.domains.some((d) => d.id === "handbook"));
+  assert.ok(packet.domains.every((d) => d.contracts.length <= 12 && Array.isArray(d.validation.cmds)));
+  assert.equal(typeof packet.git.changedFiles, "number");
+  for (const secret of [".env", "private-secret", "/etc/passwd", "export function routingPlan"]) assert.ok(!raw.includes(secret));
+  const unmatched = JSON.parse(run("unrelated qzxvbn"));
+  assert.equal(unmatched.domains.length, 0);
+  assert.ok(unmatched.notes.some((note) => note.includes("No confident match")));
+  assert.throws(() => run(), /usage/);
+  const markdown = execFileSync(process.execPath, [cli, "context", "context tooling", "scripts/agents/lib.mjs"], { encoding: "utf8" });
+  assert.ok(markdown.startsWith("# Focused repository context"));
+  assert.ok(markdown.includes("## handbook"));
+  assert.ok(markdown.includes("npm run test:agents"));
 });
 
 test("applyToSafe neutralizes minimatch character classes", () => {

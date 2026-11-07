@@ -5,7 +5,7 @@ Mint is split into **domains** so an agent session loads only the context a task
 ## Every task
 
 1. Read the always-read guides: [product decisions](agents/product-decisions.md) and [engineering](agents/engineering.md).
-2. **Route.** Pick the domains a request touches from the table below, or run `npm run agents -- route "<request>" [paths…]`. Read each chosen card in [`agents/domains/`](agents/domains/README.md) plus the guides that card lists. Skip guides and code of unrelated domains.
+2. **Route.** Pick domains from the table below, or run `npm run agents -- context "<request>" [paths…]` for focused guidance, contract edges and validation (`--json` for tooling). `route` gives a shorter reading list. Read the chosen cards and their guides; skip unrelated code.
 3. **Work within owned files.** Treat other domains' exports, API routes, events and schema as contracts. `npm run agents -- map <domain>` shows exports and cross-domain import edges; `npm run agents -- owner <path>` resolves ownership.
 4. **Validate narrowly.** `npm run agents -- affected` lists the domains your changes touch and their focused typecheck/lint/test commands. Escalate to root scripts when a shared contract changes.
 5. **Keep the map current.** After adding, moving, renaming or deleting files, or changing a domain's scope or invariants, update [`agents/domains.json`](agents/domains.json) or the card's hand-written section and run `npm run agents:sync`. CI runs `npm run agents:check`.
@@ -16,7 +16,7 @@ When a request spans several domains or will not fit comfortably in one session:
 
 1. **Plan by domain.** List one sub-task per domain and the shared contracts between them (`packages/core` schemas/types, migrations, API routes, realtime events).
 2. **Contracts first.** Land contract changes in their owning domain before consumers depend on them.
-3. **Fan out.** Give each domain sub-task to a separate sub-agent when your tooling supports it; run independent domains in parallel. Each brief contains the user's request verbatim, the card path, the agreed contract, the owned paths it may edit and its `affected` validation commands. A sub-agent that needs a contract change reports back instead of editing another domain.
+3. **Fan out when requested or warranted.** Honor the user's delegation preference. Give focused implementation to domain sub-agents when available; a subagents-only request makes the coordinator a reviewer, not an implementation writer. Each brief includes the request, card, agreed contracts, owned paths and validation. Keep one manifest/lockfile writer; a child needing another domain's contract reports back.
 4. **Integrate.** Review the combined diff, run `npm run agents -- affected`, and fix cross-domain breakage.
 5. **Track progress** in the agent's session workspace, never in the repository.
 
@@ -53,3 +53,5 @@ Preserve existing functionality unless the current user explicitly authorizes a 
 `PRODUCT.md` describes product scope; `DESIGN.md` is the current visual contract. The [handbook index](agents/README.md) lists every topic guide. Guides link to implementation and operational references rather than replacing them. Verify behavior against current code and tests; report discrepancies instead of silently treating an old note as current fact.
 
 Do not copy personal deployment details, conversation transcripts, credentials, private library content or local session artifacts into this public repository.
+
+For portable future-chat instructions, use the [starter prompt](agents/starter-prompt.md). Current requests authorize delivery actions, not historical conversations.

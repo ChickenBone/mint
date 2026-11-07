@@ -2,8 +2,9 @@
 
 `apps/mobile` is an independently implemented Expo app for approved listeners.
 The Next.js site, administration, providers and private worker remain separate
-and retain their existing features. The native app does not expose charts,
-provider setup, worker controls or administration.
+and retain their existing features. The native app does not expose chart
+acquisition, provider setup, worker controls or administration. Search can
+read existing charts as a browse category.
 
 ## Local development
 
@@ -90,6 +91,8 @@ The deployed Next.js server must include the native routes:
 | `POST /api/native/auth/logout` | Revoke the specific native credential; no web-cookie changes |
 | `/api/native/player/**` | Allowlisted catalog, progressive queues, track metadata, lyrics, offline entitlement and audio proxy |
 | `/api/native/music/**` | Existing account-owned collections, discovery, likes, preferences, history and explicit acquisition requests |
+| `GET /api/native/browse?facet=&offset=&limit=` | Paginated Search categories (`genre`, `mood`, `decade`) derived from playable songs, with song counts and one sample cover |
+| `GET /api/native/charts[?chart=&offset=&limit=&revision=]` | Read-only chart list and chart pages with per-account library availability; chart requests are not routed |
 | `POST /api/native/issue-reports` | Member-submitted reports only, never administrator reports access |
 
 Only explicitly allowlisted consumer handlers are reachable. The adapter

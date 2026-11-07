@@ -11,7 +11,7 @@ Mint is too large for one agent session to hold. The repository is divided into 
 | Domain cards | [`agents/domains/<id>.md`](domains/README.md) | On demand after routing. Hand-written boundaries/invariants above the marker; generated map below it. |
 | Path instructions | `.github/instructions/<id>.instructions.md` | Automatically by Copilot surfaces that support `applyTo`, when a domain's files are in play. Each points to its card. |
 | Topic guides | `agents/*.md` | Only the guides a chosen card lists. |
-| Tooling | [`scripts/agents/`](../scripts/agents/cli.mjs) | `npm run agents -- <route\|affected\|map\|owner>`, `agents:sync`, `agents:check`. Dependency-free Node. |
+| Tooling | [`scripts/agents/`](../scripts/agents/cli.mjs) | `npm run agents -- <context\|route\|affected\|map\|owner>`, `agents:sync`, `agents:check`. Dependency-free Node. |
 
 Generated content (card maps, [domain index](domains/README.md), the AGENTS.md table and path instructions) is deterministic and committed so it works on every surface, including GitHub's web UI. Volatile detail such as line counts and exports is computed live by `npm run agents -- map <id>` instead of committed.
 
@@ -56,7 +56,26 @@ Do not duplicate implementation constants. Point to the owning file. Never inclu
 - Routing reads the manifest, a few kilobytes, instead of the whole handbook. Agents load two always-read guides, one to three cards and their listed guides.
 - `affected` maps changed files to focused test files and workspace scripts, so validation scales with the change rather than the repository. Shared-package changes still typecheck every consumer.
 - The generated dependency lists show the blast radius before an agent edits a contract.
-- `--json` output on `route`, `affected` and `owner` lets orchestration tooling consume routing without parsing prose.
+- `--json` output on `context`, `route`, `affected` and `owner` lets orchestration tooling consume routing without parsing prose.
+
+## Portable context packets
+
+From a checkout with Node.js 22+, before installing dependencies:
+
+```bash
+node scripts/agents/cli.mjs context "improve native search" apps/mobile/src/screens/SearchScreen.tsx
+npm run agents -- context "improve native search" apps/mobile/src/screens/SearchScreen.tsx --json
+npm run agents -- route "improve native search"
+npm run agents -- owner apps/mobile/src/screens/SearchScreen.tsx
+npm run agents -- map mobile
+npm run agents -- affected
+```
+
+`context` reuses the router and manifest, listing always-read guidance, chosen cards/guides, up to twelve outgoing contract edges per domain, incoming/outgoing domain relationships, suggested validation and a count/domain-only working-tree summary. Keyword suggestions are capped at four; explicit path owners are retained even for larger cross-domain requests. New domains need no command changes.
+
+It emits metadata, not file bodies, environment values, commit authors or a whole-code prompt. Ignored/private paths, local data/build/session directories, credentials, logs and symlinks are excluded. Never paste private URLs or secrets into the request itself; the filter is not a secret scanner. Read the indicated contracts and tests directly, and split overly broad requests rather than increasing the dump size. Commands are suggestions, not executed checks.
+
+Use the [starter prompt](starter-prompt.md) for new conversations. Keep evidence and handoffs in the session workspace; promote only public-safe durable requirements into cards. When several agents share a checkout, assign non-overlapping files and one writer for the manifest/generated sync and dependency lockfile; review the combined state before authorized publication.
 
 ## Future options
 

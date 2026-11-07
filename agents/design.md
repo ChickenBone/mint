@@ -7,7 +7,7 @@ The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-firs
 - Preserve the dark charcoal/Figtree/mint-green identity. Artwork and music supply the color; mint marks actions and focus.
 - Use readable secondary text, familiar controls and clear section separation.
 - Prefer coherent collection shelves and artwork-led views over crowded diagnostic panels.
-- Use existing tokens in `apps/web/src/app/globals.css` and shared components. Avoid parallel design systems and one-off variants.
+- Use each surface's existing tokens and primitives: `apps/web/src/app/globals.css` for browser UI, `apps/mobile/src/theme/tokens.ts` for Expo. Native platform typography is intentional, not web Figtree parity. Avoid parallel palettes and one-off variants within either surface.
 - Keep errors, loading, empty, unavailable and success states intentional; never make failures resemble empty success.
 
 ## Information architecture
@@ -23,6 +23,14 @@ The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-firs
 | Public pages | Browse-only discovery and requests for access; public activity remains separately reachable |
 
 Desktop and mobile lead with Home, Search and Your Library. Search is the single discovery entry; chart and mix detail routes remain reachable from its shelves. The legacy Discover landing redirects to Search, preserving legacy chart/mix query routes. Settings is available from the account control.
+
+The primary Expo client keeps three phone destinations and an adaptive wide
+sidebar. Its empty Search is Browse all: real recommendations/new arrivals,
+paginated playable-library decades/moods/genres and read-only provider charts.
+Cards open distinct destinations; no invented categories, ranks or unsupported
+podcast/audiobook/event catalog. Native chart browsing never exposes a chart
+acquisition mutation; a missing song can lead to explicit Search resolution.
+Operator tools remain on Next.js. See [mobile design](../docs/mobile-design.md).
 
 Move machinery out of the listening foreground; do not remove it. Sync status, acquisition failures and necessary user actions still need contextual visibility.
 

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocalSearchParams } from "expo-router";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApi } from "../api";
 import { Button, Field, Notice, Section } from "../components/ui/primitives";
@@ -12,19 +13,20 @@ import { colors } from "../theme/tokens";
 import { screenStyles } from "./HomeScreen";
 import { isCurrentSearch, uniqueRecordings } from "./search-model";
 import { usePlaybackAction } from "../hooks/usePlaybackAction";
+import { BrowseAll } from "./BrowseAll";
 
 export function SearchScreen() {
   const api = useApi();
   const player = usePlayer();
   const runPlayback = usePlaybackAction();
-  const [input, setInput] = useState("");
+  const params = useLocalSearchParams<{ q?: string }>();
+  const initial = typeof params.q === "string" ? params.q.slice(0, 100) : "";
+  const [input, setInput] = useState(initial);
+  const [linked, setLinked] = useState(initial);
+  // A Search link (for example from a chart entry) replaces the query once per distinct link.
+  if (initial !== linked) { setLinked(initial); setInput(initial); }
   const active = input.trim();
   const query = useDebouncedValue(active, 450);
-  const browse = useResource(async (signal) => {
-    if (!api) throw new Error("Sign in to browse.");
-    if (active) return null;
-    return api.catalog({ type: "album", sort: "newest", size: 18 }, signal);
-  }, [api, active]);
   const [pending, setPending] = useState<string | null>(null);
   const [requested, setRequested] = useState<Map<string, string>>(new Map());
   const [requestError, setRequestError] = useState<string | null>(null);
@@ -56,15 +58,13 @@ export function SearchScreen() {
     } catch (reason) { setRequestError(reason instanceof Error ? reason.message : "This song could not be added. Try again."); }
     finally { setPending(null); }
   }
-  return <ScrollView contentContainerStyle={screenStyles.page} keyboardShouldPersistTaps="handled">
-    <PageTitle title="Search" />
-    <Field label="What do you want to listen to?" value={input} maxLength={100} onChangeText={setInput}
-      placeholder="Artists, songs, or albums" returnKeyType="search" autoCorrect={false} />
-    {!active ? <>
-      <Notice title="Find your next favorite" message="Search your library and the wider music catalog together. Music is only requested when you choose Add to library." />
-      {browse.loading ? <Notice loading /> : browse.error ? <Notice title="Couldn't browse albums" message={browse.error} retry={browse.reload} /> :
-        browse.data?.items.length ? <Section title="Start with an album"><MusicShelf items={browse.data.items} /></Section> : null}
-    </> : <>
+  return <View style={s.screen}>
+    <View style={[screenStyles.page, s.header]}>
+      <PageTitle title="Search" />
+      <Field label="What do you want to listen to?" value={input} maxLength={100} onChangeText={setInput}
+        placeholder="Artists, songs, or albums" returnKeyType="search" autoCorrect={false} clearButtonMode="while-editing" />
+    </View>
+    {!active ? <BrowseAll /> : <ScrollView style={s.screen} contentContainerStyle={screenStyles.page} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       {!current || local.loading ? <Notice loading title="Searching your music" /> : local.error ? <Notice title="Library search couldn't load" message={local.error} retry={local.reload} /> : null}
       {found?.songs.items.length ? <Section title="Songs">{found.songs.items.map((item) => <TrackRow key={item.id} item={item} trailing={<SongOptions item={item} />} />)}</Section> : null}
       {found?.albums.items.length ? <Section title="Albums"><MusicShelf items={found.albums.items} /></Section> : null}
@@ -96,11 +96,12 @@ export function SearchScreen() {
         {requestError ? <Notice title="Couldn't add this song" message={requestError} /> : null}
       </Section>
       {found && !found.songs.items.length && !found.albums.items.length && !found.artists.items.length ? <Notice title="No library matches" message="Try a different spelling or choose a recording from the wider catalog." /> : null}
-    </>}
-  </ScrollView>;
+    </ScrollView>}
+  </View>;
 }
 
 const s = StyleSheet.create({
+  screen: { flex: 1 }, header: { paddingBottom: 4 },
   recording: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", gap: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.elevated },
   metadata: { flex: 1, minWidth: 180, gap: 6 }, title: { color: colors.text, fontSize: 16, fontWeight: "600" },
   secondary: { color: colors.muted, fontSize: 14, lineHeight: 21 },

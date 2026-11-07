@@ -218,6 +218,36 @@ export function routeQuery(compiled, owners, args) {
     .map(([id, s]) => ({ id, score: s.score, why: [...s.why] }));
 }
 
+/** Keep explicit path owners even when keyword ranking favors another domain. */
+export function routingPlan(compiled, owners, args) {
+  const ranked = routeQuery(compiled, owners, args);
+  const top = ranked[0]?.score ?? 0;
+  const suggestions = ranked.filter((r) => r.score >= Math.max(3, top * 0.4)).slice(0, 4);
+  const picked = ranked.filter((r) => suggestions.includes(r) || r.why.some((why) => /^(path|pattern) /.test(why)));
+  const byId = new Map(compiled.domains.map((d) => [d.id, d]));
+  const domains = picked.map((r) => ({ ...r, card: `agents/domains/${r.id}.md` }));
+  return {
+    domains,
+    read: [...new Set([
+      ...(compiled.alwaysRead ?? []),
+      ...domains.map((d) => d.card),
+      ...picked.flatMap((r) => byId.get(r.id).guides),
+    ])],
+    multiDomain: picked.length > 1,
+  };
+}
+
+/** Context packets contain public repository metadata, never private paths or file bodies. */
+export function contextPathAllowed(file) {
+  if (!file || path.posix.isAbsolute(file) || file.includes("\\") || /[\0\r\n]/.test(file)) return false;
+  const parts = file.replace(/^\.\//, "").split("/");
+  if (parts.some((p) => p === "..")) return false;
+  if (parts.some((p) => /^(?:\.git|\.copilot|\.expo|\.ssh|\.gnupg|node_modules|data|secrets|private|logs|backups|session-state|coverage|dist|build)$/i.test(p))) return false;
+  const base = parts.at(-1);
+  if (/^\.env(?:\.|$)/i.test(base) && !base.endsWith(".example")) return false;
+  return !/(?:\.(?:pem|key|keystore|jks|p12|pfx|log|sqlite|db|bak|tsbuildinfo)|(?:^|[-_.])credentials\.json|package-lock\.json)$/i.test(base);
+}
+
 // ---------- rendering helpers ----------
 
 /** Glob safe for GitHub `applyTo` (minimatch), where brackets would become character classes. */

@@ -82,3 +82,33 @@ export const trackInfoSchema = z.object({ track: z.object({
   createdAt: z.string(), plexSonicAnalyzed: z.boolean(), existingPlexSonicAnalyzed: z.boolean(),
   musicbrainzRecordingId: z.string().nullable(), musicbrainzReleaseGroupId: z.string().nullable(),
 }) });
+export const browseFacets = ["genre", "mood", "decade"] as const;
+export type BrowseFacet = typeof browseFacets[number];
+export const browseCategoryPageSchema = z.object({
+  facet: z.enum(browseFacets), offset: z.number().int().nonnegative(), total: z.number().int().nonnegative(),
+  nextOffset: z.number().int().positive().nullable(),
+  items: z.array(z.object({
+    value: z.string().min(1).max(100), label: z.string().min(1).max(100),
+    tracks: z.number().int().nonnegative(), artwork: z.string().max(2048).nullable(),
+  })).max(48),
+});
+export type BrowseCategoryPage = z.infer<typeof browseCategoryPageSchema>;
+export const chartDefinitionSchema = z.object({
+  id: z.string().min(1).max(100), provider: z.string().max(50), providerName: z.string().max(100),
+  title: z.string().max(200), territory: z.string().max(200), description: z.string().max(1000),
+  country: z.string().max(10).optional(), genre: z.string().max(100).optional(),
+});
+export type ChartDefinition = z.infer<typeof chartDefinitionSchema>;
+export const chartListSchema = z.object({ charts: z.array(chartDefinitionSchema).max(100) });
+export const chartAvailabilitySchema = z.enum(["available", "missing", "ambiguous", "requested", "processing", "failed"]);
+export const chartPageSchema = z.object({
+  chart: chartDefinitionSchema, status: z.enum(["fresh", "stale", "empty", "error"]),
+  period: z.string().nullable(), notice: z.string().nullable(), revision: z.string().nullable(),
+  offset: z.number().int().nonnegative(), total: z.number().int().nonnegative(), nextOffset: z.number().int().nonnegative().nullable(),
+  items: z.array(z.object({
+    id: z.string().min(1).max(200), rank: z.number().int().min(1).max(50), title: z.string(), artist: z.string(),
+    album: z.string().nullable(), durationSec: z.number().nullable(), artwork: z.string().max(2048).nullable(),
+    availability: chartAvailabilitySchema, reason: z.string(), progress: z.number().nullable(), item: playerItemSchema.nullable(),
+  })).max(50),
+});
+export type ChartPage = z.infer<typeof chartPageSchema>;

@@ -52,6 +52,13 @@ checks for Pixel devices. Never commit a filled `credentials.json`, keystore,
 access token or private key, or upload them as a GitHub artifact.
 Protect the default branch and its Actions secrets.
 
+CI reads the APK's binary manifest/resource table with the pinned Android
+Build Tools `aapt2`, not `apkanalyzer`'s XML rendering. The latter can generate
+invalid XML from otherwise valid JSON-valued Expo channel metadata. Package,
+release debug state, production channel, exact fingerprint asset and its
+runtime resource reference, launch/recovery settings, signer and arm64
+16-KiB ZIP/ELF alignment are all checked before distribution or publication.
+
 For a new fork without an existing signing key, generate one using JDK
 `keytool` on an operator-controlled machine:
 
@@ -66,6 +73,10 @@ openssl x509 -inform DER -in mint-apk-cert.der -noout -fingerprint -sha256
 On macOS use `base64 -i mint-release.keystore | tr -d '\n'` instead.
 Do not replace an existing key: Android upgrades must retain the package
 identifier and signer and use an increasing versionCode.
+EAS manages production version codes remotely. When migrating an existing
+release, use `eas build:version:set --platform android --profile production`
+to initialize that remote counter at or above the highest previously
+distributed versionCode before building; do not reset it to the local default.
 
 ## APK builds and compatible updates
 
@@ -97,6 +108,11 @@ retained in the `mint-android-apk` GitHub artifact for 30 days. An APK build emb
 the current JavaScript; that run does not also publish an OTA update. Subsequent
 compatible changes publish an update instead. Expo owns APK compilation and
 hosting; a submitted or queued build is not a completed APK.
+
+If verification fails after an APK download, the workflow retains that APK
+and any binary manifest/resource dumps in `mint-android-verification-diagnostics`
+for seven days. Treat this as an unverified diagnostic artifact, not a release.
+It excludes keystores, credentials and Expo environment/fingerprint source dumps.
 
 Download the APK from the completed EAS build page, then open it on your phone
 and allow installation from that browser/file manager when Android asks.
