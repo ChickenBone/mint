@@ -98,7 +98,19 @@ Production APKs and updates use the **production** channel. Runtime isolation
 prevents a JavaScript update built for changed native modules from loading into
 an old APK. Preview/development builds remain separate. Embedded/cached launch
 and Expo recovery remain enabled; updates are checked at launch and may be
-used on a later cold launch, not by forcibly restarting music playback.
+used on a later cold launch, not by forcibly restarting music playback. With
+`fallbackToCacheTimeout: 0`, launch does not wait for the network check: the app
+can start its embedded or cached update while a new compatible update downloads
+in the background. Close and reopen the app again to let a downloaded update
+launch. **Settings > App info** also provides a manual check and download;
+applying it always requires a user-confirmed restart while playback is paused
+and no queue preparation is active. The section reports the installed native
+build number separately from the app-config version, alongside runtime,
+channel, current and pending update IDs, and recovery status. Expo SDK 58 does
+not expose the Android build number through its Constants module, so Settings
+reports that field as unavailable rather than treating an OTA config version
+as the binary version. These diagnostics stay on-device and are not attached
+to issue reports. Updates never interrupt music automatically.
 
 Open **Actions > Android EAS Build and Update** and run the workflow on the default
 branch for the first build. Use **force_rebuild** when intentionally embedding

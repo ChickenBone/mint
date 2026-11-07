@@ -73,24 +73,56 @@ function fixture(total = 401, playlist = new FakePlaylist(), serverUrl = "https:
 
 async function nativeFixture(total = 3, serverUrl = "https://mint.example") {
   const bridge = new FakePlaylist();
-  const exports: { createPlaylist?: () => Promise<{ port: PlaylistPort }> } = {};
-  const source = readFileSync(resolve("src/playback/playlist.native.ts"), "utf8");
-  const compiled = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS } }).outputText;
-  runInNewContext(compiled, {
-    exports,
-    require(name: string) {
-      assert.equal(name, "expo-audio");
-      return {
-        setAudioModeAsync: async () => {},
-        createAudioPlaylist: () => bridge,
-      };
-    },
-  });
-  assert.ok(exports.createPlaylist);
-  const { port } = await exports.createPlaylist();
+  const createPlaylist = loadNativePlaylist({ createAudioPlaylist: () => bridge });
+  const { port } = await createPlaylist();
   assert.equal(port, bridge);
   return fixture(total, bridge, serverUrl);
 }
+
+function loadNativePlaylist(audio: { createAudioPlaylist: () => unknown; setAudioModeAsync?: () => Promise<void> },
+  environment = "standalone", os = "android") {
+  const exports: { createPlaylist?: () => Promise<{ port: PlaylistPort }> } = {};
+  const source = readFileSync(resolve("src/playback/playlist.native.ts"), "utf8");
+  const compiled = transpileModule(source, { compilerOptions: { module: ModuleKind.CommonJS, esModuleInterop: true } }).outputText;
+  runInNewContext(compiled, {
+    exports,
+    require(name: string) {
+      if (name === "expo-audio") return { setAudioModeAsync: async () => {}, ...audio };
+      if (name === "expo-constants") {
+        return { __esModule: true, default: { executionEnvironment: environment },
+          ExecutionEnvironment: { Bare: "bare", Standalone: "standalone", StoreClient: "storeClient" } };
+      }
+      assert.equal(name, "react-native");
+      return { Platform: { OS: os } };
+    },
+  });
+  assert.ok(exports.createPlaylist);
+  return exports.createPlaylist;
+}
+
+test("Expo Go on Android rejects playback before any native audio call", async () => {
+  const calls: string[] = [];
+  const createPlaylist = loadNativePlaylist({
+    setAudioModeAsync: async () => { calls.push("mode"); },
+    createAudioPlaylist: () => { calls.push("playlist"); return new FakePlaylist(); },
+  }, "storeClient");
+  await assert.rejects(createPlaylist(), /Expo Go can't play Mint songs on Android\. Install the Mint APK/);
+  assert.deepEqual(calls, []);
+});
+
+test("built Android and iOS Expo Go builds still create the native playlist", async () => {
+  for (const [environment, os] of [["standalone", "android"], ["bare", "android"], ["storeClient", "ios"]]) {
+    const calls: string[] = [];
+    const bridge = new FakePlaylist();
+    const createPlaylist = loadNativePlaylist({
+      setAudioModeAsync: async () => { calls.push("mode"); },
+      createAudioPlaylist: () => { calls.push("playlist"); return bridge; },
+    }, environment, os);
+    const { port } = await createPlaylist();
+    assert.equal(port, bridge);
+    assert.deepEqual(calls, ["mode", "playlist"]);
+  }
+});
 
 test("native bridge receives absolute public artwork on initial activation, resume and source reload", async () => {
   const { engine, playlist } = await nativeFixture();
@@ -110,6 +142,33 @@ test("native bridge receives absolute public artwork on initial activation, resu
     assert.ok(!("headers" in metadata));
   }
   engine.dispose();
+});
+
+test("restored saved queue with a relative thumb reaches the native bridge as absolute artwork on resume", async () => {
+  const { engine, storage } = await nativeFixture();
+  const thumb = "/api/artwork/41de9df5-44a9-4b69-8534-1ae803cea58f";
+  await engine.playTrack({ id: "song", title: "Song", artist: "Artist", album: "Album", thumb });
+  engine.persist();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  engine.dispose();
+  assert.ok((await storage.getItem("server-a:account-a"))?.includes(`"thumb":"${thumb}"`), "snapshot keeps the relative thumb");
+  const bridge = new FakePlaylist();
+  const client = new MintApi({ serverUrl: "https://mint.example", token: `mn1.${"0".repeat(36)}.${"a".repeat(43)}`,
+    fetch: async () => { throw new Error("Artwork URL resolution must not fetch."); } });
+  const restored = new PlaybackEngine(bridge, {
+    openQueue: async () => { throw new Error("Restore must not reopen the queue."); },
+    queuePage: async () => { throw new Error("Restore must not page a single-track queue."); },
+    source: async (track) => ({ uri: `https://mint.example/api/native/player/audio/${track.id}`, headers: { Authorization: "******" } }),
+    validate: async () => {},
+    artworkUrl: (path) => client.artworkUrl(path),
+    metadata: async (id) => ({ id, title: "Song", artist: "Artist", album: "Album", thumb }),
+  }, storage, "server-a:account-a");
+  await restored.restore();
+  await restored.toggle();
+  assert.equal(restored.state.error, null);
+  assert.ok(bridge.lockMetadata.length >= 2);
+  for (const metadata of bridge.lockMetadata) assert.equal(metadata.artworkUrl, `https://mint.example${thumb}`);
+  restored.dispose();
 });
 
 test("native collection metadata refreshes resolved artwork and live details on status, next and previous", async () => {

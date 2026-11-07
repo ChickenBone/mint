@@ -71,6 +71,15 @@ including empty headers; unknown URIs get none. Clear and destroy erase the map.
 constructs ordinary range requests. The HTTP client disables redirects rather
 than forwarding bearer credentials to another host.
 
+Expo Go ships stock native modules and never runs this plugin, so its Android
+playlist would drop per-item Authorization headers. `playlist.native.ts` detects
+Android Expo Go (`executionEnvironment === "storeClient"`) and rejects player
+startup with "Install the Mint APK to listen" before any `setAudioModeAsync`,
+playlist or lockscreen native call. Play actions report that message rather
+than "still starting". Built APKs and development builds are unaffected; iOS
+Expo Go keeps stock `expo-audio`, which honors source headers, but remains
+unverified on a device.
+
 After an upstream fixed release is available, audit the actual installed native
 source, update the SDK-compatible dependency through `expo install`, remove this
 plugin from app configuration and delete its source/guard tests. Rebuild a native

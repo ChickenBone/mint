@@ -37,7 +37,7 @@
 - **Imported by:** [`collections`](collections.md), [`library`](library.md), [`mobile-playback`](mobile-playback.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map mobile` (exports, line counts, cross-domain import edges).
 
-### Owned files (73)
+### Owned files (75)
 
 - `apps/mobile/` `app.json`, `eas.json`, `eslint.config.cjs`, `metro.config.cjs`, `package.json`, `tsconfig.json`
 - `apps/mobile/app/` `_layout.tsx`, `index.tsx`, `library.tsx`, `player.tsx`, `search.tsx`, `settings.tsx`, `sign-in.tsx`
@@ -49,9 +49,9 @@
 - `apps/mobile/src/auth/` `AuthProvider.tsx`, `account-request.ts`, `index.ts`, `persistence.ts`, `storage.native.ts`, `storage.ts`
 - `apps/mobile/src/components/ui/` `BrowseCard.tsx`, `PageTitle.tsx`, `SongOptions.tsx`, `music.tsx`, `primitives.tsx`
 - `apps/mobile/src/hooks/` `useBrowseCatalog.ts`, `useDebouncedValue.ts`, `usePagedResource.ts`, `usePlaybackAction.tsx`, `useResource.ts`
-- `apps/mobile/src/screens/` `BrowseAll.tsx`, `BrowseCategoryScreen.tsx`, `ConsumerShell.tsx`, `DetailScreen.tsx`, `HomeScreen.tsx`, `LibraryScreen.tsx`, `SearchScreen.tsx`, `SettingsScreen.tsx`, `SignInScreen.tsx`, `browse-model.ts`, `collection-model.ts`, `navigation.ts`, `search-model.ts`
+- `apps/mobile/src/screens/` `BrowseAll.tsx`, `BrowseCategoryScreen.tsx`, `ConsumerShell.tsx`, `DetailScreen.tsx`, `HomeScreen.tsx`, `LibraryScreen.tsx`, `SearchScreen.tsx`, `SettingsScreen.tsx`, `SignInScreen.tsx`, `browse-model.ts`, `collection-model.ts`, `navigation.ts`, `ota-model.ts`, `search-model.ts`
 - `apps/mobile/src/theme/` `tokens.ts`
-- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `browse-hooks.test.ts`, `browse.test.ts`, `screens.test.ts`
+- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `browse-hooks.test.ts`, `browse.test.ts`, `ota-model.test.ts`, `screens.test.ts`
 - `apps/web/src/app/api/` `native/[...path]/route.ts`, `native/auth/[action]/route.ts`
 - `apps/web/src/lib/` `native-browse.ts`, `native-context.ts`, `native-http.ts`, `native-sessions.ts`
 - `apps/web/tests/` `native-auth.test.ts`, `native-http.integration.test.ts`, `native-sessions.test.ts`
@@ -62,12 +62,12 @@
 
 ### Validate
 
-Owned tests: 9.
+Owned tests: 10.
 
 ```bash
 npm run typecheck -w @mint/mobile
 npm run lint -w @mint/mobile
-npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/browse-hooks.test.ts tests/browse.test.ts tests/screens.test.ts
+npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/browse-hooks.test.ts tests/browse.test.ts tests/ota-model.test.ts tests/screens.test.ts
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
 npm exec -w @mint/web -- tsx --test tests/native-auth.test.ts tests/native-http.integration.test.ts tests/native-sessions.test.ts

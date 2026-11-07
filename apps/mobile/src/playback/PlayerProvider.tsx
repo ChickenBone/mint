@@ -48,6 +48,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => { apiRef.current = api; }, [api]);
   const engineRef = useRef<PlaybackEngine | null>(null);
   const offlineRef = useRef<OfflineStore | null>(null);
+  const startupErrorRef = useRef<Error | null>(null);
   const [state, setState] = useState<PlayerState>(emptyPlayerState);
   const [offline, setOffline] = useState<OfflineState>(emptyOffline);
   const [expanded, setExpanded] = useState(false);
@@ -59,6 +60,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!scopeServer || !scopeUser) return;
+    startupErrorRef.current = null;
     let cancelled = false, removeStatus: (() => void) | undefined;
     let engine: PlaybackEngine | null = null, downloads: OfflineStore | null = null;
     const requireApi = () => {
@@ -119,8 +121,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Audio could not start. Reopen the app.";
           engine?.fail(error);
-          if (!engine) setState({ ...emptyPlayerState, error: message });
-          downloads?.error(error, true);
+          if (!engine) {
+            startupErrorRef.current = new Error(message);
+            setState({ ...emptyPlayerState, error: message });
+          }
+          if (downloads) downloads.error(error, true);
+          else setOffline({ ...emptyOffline, status: "unavailable", error: message });
         }
       }
     })();
@@ -155,7 +161,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const act = useCallback(async (action: (engine: PlaybackEngine) => void | Promise<void>) => {
     const engine = engineRef.current;
-    if (!engine) throw new Error("Audio is still starting. Try again in a moment.");
+    if (!engine) throw startupErrorRef.current ?? new Error("Audio is still starting. Try again in a moment.");
     try { await action(engine); }
     catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
@@ -166,7 +172,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const downloadAct = useCallback(async (action: (store: OfflineStore) => Promise<void>) => {
     if (Platform.OS === "web") throw new Error("Downloads are available in the Android and iOS app.");
     const store = offlineRef.current;
-    if (!store) throw new Error("Download storage is still starting.");
+    if (!store) throw startupErrorRef.current ?? new Error("Download storage is still starting.");
     try { await action(store); }
     catch (error) { store.error(error); throw error; }
   }, []);

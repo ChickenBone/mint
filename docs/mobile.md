@@ -79,6 +79,12 @@ native runtime still requires installing a new APK. EAS hosts application
 updates, not account APIs or music; the native backend remains on your Mint
 server. Existing APKs configured for the removed self-hosted update endpoint
 must be replaced with an EAS-enabled APK before they can receive EAS updates.
+Automatic launch checks do not delay startup; a compatible update may download
+in the background and require a later cold launch. Installed release builds
+also expose a manual update check in Settings, with a confirmed restart option
+that is unavailable while playback or queue preparation is active. The App info
+section distinguishes the installed native build number from app-config
+version and shows update/recovery details locally, not in issue reports.
 
 ## Account transport and server requirements
 

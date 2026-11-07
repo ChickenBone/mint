@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { Modal, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Modal, Platform, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import Constants from "expo-constants";
+import * as Updates from "expo-updates";
 import { useAuth } from "../auth";
 import { useApi } from "../api";
 import { Button, Field, Notice, Section } from "../components/ui/primitives";
@@ -8,6 +10,14 @@ import { usePlayer } from "../playback/PlayerProvider";
 import { colors } from "../theme/tokens";
 import { screenStyles } from "./HomeScreen";
 import { usePlaybackAction } from "../hooks/usePlaybackAction";
+import {
+  checkAndFetchUpdate,
+  canRestartForUpdate,
+  getUpdateAvailability,
+  restartForUpdate,
+  updateErrorMessage,
+  type UpdateStatus,
+} from "./ota-model";
 
 export function SettingsScreen() {
   const auth = useAuth();
@@ -18,7 +28,26 @@ export function SettingsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [report, setReport] = useState("");
-  const [confirm, setConfirm] = useState<"history" | "downloads" | "logout" | null>(null);
+  const [confirm, setConfirm] = useState<"history" | "downloads" | "logout" | "update" | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ state: "idle", message: "Check for a compatible update when you are ready." });
+  const nativeUpdates = Updates.useUpdates();
+  const updateAvailability = getUpdateAvailability(Platform.OS, Constants.executionEnvironment, Updates.isEnabled, __DEV__);
+  const nativeBuild = Platform.OS === "android" ? "Not exposed by SDK 58 Constants" :
+    Platform.OS === "ios" ? Constants.platform?.ios?.buildNumber ?? "Not available" : "Not available";
+  const automaticUpdateStatus: UpdateStatus = nativeUpdates.isUpdatePending
+    ? { state: "ready", message: "An update downloaded at launch is ready. Restart Mint to use it." }
+    : nativeUpdates.downloadError
+      ? { state: "error", message: updateErrorMessage(nativeUpdates.downloadError) }
+      : nativeUpdates.checkError
+        ? { state: "error", message: updateErrorMessage(nativeUpdates.checkError) }
+        : nativeUpdates.isDownloading
+          ? { state: "downloading", message: "Downloading a compatible update. Playback will continue." }
+          : nativeUpdates.isChecking
+            ? { state: "checking", message: "Checking Expo for an update compatible with this build." }
+            : { state: "idle", message: "" };
+  const visibleUpdateStatus = updateStatus.state === "idle" ? automaticUpdateStatus : updateStatus;
+  const updateReady = updateStatus.state === "ready" || nativeUpdates.isUpdatePending;
+  const updateBusy = visibleUpdateStatus.state === "checking" || visibleUpdateStatus.state === "downloading" || visibleUpdateStatus.state === "restarting";
   const preferences = useResource(async () => {
     if (!api) throw new Error("Sign in to load account preferences.");
     return api.preferences();
@@ -33,6 +62,13 @@ export function SettingsScreen() {
     if (confirm === "history" && api) await act(() => api.deleteHistory(), "Listening history deleted.");
     else if (confirm === "downloads") await act(() => player.clearDownloads(), "Downloaded songs removed from this device.");
     else if (confirm === "logout") await act(() => auth.signOut(), "");
+    else if (confirm === "update") {
+      setConfirm(null);
+      await restartForUpdate(Updates, player.state, setUpdateStatus);
+    }
+  }
+  async function checkForUpdates() {
+    await checkAndFetchUpdate(Updates, setUpdateStatus);
   }
   return <ScrollView contentContainerStyle={screenStyles.page} keyboardShouldPersistTaps="handled">
     <Text accessibilityRole="header" style={screenStyles.heading}>Settings</Text>
@@ -78,13 +114,50 @@ export function SettingsScreen() {
         await api.reportIssue({ category: "app", message: report.trim() }); setReport("");
       }, "Your report was sent to the server owner.")} />
     </Section>
+    <Section title="App info">
+      <Text selectable style={s.secondary}>App config version (may be from the current update): {Constants.expoConfig?.version ?? "Not available"}</Text>
+      <Text selectable style={s.secondary}>Installed native build: {nativeBuild}</Text>
+      <Text selectable style={s.secondary}>Runtime: {Updates.runtimeVersion ?? "Not available"}</Text>
+      <Text selectable style={s.secondary}>Channel: {Updates.channel ?? "Not set"}</Text>
+      <Text selectable style={s.secondary}>Running update: {Updates.updateId ?? "Not available"}</Text>
+      <Text selectable style={s.secondary}>Downloaded update: {nativeUpdates.isUpdatePending
+        ? nativeUpdates.downloadedUpdate?.type === "rollback" ? "Embedded recovery is ready" : nativeUpdates.downloadedUpdate?.updateId ?? "Ready to apply"
+        : "None waiting to apply"}</Text>
+      <Text style={s.secondary}>Launch: {Updates.isEnabled ? Updates.isEmbeddedLaunch ? "Embedded in this app build" : "Downloaded update" : "Expo Updates unavailable"}</Text>
+      <Text style={s.secondary}>Recovery: {Updates.isEnabled ? Updates.isEmergencyLaunch ? "Emergency recovery launch" : "No emergency recovery reported" : "Not available"}</Text>
+      {Updates.isEmergencyLaunch && Updates.emergencyLaunchReason
+        ? <Text selectable style={s.secondary}>Recovery detail: {Updates.emergencyLaunchReason}</Text> : null}
+      <Text style={s.secondary}>OTA enabled: {Updates.isEnabled ? "Yes" : "No"} · Startup check: {Updates.checkAutomatically ?? "Not available"}</Text>
+      {!updateAvailability.available ? <Notice title="Manual update check unavailable" message={updateAvailability.message} /> : <>
+        <Text style={s.secondary}>A downloaded update is applied only after you choose to restart. Mint will not interrupt playback.</Text>
+        <Button label="Check for updates" quiet busy={updateBusy} disabled={updateBusy} onPress={() => void checkForUpdates()} />
+        {visibleUpdateStatus.state !== "idle" ? <Notice
+          title={visibleUpdateStatus.state === "error" ? "Update check failed" : visibleUpdateStatus.state === "no-update" ? "No update available" :
+            visibleUpdateStatus.state === "ready" ? "Update ready" : visibleUpdateStatus.state === "restarting" ? "Restarting Mint" :
+              visibleUpdateStatus.state === "downloading" ? "Downloading update" : "Checking for updates"}
+          message={visibleUpdateStatus.message}
+          loading={updateBusy}
+        /> : null}
+        {updateReady ? <>
+          {!canRestartForUpdate(player.state.playing, player.state.loading, player.state.queueLoading)
+            ? <Text style={s.secondary}>Pause playback and wait for queue preparation before restarting to apply this update.</Text> : null}
+          <Button label="Restart Mint" disabled={!canRestartForUpdate(player.state.playing, player.state.loading, player.state.queueLoading)}
+            onPress={() => setConfirm("update")} />
+        </> : null}
+      </>}
+    </Section>
     {error ? <Notice title="Couldn't finish" message={error} /> : message ? <Notice message={message} /> : null}
     <Modal transparent visible={confirm !== null} animationType="none" onRequestClose={() => { if (!busy) setConfirm(null); }}>
       <View style={s.overlay}><View accessibilityViewIsModal style={s.dialog}>
-        <Text accessibilityRole="header" style={s.dialogTitle}>{confirm === "history" ? "Delete listening history?" : confirm === "downloads" ? "Remove all downloads?" : "Sign out?"}</Text>
+        <Text accessibilityRole="header" style={s.dialogTitle}>{confirm === "history" ? "Delete listening history?" : confirm === "downloads" ? "Remove all downloads?" : confirm === "update" ? "Restart Mint to apply the update?" : "Sign out?"}</Text>
         <Text style={s.secondary}>{confirm === "history" ? "This removes your listening history across devices. It doesn't remove likes or playlists." :
-          confirm === "downloads" ? "Saved audio will be removed from this device. Your server library stays untouched." : "Playback will stop and downloaded audio will be removed from this device."}</Text>
-        <View style={screenStyles.shortcuts}><Button label={confirm === "logout" ? "Sign out" : "Remove"} busy={busy} onPress={() => void confirmed()} />
+          confirm === "downloads" ? "Saved audio will be removed from this device. Your server library stays untouched." :
+            confirm === "update" ? "Mint will restart and activate the downloaded update. Your account and downloaded songs will be kept. Playback must be paused first." :
+              "Playback will stop and downloaded audio will be removed from this device."}</Text>
+        <View style={screenStyles.shortcuts}><Button label={confirm === "logout" ? "Sign out" : confirm === "update" ? "Restart now" : "Remove"}
+          busy={confirm === "update" ? updateBusy : busy}
+          disabled={confirm === "update" ? !canRestartForUpdate(player.state.playing, player.state.loading, player.state.queueLoading) : busy}
+          onPress={() => void confirmed()} />
           <Button label="Cancel" quiet disabled={busy} onPress={() => setConfirm(null)} /></View>
       </View></View>
     </Modal>

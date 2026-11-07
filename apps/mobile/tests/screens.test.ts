@@ -54,6 +54,17 @@ test("route layout mounts one persistent provider and does not key it to navigat
   assert.deepEqual(readdirSync(resolve("app")).filter((path) => /charts|admin|manage|workers|analysis/.test(path)), []);
 });
 
+test("app info is the final Settings section and exposes update diagnostics", () => {
+  const settings = readFileSync(resolve("src/screens/SettingsScreen.tsx"), "utf8");
+  const sections = [...settings.matchAll(/<Section title="([^"]+)">/g)].map((match) => match[1]);
+  assert.equal(sections[sections.length - 1], "App info");
+  assert.match(settings, /Runtime: \{Updates\.runtimeVersion/);
+  assert.match(settings, /Channel: \{Updates\.channel/);
+  assert.match(settings, /Running update: \{Updates\.updateId/);
+  assert.match(settings, /Recovery detail: \{Updates\.emergencyLaunchReason/);
+  assert.doesNotMatch(settings, /Constants\.platform\?\.android\?\.versionCode/);
+});
+
 test("acquisition remains an explicit search action, never a browse or play side effect", () => {
   for (const file of ["HomeScreen.tsx", "LibraryScreen.tsx", "DetailScreen.tsx"]) {
     assert.doesNotMatch(readFileSync(resolve("src/screens", file), "utf8"), /requestRecording|searchRecordings/);
