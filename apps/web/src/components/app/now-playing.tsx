@@ -79,6 +79,9 @@ export function NowPlaying({
     onLostPointerCapture={onLostPointerCapture}
     onClickCapture={onClickCapture}
   >
+    {track && <div className="player-transition-artwork player-drag-region" data-player-drag-region aria-hidden>
+      <Artwork track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art w-full" />
+    </div>}
     <div className="player-sheet-content" inert={!interactive}>
     <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing music-atmosphere relative flex flex-col overflow-hidden">
     <ArtworkAtmosphere src={track?.thumb} />

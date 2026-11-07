@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   playerSheetArtworkOrigin,
@@ -16,6 +17,33 @@ test("artwork starts at the mini-player position and reaches its expanded positi
     620,
   );
   assert.deepEqual(origin, { x: -156, y: -80, scale: 48 / 360 });
+  for (const progress of [0, 0.1, 0.5, 0.9, 1]) {
+    const localTop = 140 + origin.y * (1 - progress);
+    const screenTop = localTop + 620 * (1 - progress);
+    const screenLeft = 180 + origin.x * (1 - progress);
+    const size = 360 * (origin.scale + (1 - origin.scale) * progress);
+    assert.ok(localTop >= 0, "moving cover stays within the outer sheet");
+    assert.ok(Math.abs(screenTop - (680 + (140 - 680) * progress)) < 0.001);
+    assert.ok(Math.abs(screenLeft - (24 + (180 - 24) * progress)) < 0.001);
+    assert.ok(Math.abs(size - (48 + (360 - 48) * progress)) < 0.001);
+  }
+});
+
+test("moving artwork is outside clipped content and only one cover is visible", () => {
+  const sheet = readFileSync(new URL("../src/components/app/now-playing.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
+  assert.match(sheet, /className="player-transition-artwork player-drag-region" data-player-drag-region aria-hidden>[\s\S]*?<\/div>}\s*<div className="player-sheet-content"/);
+  assert.match(styles, /\.player-transition-artwork\s*\{[^}]*position: absolute;[^}]*visibility: hidden;[^}]*transform:/);
+  assert.doesNotMatch(styles, /\.player-transition-artwork\s*\{[^}]*pointer-events: none;/);
+  assert.match(styles, /html\[data-player-sheet-moving\] \.player-transition-artwork \{ visibility: visible; \}/);
+  assert.match(styles, /html\[data-player-sheet-moving\] \.player-expanded-artwork \.now-playing-art \{ visibility: hidden; \}/);
+  assert.doesNotMatch(styles, /\.player-sheet-content \.player-expanded-artwork\s*\{[^}]*transform:/);
+});
+
+test("collapsed dock has no extra grab row and retains keyboard expansion", () => {
+  const player = readFileSync(new URL("../src/components/app/player.tsx", import.meta.url), "utf8");
+  assert.doesNotMatch(player, /player-grab-handle|player-sheet-grip|row-start-2/);
+  assert.match(player, /aria-label="Expand player"\s+onKeyDown=\{[\s\S]*?event\.key === "ArrowUp"/);
 });
 
 test("slow drags follow their full distance and can reverse direction", () => {

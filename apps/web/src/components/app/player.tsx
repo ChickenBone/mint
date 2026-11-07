@@ -132,6 +132,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const writeSheetProgress = useCallback((progress: number) => {
     sheetProgress.current = progress;
     document.documentElement.style.setProperty("--player-progress", String(progress));
+    document.documentElement.toggleAttribute("data-player-sheet-moving", progress !== 1);
   }, []);
 
   const measureSheet = useCallback(() => {
@@ -149,7 +150,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     let expanded: DOMRect | undefined;
     try {
       mini = document.querySelector<HTMLElement>(".player-mini-artwork")?.getBoundingClientRect();
-      expanded = document.querySelector<HTMLElement>(".player-expanded-artwork")?.getBoundingClientRect();
+      expanded = document.querySelector<HTMLElement>(".player-expanded-artwork .now-playing-art")?.getBoundingClientRect();
     } finally {
       writeSheetProgress(progress);
     }
@@ -170,6 +171,9 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     root.style.setProperty("--player-art-from-x", `${origin.x}px`);
     root.style.setProperty("--player-art-from-y", `${origin.y}px`);
     root.style.setProperty("--player-art-from-scale", String(origin.scale));
+    root.style.setProperty("--player-art-expanded-x", `${expanded.left}px`);
+    root.style.setProperty("--player-art-expanded-y", `${expanded.top}px`);
+    root.style.setProperty("--player-art-expanded-width", `${expanded.width}px`);
   }, [measureSheet, writeSheetProgress]);
 
   const finishSheet = useCallback((destination: number, navigate: boolean) => {
@@ -197,6 +201,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const settleSheet = useCallback((destination: number, velocity = 0, navigate = true) => {
     if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
     sheetFrame.current = null;
+    measureSheetArtwork();
     sheetTarget.current = destination;
     setSheetActive(true);
 
@@ -221,7 +226,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
       }
     };
     sheetFrame.current = requestAnimationFrame(frame);
-  }, [finishSheet, writeSheetProgress]);
+  }, [finishSheet, measureSheetArtwork, writeSheetProgress]);
 
   const expandPlayer = useCallback((opener?: HTMLElement | null) => {
     if (!nowPlayingRef.current) {
@@ -247,6 +252,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     if (!handle && !dragRegion && !dragSurface && !scrollRegion) return;
     if (target?.closest("button,input,select,textarea,[role=button],[role=menuitem],[contenteditable=true]") && !handle) return;
     if (scrollRegion && (scrollRegion.scrollTop > 0 || !nowPlayingRef.current)) return;
+    if (nowPlayingRef.current) measureSheetArtwork();
     suppressClick.current = false;
     if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
     const time = performance.now();
@@ -267,7 +273,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
       active: false,
       samples: [{ y: event.clientY, time }],
     };
-  }, []);
+  }, [measureSheetArtwork]);
 
   const onSheetPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
     const current = gesture.current;
@@ -683,28 +689,24 @@ export function PlayerBar() {
       const target = event.target instanceof Element ? event.target : null;
       if (!target?.closest("a,button,input,select,textarea,[role=button]")) expandPlayer(event.currentTarget);
     }}
-    className="player-dock relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-surface px-3 pb-3 pt-1 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-6 lg:pb-3 lg:pt-1"
+    className="player-dock relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-surface px-3 py-3 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-6"
   >
-    <button type="button" aria-label="Expand player" data-player-drag-handle data-player-drag-region
-      onClick={(event) => expandPlayer(event.currentTarget)}
-      onKeyDown={(event) => { if (event.key === "ArrowUp") { event.preventDefault(); expandPlayer(event.currentTarget); } }}
-      className="player-grab-handle player-drag-region col-span-full mx-auto grid h-8 w-14 place-items-center rounded-full text-muted focus-visible:text-fg">
-      <span aria-hidden className="player-sheet-grip" />
-    </button>
     <MusicItem item={track} data-player-drag-surface className="flex min-w-0 items-center gap-3">
-      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="player-mini-artwork shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
+      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Expand player"
+        onKeyDown={(event) => { if (event.key === "ArrowUp") { event.preventDefault(); expandPlayer(event.currentTarget); } }}
+        className="player-mini-artwork shrink-0 rounded"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
         <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Nothing playing"}</Link>
         <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to play" : "Connecting…"}</p>
       </div>
       {track && <div className="hidden xl:block"><TrackMenuButton item={track} /></div>}
     </MusicItem>
-    <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-2 lg:flex-col lg:gap-1">
+    <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-1 lg:flex-col lg:gap-1">
       <PlaybackControls state={state} ready={ready} command={command} />
       <Link href="/app/now-playing?tab=queue" onClick={rememberReturn} aria-label="Open queue" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg lg:hidden"><ListMusic className="size-5" /></Link>
       <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
     </div>
-    <div className="hidden min-w-0 items-center gap-2 lg:col-start-3 lg:row-start-2 lg:flex lg:justify-end">
+    <div className="hidden min-w-0 items-center gap-2 lg:col-start-3 lg:row-start-1 lg:flex lg:justify-end">
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
       <Link href="/app/settings?section=devices" aria-label="Devices" title="Devices" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MonitorSpeaker className="size-5" /></Link>

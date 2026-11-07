@@ -455,15 +455,6 @@
   transform-origin: top center;
 }
 .player-sheet[aria-hidden="true"] .player-sheet-content { pointer-events: none; }
-.player-grab-handle { touch-action: none; }
-.player-sheet-grip {
-  display: block;
-  width: 2rem;
-  height: 0.25rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-muted);
-  opacity: 0.8;
-}
 .player-sheet .artwork-atmosphere {
   max-height: min(56dvh, 36rem);
   opacity: clamp(0, calc(var(--player-progress, 0) * 0.7), 0.7);
@@ -499,7 +490,13 @@
   opacity: clamp(0, calc((var(--player-progress, 0) - 0.24) * 1.32), 1);
 }
 .player-sheet-content [data-player-drag-surface] { touch-action: none; }
-.player-sheet-content .player-expanded-artwork {
+.player-transition-artwork {
+  position: absolute;
+  z-index: 2;
+  left: var(--player-art-expanded-x, 0px);
+  top: var(--player-art-expanded-y, 0px);
+  width: var(--player-art-expanded-width, 0px);
+  visibility: hidden;
   transform: translate3d(
     calc(var(--player-art-from-x, 0px) * (1 - var(--player-progress, 0))),
     calc(var(--player-art-from-y, 0px) * (1 - var(--player-progress, 0))),
@@ -507,8 +504,10 @@
   ) scale(calc(var(--player-art-from-scale, 1) + (1 - var(--player-art-from-scale, 1)) * var(--player-progress, 0)));
   transform-origin: top left;
 }
+html[data-player-sheet-moving] .player-transition-artwork { visibility: visible; }
+html[data-player-sheet-moving] .player-expanded-artwork .now-playing-art { visibility: hidden; }
 .player-dock [data-player-drag-surface] { touch-action: none; }
-.player-sheet-content .now-playing-art {
+.player-sheet .now-playing-art {
   border-radius: calc((1 - var(--player-progress, 0)) * var(--radius-control));
   box-shadow: 0 16px 40px -16px rgb(0 0 0 / calc(var(--player-progress, 0) * 0.5));
 }
@@ -604,15 +603,15 @@
     border-top: 0;
     border-left: 1px solid var(--color-line);
   }
-  .player-sheet-content .now-playing-art {
-    max-height: 42dvh;
+  .player-expanded-artwork {
+    max-width: min(42dvh, 100%);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stage-flash, .drift, .land, .rise, .now-playing, .player-panel { animation: none; }
   .player-sheet .artwork-atmosphere { opacity: 0; }
-  .player-sheet-content .now-playing-art { box-shadow: none; }
+  .player-sheet .now-playing-art { box-shadow: none; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
