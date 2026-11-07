@@ -19,6 +19,16 @@ do not reload identical harness-provided guidance or automatically read memory.
 Agents without skill discovery can use this file, the root CLI and plain
 `SKILL.md` reads; no vendor-specific instruction copies are required.
 
+## Portable agent skills
+
+The checked-in [`.github/skills/`](.github/skills/) directory contains portable
+`SKILL.md` guidance, not Copilot-only configuration. Agents without automatic
+skill discovery should open the relevant file directly; load only the skill
+needed for the task. The [skill index](agents/README.md#portable-skills) lists
+current skills and their triggers. `.github/instructions/*.instructions.md`
+files are optional Copilot path hints; this `AGENTS.md`, the domain cards and
+plain skill files are the portable source of guidance.
+
 ## Large or cross-domain tasks
 
 When a request spans several domains or will not fit comfortably in one session:

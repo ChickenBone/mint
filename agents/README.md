@@ -24,6 +24,22 @@ Agents route each task to one or more **domains** first. See the [domain index](
 | [Portable task tracking](../.github/skills/mint-task-tracking/SKILL.md) | Only when needed: existing harness todo/session SQL first, one tracker, optional ignored fallback; not Mint's music database |
 | [Starter prompt](starter-prompt.md) | Starting a new chat without relying on private conversation history or frozen implementation assumptions |
 
+## Portable skills
+
+The skills below are checked-in Markdown guidance. An agent does not need
+Copilot or plugin discovery to use them: read the relevant `SKILL.md` directly
+when its trigger matches, and follow its linked references only as needed.
+`.github/instructions/*.instructions.md` files provide optional Copilot
+path-specific hints; `AGENTS.md`, the domain cards and these skill files remain
+the portable entry points.
+
+| Skill | Use when |
+| --- | --- |
+| [Mint mobile UX](../.github/skills/mint-mobile-ux/SKILL.md) | Any native mobile screen, flow, control, gesture, motion, accessibility or performance change; read this before the pinned Expo references |
+| [Expo Native UI](../.github/skills/expo-native-ui/SKILL.md) | A mobile UI task needs platform controls or layout guidance; obey Mint's compatibility override |
+| [Expo Animation](../.github/skills/expo-animation/SKILL.md) | A mobile task specifically changes gestures, animation, press feedback or motion performance; obey Mint's compatibility override |
+| [Mint task tracking](../.github/skills/mint-task-tracking/SKILL.md) | A multi-step task needs progress/dependency tracking; only load when needed and use one authoritative tracker |
+
 ## How to use this guidance
 
 1. Run `npm run agents -- context "<request>" [paths…]` for a bounded reading/contract/validation packet, or use `route` for just the reading list. Read the cards and linked guides; the packet does not replace implementation inspection.
