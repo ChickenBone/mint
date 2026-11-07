@@ -14,7 +14,7 @@ const libraryTabs: Record<string, string> = {
 export type CollectionTab = "playlists" | "likes" | "requests" | "downloads" | "history";
 export type PlaylistSourceFilter = "all" | "mint" | "youtube" | "spotify" | "smart";
 export type SettingsSectionId = "account" | "services" | "playback" | "devices" | "storage";
-export type ManageTab = "requests" | "reports" | "jobs" | "workers" | "analysis";
+export type ManageTab = "requests" | "reports" | "jobs" | "workers" | "analysis" | "matching";
 export type ManageTabId = ManageTab;
 
 export const listeningDestinations = [
@@ -26,7 +26,7 @@ export const listeningDestinations = [
 const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "requests", "downloads", "history"]);
 const validPlaylistSources = new Set<PlaylistSourceFilter>(["all", "mint", "youtube", "spotify", "smart"]);
 const validSettingsSections = new Set<SettingsSectionId>(["account", "services", "playback", "devices", "storage"]);
-const validManageTabs = new Set<ManageTab>(["requests", "reports", "jobs", "workers", "analysis"]);
+const validManageTabs = new Set<ManageTab>(["requests", "reports", "jobs", "workers", "analysis", "matching"]);
 
 function withQuery(path: string, params: URLSearchParams) {
   const query = params.toString();

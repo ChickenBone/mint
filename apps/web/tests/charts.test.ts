@@ -48,6 +48,8 @@ test("acquisition states never turn an absent file into playback; account select
   assert.equal(matchChartEntry({ ...entry, durationSec: null }, [local]).availability, "ambiguous");
   assert.equal(matchChartEntry({ ...entry, durationSec: null }, [local], local.id).availability, "available");
   assert.equal(matchChartEntry(entry, [{ ...local, title: "Distant Window (Live)" }], local.id).availability, "missing");
+  assert.equal(matchChartEntry({ ...entry, artist: "The Paper Moons & Guest" }, [{ ...local, artist: "The Paper Moons" }], local.id).availability, "available");
+  assert.equal(matchChartEntry({ ...entry, title: "Distant Window (feat. Guest)" }, [{ ...local, title: "Distant Window" }], local.id).availability, "available");
 });
 const recordingId = "9b16c594-19cd-4ac4-86b2-303114b97045";
 const recording = { id: recordingId, title: entry.title, artist: entry.artist, album: entry.album,

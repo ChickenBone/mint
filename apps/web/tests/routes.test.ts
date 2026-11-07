@@ -70,6 +70,8 @@ test("legacy devices and management routes redirect with role-aware destinations
   assert.equal(legacyManageHref("workers", false), "/app/settings?section=services");
   assert.equal(legacyManageHref("analysis", true), "/app/manage?tab=analysis");
   assert.equal(legacyManageHref("analysis", false), "/app");
+  assert.equal(legacyManageHref("matching", true), "/app/manage?tab=matching");
+  assert.equal(legacyManageHref("matching", false), "/app");
 });
 
 test("Your music, Settings and Management tab/section resolvers normalize query values", () => {
@@ -97,6 +99,7 @@ test("Your music, Settings and Management tab/section resolvers normalize query 
   assert.equal(resolveManageTab("jobs"), "jobs");
   assert.equal(resolveManageTab("workers"), "workers");
   assert.equal(resolveManageTab("analysis"), "analysis");
+  assert.equal(resolveManageTab("matching"), "matching");
   assert.equal(resolveManageTab("unknown"), "requests");
 });
 

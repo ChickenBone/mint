@@ -23,6 +23,8 @@ export interface AcquireJob {
   forceCobalt?: boolean;
   /** Rip on this host even if volunteer workers are online. */
   local?: boolean;
+  /** How many times this download has waited for a busy YouTube search. */
+  youtubeWaits?: number;
 }
 
 export interface FinalizeJob {

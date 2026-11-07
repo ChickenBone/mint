@@ -5,7 +5,7 @@ import { getDb } from "@mint/core/db";
 import { SESSION_COOKIE, sha256 } from "@mint/core/crypto";
 import { DeviceError, deviceHeartbeatSchema, deviceStateSchema, partyQueueSchema } from "@mint/core/devices";
 import { getUser } from "./auth";
-import { publicUrl } from "./request";
+import { allowedOrigins } from "./request";
 import { DeviceStore } from "./devices-store";
 import { validDeviceOrigin } from "./device-http";
 
@@ -48,7 +48,7 @@ async function body(request: Request) {
 
 export async function deviceApi(request: Request, path: string[], kind: "devices" | "parties") {
   try {
-    if (request.method !== "GET" && !validDeviceOrigin(request, publicUrl())) throw new DeviceError(403, "Same-origin requests only.");
+    if (request.method !== "GET" && !validDeviceOrigin(request, allowedOrigins())) throw new DeviceError(403, "Same-origin requests only.");
     const user = await getUser();
     const cookie = (await cookies()).get(SESSION_COOKIE)?.value;
     if (!user || !cookie) throw new DeviceError(401, "Approved membership required.");
@@ -65,7 +65,15 @@ export async function deviceApi(request: Request, path: string[], kind: "devices
     const input = await body(request);
     if (kind === "devices") {
       if (!target) return json(await store.register(input), 201);
+      if (target === "transfer" && !action) {
+        return json(await store.transfer(z.object({ destinationId: z.uuid() }).parse(input).destinationId), 202);
+      }
       id.parse(target);
+      if (action === "resume") return json(await store.resume(target));
+      if (action === "position") {
+        const data = z.object({ time: z.number().finite().min(0).max(7 * 86400), scrubbing: z.boolean() }).parse(input);
+        return json(await store.preview(target, data.time, data.scrubbing));
+      }
       if (action === "poll") {
         const data = heartbeat.parse(input);
         return json(await store.poll(target, data.token, data.state));

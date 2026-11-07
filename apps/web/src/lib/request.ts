@@ -14,6 +14,31 @@ export function publicUrl() {
   return (process.env.PUBLIC_URL ?? "http://localhost:3000").replace(/\/$/, "");
 }
 
+/** Origins that may call this instance. ALLOWED_ORIGINS can list localhost plus a Tailscale hostname. */
+export function allowedOrigins() {
+  const configured = `${process.env.ALLOWED_ORIGINS ?? ""},${publicUrl()}`
+    .split(",").map((value) => value.trim()).filter(Boolean);
+  const origins = new Set<string>();
+  for (const value of configured) {
+    try { origins.add(new URL(value).origin); } catch { /* ignore malformed entries */ }
+  }
+  return [...origins];
+}
+
+export function originAllowed(origin: string | null) {
+  return Boolean(origin && allowedOrigins().includes(origin));
+}
+
+/** Mutations from the browser. Next can report the request URL as localhost while the page is another configured host. */
+export function mutationOriginAllowed(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return true;
+  try {
+    if (origin === new URL(request.url).origin) return true;
+  } catch { /* a malformed request URL still has to match the allowlist */ }
+  return originAllowed(origin);
+}
+
 export class RequestInputError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
 }

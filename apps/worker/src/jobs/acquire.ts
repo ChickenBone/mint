@@ -16,6 +16,7 @@ import { log } from "../log";
 import { queues } from "../queues";
 import * as cobalt from "../services/cobalt";
 import * as lidarr from "../services/lidarr";
+import { HttpError } from "../http";
 import { matchRecording } from "../services/musicbrainz";
 import { findRequestedVideo } from "../services/youtube";
 import { progress, stage, updateTrack } from "../track-state";
@@ -49,7 +50,17 @@ async function toCobalt(job: Job<AcquireJob>, token: string | undefined, reason:
   }
   if (track && !track.youtubeVideoId) {
     if (!job.data.requestedBy) throw new Error("This request needs a YouTube video URL, or a linked YouTube account for source lookup.");
-    const videoId = await findRequestedVideo(job.data.requestedBy, track);
+    let videoId: string | null;
+    try {
+      videoId = await findRequestedVideo(job.data.requestedBy, track);
+    } catch (error) {
+      const body = error instanceof HttpError ? error.body ?? "" : "";
+      const busy = error instanceof HttpError && (error.status === 429 || error.status === 503 || (error.status === 403 && /quota|rate/i.test(`${error.message} ${body}`)));
+      if (!busy) throw error;
+      const waits = (job.data.youtubeWaits ?? 0) + 1;
+      await updateTrack(track.id, { stage: "queued", detail: "YouTube is busy. The download will retry.", progress: 0 });
+      return later(job, token, { ...job.data, youtubeWaits: waits }, Math.min(15 * 60_000, 60_000 * 2 ** Math.min(waits, 4)));
+    }
     if (!videoId) throw new Error("No verified YouTube recording matched this request. Add a YouTube video URL and retry, or use Lidarr.");
     await updateTrack(track.id, { youtubeVideoId: videoId });
   }
@@ -86,6 +97,7 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
     await db.update(schema.tracks).set({ attempts: sql`${schema.tracks.attempts} + 1` }).where(eq(schema.tracks.id, track.id));
     await stage(track.id, "matching", "Looking up MusicBrainz");
     const match = await matchRecording(track).catch((err) => {
+      if (err instanceof HttpError && (err.status === 429 || err.status === 503)) throw err;
       log.warn({ err, trackId: track.id }, "musicbrainz lookup failed");
       return null;
     });

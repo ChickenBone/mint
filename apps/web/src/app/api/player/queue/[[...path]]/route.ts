@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getDb } from "@mint/core/db";
 import { MusicError } from "@mint/core/music";
 import { getUser } from "@/lib/auth";
-import { boundedJson, publicUrl, RequestInputError } from "@/lib/request";
+import { boundedJson, originAllowed, publicUrl, RequestInputError } from "@/lib/request";
 import { openQueue, queuePage, editQueue } from "@/lib/playback-queue-store";
 import { queueEditSchema, queueOpenSchema } from "@/lib/progressive-queue";
 import { rateLimit } from "@/lib/rate-limit";
@@ -21,7 +21,7 @@ async function handle(request: Request, context: { params: Promise<{ path?: stri
       const queueId = z.uuid().parse(id), position = z.coerce.number().int().min(0).max(2_000_000_000).parse(new URL(request.url).searchParams.get("position") ?? 0);
       return json(await getDb().transaction((tx) => queuePage(tx, user.id, queueId, position), { isolationLevel: "repeatable read" }));
     }
-    if (request.method !== "POST" || !validConsumerMutation(request, publicUrl())) return json({ error: "Request origin not allowed." }, 403);
+    if (request.method !== "POST" || (!validConsumerMutation(request, publicUrl()) && !originAllowed(request.headers.get("origin")))) return json({ error: "Request origin not allowed." }, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return json({ error: "Send a JSON request." }, 400);
     const body = await boundedJson(request, 300_000);
     if (!id) {

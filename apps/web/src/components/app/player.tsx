@@ -10,6 +10,7 @@ import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState
 import { analysisSchema } from "@mint/core/analysis";
 import { authorizeOffline, clearOffline, listOffline, offlineAudio, offlineSettings } from "@/lib/offline";
 import { startDeviceBridge } from "@/lib/device-client";
+import { randomId } from "@/lib/id";
 import { ListeningHistory } from "@/lib/listening-history";
 import { TrackMusicActions } from "./track-music-actions";
 import { NativePlayer } from "@/lib/native-player";
@@ -17,6 +18,7 @@ import { collectionParams, itemCollection } from "@/lib/browser-catalog";
 import { LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
+import { useAccountPlayback } from "./account-playback";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
 import { playerSheetArtworkOrigin, playerSheetDestination, playerSheetProgress, playerSheetReleaseVelocity, stepPlayerSheetSpring } from "./player-sheet-gesture";
@@ -365,7 +367,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const command = useCallback((command: PlayerCommand): Promise<boolean> => {
     if (!engine.current) { setError("The player is still starting. Try again in a moment."); return Promise.resolve(false); }
     setError(null);
-    const id = crypto.randomUUID();
+    const id = randomId();
     if (["play", "collection", "next-in-queue", "add-to-queue"].includes(command.action)) { selectionRequest.current = id; setBusy(true); }
     return engine.current.execute(command).then(() => true).catch((error: unknown) => {
       if (!(error instanceof DOMException && error.name === "AbortError")) setError(error instanceof Error ? error.message : "This playback action failed. Try again.");
@@ -572,17 +574,6 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
       if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
     };
   }, [finishSheet, measureSheet, measureSheetArtwork, settleSheet, suppressNextClick]);
-  useEffect(() => {
-    const keyboard = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || !state.track) return;
-      if (event.target instanceof HTMLElement && event.target.closest("input,textarea,select,button,a,[role=tab],[role=menuitem],[role=button],[contenteditable=true]")) return;
-      event.preventDefault();
-      command({ action: "toggle" });
-    };
-    window.addEventListener("keydown", keyboard);
-    return () => window.removeEventListener("keydown", keyboard);
-  }, [command, state.track]);
-
   const closeMenu = useCallback(() => {
     const returnTo = selection?.returnTo;
     setSelection(null);
@@ -671,8 +662,25 @@ export function PlayerBar() {
   const { state, ready, command } = usePlayer()!;
   const shell = useContext(ShellContext)!;
   const { panel, setPanel, nowPlaying, sheetActive, rememberReturn, expandPlayer } = shell;
-  const track = state.track;
+  const account = useAccountPlayback(state.playing, state.time);
+  const mirror = account && !account.here ? account : null;
+  const view = mirror?.state ?? state;
+  const transport = mirror?.control ?? command;
+  const track = view.track;
+  const place = mirror?.deviceName ?? (account?.here ? account.deviceName : null);
+  const where = place && track ? `${view.playing ? "Playing" : "Paused"} on ${place}` : null;
+  const preview = (milliseconds: number | null) => (mirror ?? account)?.preview(milliseconds);
   const previousVolume = useRef(100);
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || !view.track) return;
+      if (event.target instanceof HTMLElement && event.target.closest("input,textarea,select,button,a,[role=tab],[role=menuitem],[role=button],[contenteditable=true]")) return;
+      event.preventDefault();
+      void transport({ action: "toggle" });
+    };
+    window.addEventListener("keydown", keyboard);
+    return () => window.removeEventListener("keydown", keyboard);
+  }, [transport, view.track]);
   return <section
     aria-label="Music player"
     aria-hidden={nowPlaying}
@@ -697,29 +705,29 @@ export function PlayerBar() {
         className="player-mini-artwork shrink-0 rounded"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
         <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Nothing playing"}</Link>
-        <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to play" : "Connecting…"}</p>
+        <p className="mt-1 truncate text-xs text-muted">{track ? <><ArtistLink item={track} />{where ? <span className="text-mint"> · {where}</span> : null}</> : ready ? "Choose a song to play" : "Connecting…"}</p>
       </div>
       {track && <div className="hidden xl:block"><TrackMenuButton item={track} /></div>}
     </MusicItem>
     <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-1 lg:flex-col lg:gap-1">
-      <PlaybackControls state={state} ready={ready} command={command} />
+      <PlaybackControls state={view} ready={mirror ? Boolean(track) : ready} command={transport} />
       <Link href="/app/now-playing?tab=queue" onClick={rememberReturn} aria-label="Open queue" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg lg:hidden"><ListMusic className="size-5" /></Link>
-      <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
+      <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? track?.id ?? "empty"} state={view} ready={mirror ? Boolean(track) : ready} command={transport} previewMs={mirror?.scrubMs ?? account?.scrubMs} onPreview={preview} /></div>
     </div>
     <div className="hidden min-w-0 items-center gap-2 lg:col-start-3 lg:row-start-1 lg:flex lg:justify-end">
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
       <Link href="/app/settings?section=devices" aria-label="Devices" title="Devices" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MonitorSpeaker className="size-5" /></Link>
       <div className="flex max-w-36 items-center gap-1">
-        <Transport label={state.volume ? "Mute" : "Unmute"} disabled={!ready} onClick={() => {
-          if (state.volume) previousVolume.current = state.volume;
-          command({ action: "volume", value: state.volume ? 0 : previousVolume.current });
-        }}>{state.volume ? <Volume2 /> : <VolumeX />}</Transport>
-        <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} disabled={!ready}
-          onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-20 accent-mint" />
+        <Transport label={view.volume ? "Mute" : "Unmute"} disabled={mirror ? !track : !ready} onClick={() => {
+          if (view.volume) previousVolume.current = view.volume;
+          void transport({ action: "volume", value: view.volume ? 0 : previousVolume.current });
+        }}>{view.volume ? <Volume2 /> : <VolumeX />}</Transport>
+        <input aria-label="Volume" type="range" min="0" max="100" value={view.volume} disabled={mirror ? !track : !ready}
+          onChange={(event) => void transport({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-20 accent-mint" />
       </div>
     </div>
-    <div aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-line lg:hidden"><div className="h-full bg-mint" style={{ width: `${state.duration ? Math.min(100, state.time / state.duration * 100) : 0}%` }} /></div>
+    <div aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-line lg:hidden"><div className="h-full bg-mint" style={{ width: `${view.duration ? Math.min(100, (mirror?.scrubMs ?? account?.scrubMs ?? view.time) / view.duration * 100) : 0}%` }} /></div>
   </section>;
 }
 

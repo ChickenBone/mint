@@ -1,13 +1,14 @@
 import type { PlayerState } from "./player-protocol";
+import { randomId } from "./id";
 
 export class ListeningHistory {
   private last?: { state: PlayerState; at: number };
   private listenedMs = 0;
-  private eventId = crypto.randomUUID();
+  private eventId = randomId();
   private startedAt = new Date().toISOString();
   constructor(private send: (event: { eventId: string; trackId: string; listenedMs: number; completed: boolean; startedAt: string }) => void, private now = () => performance.now()) {}
   reset() {
-    this.listenedMs = 0; this.eventId = crypto.randomUUID(); this.startedAt = new Date().toISOString();
+    this.listenedMs = 0; this.eventId = randomId(); this.startedAt = new Date().toISOString();
     if (this.last) this.last.at = this.now();
   }
   update(state: PlayerState) {

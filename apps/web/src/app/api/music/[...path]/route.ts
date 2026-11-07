@@ -4,7 +4,7 @@ import { getDb, schema } from "@mint/core/db";
 import { musicFolders, musicHistory, musicLikes, musicExclusions } from "@mint/core/music-db";
 import { collectionMutationSchema, createCollectionSchema, historyEventSchema, MusicError } from "@mint/core/music";
 import { getUser } from "@/lib/auth";
-import { boundedJson, publicUrl } from "@/lib/request";
+import { boundedJson, originAllowed, publicUrl } from "@/lib/request";
 import { collectionDetail, createCollection, deleteHistory, listCollections, musicProfile, mutateCollection,
   importedLikeCandidates, organizeCollection, playlistLibrarySearch, recordHistory, respondInvitation, setPrivateSession } from "@/lib/music-store";
 import { discoverMusic } from "@/lib/music-discovery";
@@ -21,8 +21,8 @@ async function handle(request: Request, context: Context) {
   if (!user) return json({ error: "Approved membership required." }, 401);
   try {
     const url = new URL(request.url), method = request.method;
-    if (method !== "GET") {
-      if (!validConsumerMutation(request, publicUrl())) throw new MusicError("Request origin not allowed.", 403);
+    if (method !== "GET" && !validConsumerMutation(request, publicUrl()) && !originAllowed(request.headers.get("origin"))) {
+      throw new MusicError("Request origin not allowed.", 403);
     }
     const body = async () => {
       if (!request.headers.get("content-type")?.includes("application/json")) throw new MusicError("Send a JSON request.");

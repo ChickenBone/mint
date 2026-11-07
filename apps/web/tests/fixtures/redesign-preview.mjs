@@ -200,11 +200,17 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("button", { name: `Add to library: ${missing.title} by ${missing.artist}`, exact: true }).click();
     await page.getByRole("status").filter({ hasText: "Request sent" }).waitFor();
     await shot("chart-requested");
-    const [requested] = await db.select().from(schema.tracks).where(eq(schema.tracks.mbRecordingId, missingId));
-    assert.ok(requested);
+    let requested;
+    let queuedJobs = [];
     const queue = new Queue("mint-acquire", { connection: { host: "127.0.0.1", port: Number(new URL(process.env.REDIS_URL).port) } });
-    const jobs = await queue.getJobs(["waiting", "delayed", "active", "completed"]);
-    assert.equal(jobs.filter((job) => job.data.trackId === requested.id).length, 1, "The existing BullMQ pipeline receives exactly one job");
+    for (let attempt = 0; attempt < 40 && !queuedJobs.length; attempt++) {
+      [requested] = await db.select().from(schema.tracks).where(eq(schema.tracks.mbRecordingId, missingId));
+      const jobs = await queue.getJobs(["waiting", "delayed", "active", "completed"]);
+      queuedJobs = requested ? jobs.filter((job) => job.data.trackId === requested.id) : [];
+      if (!queuedJobs.length) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.ok(requested);
+    assert.equal(queuedJobs.length, 1, "The existing BullMQ pipeline receives exactly one job");
     await queue.close();
     const again = await context.request.post(`${base}/api/charts/request`, { data: { chart: "apple-us", entry: missing.id }, headers: { origin: base } });
     assert.ok(again.ok() || again.status() === 429, `Duplicate request: ${again.status()} ${await again.text()}`);

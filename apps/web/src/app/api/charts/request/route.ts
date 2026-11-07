@@ -1,13 +1,14 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { MusicError } from "@mint/core/music";
 import { getDb, schema } from "@mint/core/db";
 import { and, eq } from "drizzle-orm";
 import { getUser } from "@/lib/auth";
-import { chartAcquisition } from "@/lib/chart-service";
+import { acceptChartRequest } from "@/lib/chart-service";
+import { scheduleChartMatch } from "@/lib/chart-match-queue";
 import { enqueueRequested } from "@/lib/queues";
 import { rateLimit } from "@/lib/rate-limit";
-import { boundedJson, publicUrl, RequestInputError } from "@/lib/request";
+import { boundedJson, originAllowed, RequestInputError } from "@/lib/request";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,14 +16,18 @@ const json = (body: unknown, status = 200) => NextResponse.json(body, { status, 
 export async function POST(request: Request) {
   const user = await getUser();
   if (!user) return json({ error: "Approved membership required. Public charts are browse-only." }, 401);
-  if (request.headers.get("origin") !== new URL(publicUrl()).origin) return json({ error: "Request origin not allowed." }, 403);
+  if (!originAllowed(request.headers.get("origin"))) return json({ error: "Request origin not allowed." }, 403);
   try {
     if (!request.headers.get("content-type")?.includes("application/json")) return json({ error: "Send a JSON request." }, 400);
-    if (!await rateLimit(`music-request:${user.id}`, 30, 600) || !await rateLimit("recording-catalog", 1, 1))
+    if (!await rateLimit(`chart-queue:${user.id}`, 60, 60))
       return json({ error: "Song requests are rate limited. Wait before trying again." }, 429);
     const input = z.object({ chart: z.string().max(100), entry: z.string().max(200),
       token: z.string().max(10000).optional(), youtubeUrl: z.string().max(2048).optional() }).parse(await boundedJson(request, 15000));
-    const result = await chartAcquisition(user.id, input);
+    const result = await acceptChartRequest(user.id, input);
+    if (result.status === "requested" && result.needsMatch) {
+      const queued = { chart: input.chart, entry: input.entry, youtubeUrl: input.youtubeUrl };
+      after(() => scheduleChartMatch(user.id, queued, result.trackId));
+    }
     if (result.status === "requested" && result.needsQueue) {
       try { await enqueueRequested(result.trackId, user.id); }
       catch (error) {

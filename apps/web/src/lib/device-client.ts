@@ -3,6 +3,7 @@ import {
   type DeviceCommand, type DeviceCommandEnvelope, type DeviceHandoff, type DeviceState,
 } from "@mint/core/devices";
 
+type DeviceMemory = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type BridgeOptions = {
   memberId: string;
   getState: () => DeviceState;
@@ -12,7 +13,14 @@ type BridgeOptions = {
   fetcher?: typeof fetch;
   name?: string;
   pollMs?: number;
+  /** Remembers this tab's device across refresh. Defaults to sessionStorage in the browser. */
+  storage?: DeviceMemory | null;
 };
+const registrations = new Map<string, Promise<{ id: string; token: string }>>();
+function tabStore(): DeviceMemory | null {
+  try { return typeof sessionStorage === "undefined" ? null : sessionStorage; }
+  catch { return null; }
+}
 export type DeviceBridge = {
   readonly deviceId: string | null;
   dispose: () => void;
@@ -36,6 +44,8 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
   let executing: AbortController | null = null;
   let lastSequence = 0, handoffBusy = false, reported = "", lastQueue = "";
   const seen = new Set<string>();
+  const storage = options.storage === undefined ? tabStore() : options.storage;
+  const storageKey = `mint:device:${options.memberId}`;
 
   function report(error: unknown) {
     const text = message(error);
@@ -55,6 +65,25 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
     return result as T;
   }
   function state() { return deviceStateSchema.parse(options.getState()); }
+  async function connect(): Promise<{ id: string; token: string }> {
+    const saved = storage?.getItem(storageKey);
+    if (saved) {
+      try { return await request<{ id: string; token: string }>(`/${saved}/resume`, {}); }
+      catch (error) {
+        const status = (error as { status?: number }).status;
+        if (status !== 404 && status !== 409) throw error;
+        storage?.removeItem(storageKey);
+      }
+    }
+    const pending = registrations.get(storageKey);
+    if (pending) return pending;
+    const created = request<{ id: string; token: string }>("", { name: browserName(), state: state() }).then((registration) => {
+      storage?.setItem(storageKey, registration.id);
+      return registration;
+    }).finally(() => { if (registrations.get(storageKey) === created) registrations.delete(storageKey); });
+    registrations.set(storageKey, created);
+    return created;
+  }
   function browserName() {
     if (options.name) return options.name;
     if (typeof navigator === "undefined") return "Mint browser";
@@ -105,12 +134,8 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
     inFlight = controller;
     try {
       if (!device) {
-        const registration = await request<{ id: string; token: string }>("", { name: browserName(), state: state() }, controller.signal);
-        device = registration;
-        if (stopped) {
-          await request(`/${registration.id}/revoke`, {}, undefined, true).catch(() => undefined);
-          return;
-        }
+        device = await connect();
+        if (stopped) return;
       }
       const snapshot = state(), queueIdentity = JSON.stringify(snapshot.queue);
       const { queue, ...playback } = snapshot;
@@ -121,10 +146,13 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
       reported = "";
     } catch (error) {
       if (!stopped) {
-        report(error);
         const status = (error as { status?: number }).status;
-        // Revocation and expired sessions are intentional; never silently reconnect them.
-        if (status === 401 || status === 403 || status === 404) { stopped = true; device = null; }
+        // A signed-out session stays disconnected. A missing device is forgotten so the next
+        // heartbeat can register once; a rejected token resumes the saved device instead.
+        if (status === 401) { stopped = true; device = null; report(error); }
+        else if (status === 404) { device = null; storage?.removeItem(storageKey); }
+        else if (status === 403) device = null;
+        else report(error);
       }
     } finally {
       inFlight = null;
@@ -140,7 +168,6 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
       inFlight?.abort();
       executing?.abort();
       if (activeBridge === bridge) activeBridge = null;
-      if (device) void request(`/${device.id}/revoke`, {}, undefined, true).catch(() => undefined);
       device = null;
     },
     async handoffTo(destinationId: string) {
@@ -178,3 +205,95 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
   return bridge;
 }
 export const startBridge = startDeviceBridge;
+
+export type ConnectableDevice = {
+  id: string;
+  name: string;
+  online: boolean;
+  lastSeenAt: string;
+  state: { playing: boolean; queueLength: number; volume: number; trackId: string | null };
+};
+
+async function deviceRequest<T>(path: string, value?: unknown): Promise<T> {
+  const response = await fetch(`/api/devices${path}`, {
+    method: value === undefined ? "GET" : "POST", cache: "no-store", credentials: "same-origin",
+    ...(value === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(value) }),
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Device service did not respond.");
+  return result as T;
+}
+
+export function playbackSource<T extends { id: string; online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[], destinationId: string) {
+  const ready = devices.filter((device) => device.online && device.state.queueLength > 0);
+  const playing = ready.find((device) => device.state.playing);
+  if (playing) return playing.id === destinationId ? null : playing;
+  return [...ready].filter((device) => device.id !== destinationId).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
+}
+
+export function activeOutput<T extends { online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[]) {
+  return [...devices].filter((device) => device.online && device.state.playing && device.state.queueLength > 0)
+    .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
+}
+
+async function waitForCommand(id: string) {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() <= deadline) {
+    const result = await deviceRequest<{ status: string; error?: string | null }>(`/commands/${id}`);
+    if (result.status === "succeeded") return;
+    if (result.status === "failed" || result.status === "expired") throw new Error(result.error || "The other device did not start playback.");
+    await pause(500);
+  }
+  throw new Error("The other device did not confirm playback in time.");
+}
+
+export function listConnectableDevices() {
+  return deviceRequest<ConnectableDevice[]>("");
+}
+
+/** Make one signed-in device the output, pulling playback from whichever device currently has it. */
+export async function connectToDevice(destinationId: string) {
+  const localId = getLocalDeviceId();
+  if (!localId) throw new Error("This browser is not connected yet. Try again shortly.");
+  const devices = await listConnectableDevices();
+  const destination = devices.find((device) => device.id === destinationId);
+  if (!destination?.online) throw new Error("That device is asleep. Open Mint there and try again.");
+  const source = playbackSource(devices, destinationId);
+  if (!source) {
+    if (!destination.state.queueLength) throw new Error("Play a song on one device before moving it.");
+    return;
+  }
+  if (source.id === localId) {
+    await handoffToDevice(destinationId);
+    return;
+  }
+  const admitted = await deviceRequest<{ id: string; sourceId: string }>("/transfer", { destinationId });
+  await waitForCommand(admitted.id);
+  const paused = await deviceRequest<{ id: string }>(`/${admitted.sourceId}/commands`, { action: "pause" });
+  await waitForCommand(paused.id);
+}
+
+let previewAt = 0;
+let previewSeconds = 0;
+/** Tell every signed-in device where the playhead is while someone is dragging it. */
+export function previewDevicePosition(deviceId: string, seconds: number | null) {
+  if (seconds === null) {
+    void deviceRequest(`/${deviceId}/position`, { time: previewSeconds, scrubbing: false }).catch(() => undefined);
+    return;
+  }
+  previewSeconds = seconds;
+  const now = Date.now();
+  if (now - previewAt < 80) return;
+  previewAt = now;
+  void deviceRequest(`/${deviceId}/position`, { time: seconds, scrubbing: true }).catch(() => undefined);
+}
+
+export async function controlDevice(deviceId: string, action: "play" | "pause" | "next" | "previous" | "seek" | "volume", value?: number) {
+  const admitted = await deviceRequest<{ id: string }>(`/${deviceId}/commands`, value === undefined ? { action } : { action, value });
+  await waitForCommand(admitted.id);
+}
+
+export async function setRemoteVolume(deviceId: string, value: number) {
+  const admitted = await deviceRequest<{ id: string }>(`/${deviceId}/commands`, { action: "volume", value });
+  await waitForCommand(admitted.id);
+}

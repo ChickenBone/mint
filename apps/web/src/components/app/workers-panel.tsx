@@ -3,10 +3,11 @@
 import type { WorkerView } from "@mint/core/agent-protocol";
 import clsx from "clsx";
 import { KeyRound, Server } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useState, useSyncExternalStore } from "react";
 import { createWorker, revokeWorker, type CreateWorkerState } from "@/app/actions/workers";
 import { Field, SubmitButton } from "@/components/form";
 import { formatBytes, formatCount, timeAgo } from "@/lib/format";
+import { endpointOnPage } from "@/lib/page-endpoint";
 import { useRealtime } from "../realtime";
 import { ActionButton } from "./admin-controls";
 import { CopyButton } from "./copy-button";
@@ -55,6 +56,11 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
     setWorkers(initial);
   }
   const now = useNow(15_000);
+  const pageOrigin = useSyncExternalStore(
+    () => () => {},
+    () => endpointOnPage(origin, window.location),
+    () => origin,
+  );
   useRealtime((e) => {
     if (e.type !== "worker") return;
     setWorkers((prev) => prev.map((w) => (w.id === e.data.id ? { ...w, ...e.data } : w)));
@@ -63,9 +69,9 @@ export function WorkersPanel({ initial, origin }: { initial: Row[]; origin: stri
   const setup = state?.token
     ? [
         "mkdir mint-worker && cd mint-worker",
-        `curl -fsSL ${origin}/worker.yml -o compose.yml`,
+        `curl -fsSL ${pageOrigin}/worker.yml -o compose.yml`,
         `echo "MINT_WORKER_TOKEN=${state.token}" > .env`,
-        `echo "MINT_URL=${origin}" >> .env`,
+        `echo "MINT_URL=${pageOrigin}" >> .env`,
         "docker compose up -d",
       ].join("\n")
     : "";
