@@ -69,7 +69,8 @@ test("actual Expo config writer preserves resolved audio permissions during link
     }
     symlinkSync(new URL("../../node_modules", import.meta.url), join(directory, "node_modules"));
     symlinkSync(new URL("../../apps/mobile/src", import.meta.url), join(directory, "src"));
-    const original = resolvedAppConfig(directory);
+    const original = JSON.parse(JSON.stringify(resolvedAppConfig(directory)));
+    assert.deepEqual(resolvedAppConfig(directory), original);
     await modifyConfigAsync(directory, { owner: "fixture-owner", slug: "mint" });
     const initialized = resolvedAppConfig(directory);
     const raw = JSON.parse(readFileSync(join(directory, "app.json"), "utf8"));

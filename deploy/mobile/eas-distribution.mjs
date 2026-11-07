@@ -9,7 +9,7 @@ import { getConfig } from "@expo/config";
 
 export function resolvedAppConfig(projectDir) {
   const { _internal, ...expo } = getConfig(projectDir).exp;
-  return { expo };
+  return JSON.parse(JSON.stringify({ expo }));
 }
 
 export function runtimeFromResolution(result) {
