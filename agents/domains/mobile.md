@@ -15,7 +15,7 @@
 - Audio and downloads use the public Mint authenticated proxy, including range requests. Worker URLs/signing secrets never reach clients. Artwork is the existing public, separate-purpose proxy.
 - Keep one player across routes, restore queues paused, isolate account/server state and clear media/offline state on logout/revocation. Disconnected downloaded audio cannot be remotely revoked.
 - Server-dependent and native background/device behavior requires actual integration/device evidence; a web export is not native production certification.
-- Self-hosted Expo updates serve exact signed runtime/channel/platform manifests from isolated persistent web storage. Publish immutable verified assets before atomic activation; keep signing keys out of the server and preserve embedded/offline recovery. See [OTA server](../../docs/mobile-updates-server.md) and [Actions setup](../../docs/android-builds.md).
+- EAS Build produces Android APKs and EAS Update hosts compatible JavaScript updates. Keep project/channel/runtime configuration aligned, preserve embedded/offline recovery and stable Android signing, and never publish an update for an incompatible native runtime. Mint's server does not host application updates. See [distribution setup](../../docs/android-builds.md).
 
 ## Contracts and validation
 
@@ -31,12 +31,12 @@
 - **Scope:** Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport.
 - **Read before editing:** [docs/mobile.md](../../docs/mobile.md), [agents/architecture.md](../architecture.md), [agents/playback-and-library.md](../playback-and-library.md).
 - **Imports from:** [`collections`](collections.md), [`library`](library.md), [`mobile-playback`](mobile-playback.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`collections`](collections.md), [`deploy`](deploy.md), [`library`](library.md), [`mobile-playback`](mobile-playback.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`collections`](collections.md), [`library`](library.md), [`mobile-playback`](mobile-playback.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map mobile` (exports, line counts, cross-domain import edges).
 
-### Owned files (71)
+### Owned files (63)
 
-- `apps/mobile/` `app.config.js`, `app.json`, `eas.json`, `eslint.config.cjs`, `metro.config.cjs`, `package.json`, `tsconfig.json`
+- `apps/mobile/` `app.json`, `eas.json`, `eslint.config.cjs`, `metro.config.cjs`, `package.json`, `tsconfig.json`
 - `apps/mobile/app/` `_layout.tsx`, `index.tsx`, `library.tsx`, `player.tsx`, `search.tsx`, `settings.tsx`, `sign-in.tsx`
 - `apps/mobile/app/album/` `[id].tsx`
 - `apps/mobile/app/artist/` `[id].tsx`
@@ -48,17 +48,17 @@
 - `apps/mobile/src/screens/` `ConsumerShell.tsx`, `DetailScreen.tsx`, `HomeScreen.tsx`, `LibraryScreen.tsx`, `SearchScreen.tsx`, `SettingsScreen.tsx`, `SignInScreen.tsx`, `collection-model.ts`, `navigation.ts`, `search-model.ts`
 - `apps/mobile/src/theme/` `tokens.ts`
 - `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `screens.test.ts`
-- `apps/web/src/app/api/` `native/[...path]/route.ts`, `native/auth/[action]/route.ts`, `updates/assets/[hash]/route.ts`, `updates/publish/assets/[hash]/route.ts`, `updates/publish/route.ts`, `updates/route.ts`
-- `apps/web/src/lib/` `native-context.ts`, `native-http.ts`, `native-sessions.ts`, `ota-updates.ts`
-- `apps/web/tests/` `native-auth.test.ts`, `native-http.integration.test.ts`, `native-sessions.test.ts`, `ota-updates.test.ts`
-- `docs/` `mobile-design.md`, `mobile-updates-server.md`, `mobile.md`
+- `apps/web/src/app/api/` `native/[...path]/route.ts`, `native/auth/[action]/route.ts`
+- `apps/web/src/lib/` `native-context.ts`, `native-http.ts`, `native-sessions.ts`
+- `apps/web/tests/` `native-auth.test.ts`, `native-http.integration.test.ts`, `native-sessions.test.ts`
+- `docs/` `mobile-design.md`, `mobile.md`
 - `packages/client/` `package.json`, `tsconfig.json`
 - `packages/client/src/` `api.ts`, `auth.ts`, `index.ts`, `music.ts`, `playback.ts`
 - `packages/client/tests/` `client.test.ts`
 
 ### Validate
 
-Owned tests: 8.
+Owned tests: 7.
 
 ```bash
 npm run typecheck -w @mint/mobile
@@ -66,7 +66,7 @@ npm run lint -w @mint/mobile
 npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/screens.test.ts
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/native-auth.test.ts tests/native-http.integration.test.ts tests/native-sessions.test.ts tests/ota-updates.test.ts
+npm exec -w @mint/web -- tsx --test tests/native-auth.test.ts tests/native-http.integration.test.ts tests/native-sessions.test.ts
 npm run typecheck -w @mint/client
 npm exec -w @mint/client -- tsx --test tests/client.test.ts
 ```

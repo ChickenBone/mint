@@ -4,6 +4,17 @@
     "slug": "mint-mobile",
     "scheme": "mint",
     "version": "0.1.0",
+    "runtimeVersion": { "policy": "fingerprint" },
+    "updates": {
+      "url": "https://u.expo.dev/5a1e1df0-825c-4b34-8f29-21747fb78b97",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0,
+      "useEmbeddedUpdate": true
+    },
+    "extra": {
+      "eas": { "projectId": "5a1e1df0-825c-4b34-8f29-21747fb78b97" }
+    },
     "orientation": "default",
     "userInterfaceStyle": "dark",
     "ios": {

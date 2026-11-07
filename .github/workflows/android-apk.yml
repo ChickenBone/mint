@@ -1,4 +1,4 @@
-name: Android APK and OTA
+name: Android EAS Build and Update
 
 on:
   push:
@@ -23,109 +23,25 @@ on:
 
 concurrency:
   group: android-distribution-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  actions: read
 
 env:
   CI: "1"
-  MINT_OTA_URL: ${{ vars.MINT_OTA_URL }}
-  MINT_OTA_CHANNEL: production
-  MINT_OTA_CERTIFICATE_PATH: ../../.android-ci/ota-signing-certificate.pem
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
 
 jobs:
-  detect:
-    name: Native compatibility and JS export
+  distribute:
     if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    outputs:
-      build: ${{ steps.gate.outputs.build }}
-      runtime: ${{ steps.gate.outputs.runtime }}
-      version_code: ${{ steps.gate.outputs.version_code }}
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 22
-          cache: npm
-      - name: Validate public OTA configuration
-        env:
-          OTA_SIGNING_CERTIFICATE: ${{ vars.OTA_SIGNING_CERTIFICATE }}
-        run: |
-          test -n "$MINT_OTA_URL" || { echo "::error::Set repository variable MINT_OTA_URL per docs/android-builds.md"; exit 1; }
-          test -n "$OTA_SIGNING_CERTIFICATE" || { echo "::error::Set public OTA_SIGNING_CERTIFICATE repository variable"; exit 1; }
-          mkdir -p .android-ci
-          printf '%s\n' "$OTA_SIGNING_CERTIFICATE" > .android-ci/ota-signing-certificate.pem
-          node deploy/mobile/ota-publish.mjs configuration
-      - run: npm ci --no-audit --no-fund
-      - run: node --import tsx --test deploy/mobile/*.test.mjs
-      - name: Generate native project and apply guarded audio patch
-        run: |
-          npm exec -w @mint/mobile -- expo prebuild --platform android --no-install
-          node deploy/mobile/android-build.mjs verify-native
-      - name: Fingerprint installed Android native graph, configuration and build tooling
-        run: node deploy/mobile/native-runtime.mjs .android-ci/runtime.json
-      - id: gate
-        name: Compare against last successful distributed APK
-        env:
-          GH_TOKEN: ${{ github.token }}
-          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
-        run: node deploy/mobile/android-build.mjs gate
-      - name: Export OTA-compatible production Android JS and assets
-        env:
-          MINT_NATIVE_RUNTIME: ${{ steps.gate.outputs.runtime }}
-        run: |
-          npm exec -w @mint/mobile -- expo export --platform android --output-dir ../../.android-ci/export
-          npm exec -w @mint/mobile -- expo config --type public --json > .android-ci/expo-config.json
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: android-ci-inputs
-          path: |
-            .android-ci/runtime.json
-            .android-ci/baseline.json
-            .android-ci/expo-config.json
-            .android-ci/ota-signing-certificate.pem
-            .android-ci/export/
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 3
-      - name: Explain delivery state
-        env:
-          OTA_ENABLED: ${{ vars.OTA_PUBLISH_ENABLED }}
-        run: |
-          if [ "$OTA_ENABLED" != "true" ]; then
-            echo "OTA publishing is disabled. Set OTA_PUBLISH_ENABLED=true after configuring the self-hosted server and signing/publisher secrets. JS changes are exported but not delivered to installed apps." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  apk:
-    name: APK
-    needs: detect
-    if: needs.detect.outputs.build == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      MINT_NATIVE_RUNTIME: ${{ needs.detect.outputs.runtime }}
-      MINT_ANDROID_VERSION_CODE: ${{ needs.detect.outputs.version_code }}
-      ANDROID_SIGNING_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - name: Require stable release signing before expensive compilation
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_SIGNING_CERT_SHA256; do
-            test -n "$(printenv "$name")" || { echo "::error::Missing $name; configure stable signing per docs/android-builds.md"; exit 1; }
-          done
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: 22
@@ -136,118 +52,94 @@ jobs:
           java-version: "17"
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
         with:
-          packages: platform-tools
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: android-ci-inputs
-          path: .android-ci
+          packages: build-tools;36.0.0
+      - name: Require Expo authentication
+        run: test -n "$EXPO_TOKEN" || { echo '::error::Configure the EXPO_TOKEN GitHub Actions secret.'; exit 1; }
       - run: npm ci --no-audit --no-fund
-      - name: Prebuild exact native runtime with upgrade versionCode
+      - run: npm install --global eas-cli@27.5.0 --no-audit --no-fund
+      - run: node --test deploy/mobile/eas-distribution.test.mjs
+      - name: Apply the guarded audio patch before calculating the native fingerprint
+        run: node deploy/mobile/eas-distribution.mjs patch-audio
+      - name: Link and validate Expo project
         run: |
-          npm exec -w @mint/mobile -- expo prebuild --platform android --no-install
-          node deploy/mobile/android-build.mjs verify-native
-          node deploy/mobile/native-runtime.mjs .android-ci/build-runtime.json
-          node --input-type=module -e 'import fs from "node:fs"; const current=JSON.parse(fs.readFileSync(".android-ci/build-runtime.json")); if(current.runtime!==process.env.MINT_NATIVE_RUNTIME) throw new Error("APK native runtime differs from gate/export; refusing distribution");'
-      - id: toolchain
-        run: node deploy/mobile/android-build.mjs toolchain
-      - name: Install SDK and NDK selected by actual SDK58/RN native project
-        env:
-          COMPILE_SDK: ${{ steps.toolchain.outputs.compile_sdk }}
-          BUILD_TOOLS: ${{ steps.toolchain.outputs.build_tools }}
-          NDK: ${{ steps.toolchain.outputs.ndk }}
-        run: sdkmanager "platforms;android-$COMPILE_SDK" "build-tools;$BUILD_TOOLS" "ndk;$NDK" "cmake;3.22.1"
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: android-gradle-${{ runner.os }}-${{ needs.detect.outputs.runtime }}
-          restore-keys: android-gradle-${{ runner.os }}-
-      - name: Install verified stable keystore and override Expo debug-signed release default
+          mkdir -p .android-ci
+          node deploy/mobile/eas-distribution.mjs prepare-link
+          (cd apps/mobile && eas init --id 5a1e1df0-825c-4b34-8f29-21747fb78b97 --force --non-interactive --no-icon --json > ../../.android-ci/link.json)
+          node deploy/mobile/eas-distribution.mjs validate-link
+      - name: Prepare ignored local EAS credentials and verify certificate
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: node deploy/mobile/android-build.mjs signing
-      - name: Compile standalone signed arm64 release APK (not EAS or AAB)
-        working-directory: apps/mobile/android
+        run: |
+          mkdir -p .android-ci
+          git check-ignore -q apps/mobile/credentials.json
+          node deploy/mobile/eas-distribution.mjs credentials
+      - name: Resolve production runtime with Expo Updates
+        working-directory: apps/mobile
+        run: |
+          eas env:exec production 'EXPO_NO_DOTENV=1 node ../../node_modules/expo-updates/bin/cli.js runtimeversion:resolve --platform android --workflow managed > ../../.android-ci/runtime.json' --non-interactive
+      - name: Find a finished production build for this exact runtime
+        working-directory: apps/mobile
+        run: |
+          runtime=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../../.android-ci/runtime.json")).runtimeVersion)')
+          eas build:list --platform android --status finished --distribution internal --channel production --build-profile production --runtime-version "$runtime" --limit 50 --json --non-interactive > ../../.android-ci/builds.json
+      - name: Check native compatibility and artifact availability
+        id: gate
         env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --no-daemon --max-workers=2 -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
-      - name: Verify upgrade signing, arm64-only APK and Pixel 16-KiB compatibility
-        env:
-          ANDROID_BUILD_TOOLS: ${{ steps.toolchain.outputs.build_tools }}
-        run: node deploy/mobile/android-build.mjs verify-apk
-      - id: apk_artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+        run: |
+          node deploy/mobile/eas-distribution.mjs gate
+          if [ "$(cat .android-ci/baseline.json)" = null ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            url=$(node deploy/mobile/eas-distribution.mjs artifact-url)
+            if curl --fail --location --silent --show-error --retry 2 "$url" -o .android-ci/mint.apk; then
+              node deploy/mobile/eas-distribution.mjs verify-apk
+              echo 'build=false' >> "$GITHUB_OUTPUT"
+            else
+              echo 'EAS artifact unavailable; rebuilding conservatively.'
+              echo 'build=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Build signed production APK on EAS
+        if: steps.gate.outputs.build == 'true'
+        run: |
+          (cd apps/mobile && eas build --platform android --profile production --wait --freeze-credentials --json --non-interactive > ../../.android-ci/build-result.json)
+          node deploy/mobile/eas-distribution.mjs build-result
+          url=$(node deploy/mobile/eas-distribution.mjs artifact-url)
+          curl --fail --location --silent --show-error --retry 2 "$url" -o .android-ci/mint.apk
+          node deploy/mobile/eas-distribution.mjs verify-apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.gate.outputs.build == 'true'
         with:
           name: mint-android-apk
-          path: |
-            apps/mobile/android/app/build/outputs/apk/release/app-release.apk
-            apps/mobile/android/app/build/outputs/apk/release/app-release.apk.sha256
+          path: .android-ci/mint.apk
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
-      - name: Record distributed native baseline only after APK upload
-        env:
-          APK_ARTIFACT_ID: ${{ steps.apk_artifact.outputs.artifact-id }}
-        run: node deploy/mobile/android-build.mjs state
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: mint-android-native-state
-          path: .android-ci/native-state.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-      - name: Download and installation instructions
-        env:
-          APK_URL: ${{ steps.apk_artifact.outputs.artifact-url }}
+      - name: Publish compatible JavaScript update on EAS
+        if: steps.gate.outputs.build == 'false'
+        working-directory: apps/mobile
         run: |
-          echo "### Install on Pixel 10 Pro" >> "$GITHUB_STEP_SUMMARY"
-          echo "[Download the signed arm64 APK artifact]($APK_URL), unzip it, and open app-release.apk on your Pixel. Allow installs from that browser/file manager when Android prompts. Subsequent builds use the same signing key and a higher versionCode; do not uninstall to upgrade. ADB alternative: \`adb install -r app-release.apk\`." >> "$GITHUB_STEP_SUMMARY"
-          echo "Native runtime: \`$MINT_NATIVE_RUNTIME\`; versionCode: \`$MINT_ANDROID_VERSION_CODE\`. APK retained for 30 days." >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove runner keystore
+          eas env:exec production 'EXPO_NO_DOTENV=1 node ../../node_modules/expo-updates/bin/cli.js runtimeversion:resolve --platform android --workflow managed > ../../.android-ci/update-runtime.json' --non-interactive
+          node -e 'const fs=require("fs"); const a=JSON.parse(fs.readFileSync("../../.android-ci/runtime.json")); const b=JSON.parse(fs.readFileSync("../../.android-ci/update-runtime.json")); if (!a.runtimeVersion || a.runtimeVersion!==b.runtimeVersion) throw Error("Runtime changed; refusing publication")'
+          eas update --platform android --channel production --environment production --message "GitHub ${GITHUB_SHA}" --non-interactive
+      - name: Delivery summary
+        env:
+          BUILT: ${{ steps.gate.outputs.build }}
+        run: |
+          if [ "$BUILT" = true ]; then
+            echo 'A signed APK was built on EAS, verified against the configured certificate, and uploaded as an Actions artifact. Install it to receive this native runtime. No OTA was published in this run.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'The matching finished EAS APK and its signer were verified; a production Android update was published. Updates are downloaded on launch and applied on a subsequent launch; embedded recovery remains available.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Remove local signing credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/mint-release.keystore"
-
-  ota:
-    name: Signed self-hosted OTA publication
-    needs: [detect, apk]
-    if: >-
-      always() && !cancelled() && needs.detect.result == 'success' &&
-      (needs.apk.result == 'success' || needs.apk.result == 'skipped') &&
-      vars.OTA_PUBLISH_ENABLED == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      MINT_NATIVE_RUNTIME: ${{ needs.detect.outputs.runtime }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
-        with:
-          node-version: 22
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: android-ci-inputs
-          path: .android-ci
-      - name: Sign, upload immutable assets, atomically publish and verify read-back
-        env:
-          OTA_SIGNING_PRIVATE_KEY_PEM: ${{ secrets.OTA_SIGNING_PRIVATE_KEY_PEM }}
-          OTA_PUBLISH_TOKEN: ${{ secrets.OTA_PUBLISH_TOKEN }}
-          PUBLISH_OTA: "true"
-        run: node deploy/mobile/ota-publish.mjs
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: signed-android-ota-manifest
-          path: .android-ci/publication.json
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 30
-      - name: Explain OTA launch behavior
         run: |
-          echo "Signed production Android OTA published and verified for runtime \`$MINT_NATIVE_RUNTIME\`. Installed compatible builds check on launch, download in the background, then use the update on a later cold launch. Embedded/cached launch remains available offline. Native changes still require installing the new APK." >> "$GITHUB_STEP_SUMMARY"
+          rm -f apps/mobile/credentials.json .android-ci/release.keystore
+          if [ -f .android-ci/app-config-before-init.json ]; then
+            cp .android-ci/app-config-before-init.json apps/mobile/app.json
+          fi

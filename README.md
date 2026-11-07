@@ -15,6 +15,7 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | Feature | What it means for you |
 | --- | --- |
 | **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and one route-based Search for your library and more recordings. No embedded Plexamp required. |
+| **Use the Android app** | Consumer-focused Expo app with persistent playback and account-scoped downloads. EAS Build creates installable APKs; EAS Update delivers compatible JavaScript updates. [Setup and downloads](docs/android-builds.md). |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
 | **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
 | **Search and discover** | Search your library and more recordings, then browse personalized mixes, artist radio, genres and real charts without changing destinations. |
@@ -49,6 +50,15 @@ You will need:
 | **Existing Plex library** | Either setup, then [read-only library configuration](docs/self-hosting.md#use-an-existing-plex-music-library-read-only) | Your current Plex server remains separate |
 
 These are complete deployments, not just frontend containers. Keep databases, generated secrets and service configurations when updating.
+
+### Android app
+
+The [Expo consumer app](docs/mobile.md) connects to your own Mint HTTPS server
+with the same approved account. [EAS Build and EAS Update](docs/android-builds.md)
+handle APK builds and OTA delivery; no application-update container or storage
+mount is needed on your NAS. Native changes require a new APK, while compatible
+JavaScript changes can update through Expo. Expo's free-plan quotas and device
+validation limits still apply; EAS does not host your music or Mint backend.
 
 ### Option A: NAS or Portainer
 

@@ -27,12 +27,8 @@
         "apps/web/src/app/api/native/**",
         "apps/web/src/lib/native-*.ts",
         "apps/web/tests/native-*.test.ts",
-        "apps/web/src/app/api/updates/**",
-        "apps/web/src/lib/ota-updates.ts",
-        "apps/web/tests/ota-updates.test.ts",
         "docs/mobile.md",
-        "docs/mobile-design.md",
-        "docs/mobile-updates-server.md"
+        "docs/mobile-design.md"
       ]
     },
     {
@@ -585,6 +581,10 @@
         "caddy",
         "ci",
         "github actions",
+        "eas build",
+        "eas update",
+        "apk",
+        "ota",
         "release",
         "ghcr",
         "self-hosting",

@@ -37,6 +37,19 @@ Local Expo commonly uses `http://localhost:8081`; `127.0.0.1` is a different
 origin. Native iOS/Android do not need browser CORS. Existing web-cookie
 authentication and CSRF protections remain unchanged.
 
+Android APKs and OTA application updates now use [EAS Build and EAS Update](android-builds.md).
+Mint's backend still serves native account and music APIs; Expo does not receive
+your music library or backend credentials. No OTA server/container/volume is
+required. When upgrading from the previous self-hosted OTA setup, remove
+`ota-storage-init`, the web OTA mount and dependency, and `OTA_STORAGE_DIR`,
+`OTA_PUBLISH_TOKEN_SHA256`, `OTA_SIGNING_CERTIFICATES` and `OTA_MAX_STORAGE_BYTES`
+from your private Compose configuration. Stop including the retired
+`docker-compose.updates.yml` overlay. Preserve the old update folder/volume
+until backed up; do not delete data to perform this migration. Keep
+`NATIVE_WEB_ORIGINS` and every existing database, media and secrets mount.
+Install the new EAS-enabled APK; an old APK cannot change its embedded update
+server through an EAS update.
+
 ## NAS setup: copy, paste, deploy
 
 **UGREEN NAS OS, Portainer, or another Docker project editor:** open [`docker-compose.nas.yml`](../docker-compose.nas.yml), copy the **entire file**, and paste it into a new Compose project named `mint`. No terminal, `.env`, Git checkout, build, or extra config files.

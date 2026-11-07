@@ -14,8 +14,8 @@
 - Upgrade order: update the pipeline worker first, wait for migrations and health, then update web.
 - Never use volume or data deletion, host or none network modes, or static container IPs as generic fixes.
 - A successful push does not prove CI passed or images were published. Verify the Release workflow before claiming GHCR availability.
-- Android distribution compares the native fingerprint with the last successfully uploaded signed APK, not the previous commit. OTA-only changes publish signed exports without Gradle; missing native history builds conservatively.
-- Preserve stable APK signing, certificate-bound runtimes, default-branch publication and embedded/offline recovery. Never distribute Expo's debug-signed release default or claim an APK/device check from prebuild alone. See [Android builds](../../docs/android-builds.md).
+- Android distribution uses EAS Build and EAS Update. Compare the native fingerprint with a successfully built APK, not the previous commit; compatible JavaScript changes only publish an update, and missing native history builds conservatively.
+- Preserve stable APK signing, exact native runtimes, default-branch publication and embedded/offline recovery. Never distribute Expo's debug-signed release default or claim an APK/device check from prebuild alone. EAS quotas still apply. See [Android builds](../../docs/android-builds.md).
 
 Details: [workers and operations](../workers-and-operations.md#self-hosting-and-upgrades).
 
@@ -30,31 +30,29 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 
 - **Scope:** Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs.
 - **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md), [docs/self-hosting.md](../../docs/self-hosting.md).
-- **Imports from:** [`mobile`](mobile.md)
+- **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (34)
+### Owned files (25)
 
-- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `Dockerfile`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.updates.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
+- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `Dockerfile`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `android-apk.yml`, `ci.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
 - `deploy/docker/` `caddy.test.mjs`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`
-- `deploy/mobile/` `android-build.mjs`, `android-build.test.mjs`, `native-runtime.integration.test.mjs`, `native-runtime.mjs`, `native-runtime.test.mjs`, `ota-compose.test.mjs`, `ota-integration.test.mjs`, `ota-publish.mjs`, `ota-publish.test.mjs`, `release-signing.gradle`
+- `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`
 - `docs/` `android-builds.md`, `self-hosting.md`
 
 ### Validate
 
-Owned tests: 9.
+Owned tests: 4.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/android-build.test.mjs deploy/mobile/native-runtime.integration.test.mjs deploy/mobile/native-runtime.test.mjs deploy/mobile/ota-compose.test.mjs deploy/mobile/ota-integration.test.mjs deploy/mobile/ota-publish.test.mjs
+node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs
 docker compose config --quiet
 node --import tsx --test deploy/mobile/*.test.mjs
 ```
-
-> Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.
 
 <!-- agents:generated:end -->

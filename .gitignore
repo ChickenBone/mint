@@ -17,3 +17,4 @@ existing-library/
 apps/mobile/android/
 apps/mobile/ios/
 .android-ci/
+apps/mobile/credentials.json

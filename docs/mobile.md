@@ -66,18 +66,18 @@ npm run ios -w @mint/mobile
 npm run web -w @mint/mobile
 ```
 
-`app.json` supplies generic application identifiers; set your own stable
-identifiers and signing configuration before distributing builds. `eas.json`
-defines development/internal/production profiles but does not configure an
-Expo account/project, initiate a cloud build or authorize store submission.
-There are no embedded deployment addresses or secrets.
+`app.json` supplies stable application identifiers and the linked Expo project.
+`eas.json` defines development/internal/production profiles. Production Android
+distribution uses **EAS Build** for an installable APK and **EAS Update** for
+compatible JavaScript/assets. No Play Store submission is configured. The public
+Expo project ID/update URL are not credentials or a Mint backend address.
 
-For a signed downloadable Pixel-compatible APK and native-change-only Android
-builds, use [GitHub Actions Android builds](android-builds.md). The same workflow
-exports and publishes compatible JavaScript/assets to Mint's
-[self-hosted signed OTA server](mobile-updates-server.md), without EAS hosting.
-Operator URL/certificate/signing/storage setup is explicit; OTA is not delivered
-merely because an APK build was skipped.
+Follow [Android builds and updates](android-builds.md) for GitHub authentication,
+stable Android signing, native compatibility gating and downloads. A new
+native runtime still requires installing a new APK. EAS hosts application
+updates, not account APIs or music; the native backend remains on your Mint
+server. Existing APKs configured for the removed self-hosted update endpoint
+must be replaced with an EAS-enabled APK before they can receive EAS updates.
 
 ## Account transport and server requirements
 

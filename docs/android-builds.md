@@ -1,205 +1,140 @@
-# Android APKs and self-hosted OTA updates
+# Android APKs and Expo updates
 
-[Mobile setup](mobile.md) | [OTA server and protocol](mobile-updates-server.md)
+[Mobile setup](mobile.md) | [Expo dashboard](https://expo.dev)
 
-The **Android APK and OTA** Actions workflow compiles a standalone, signed
-`arm64-v8a` release APK for devices such as Pixel 10 Pro. It uses GitHub runners,
-not EAS builds, an Expo account, or Play Store submission. GitHub's normal
-Actions/storage allowance still applies; this is not a promise of unlimited
-free usage. Existing web CI/release workflows are unchanged.
+Mint uses **EAS Build** to build installable arm64 Android APKs and **EAS Update** to
+host compatible JavaScript/assets. GitHub Actions coordinates distribution.
+The Mint server continues to serve account APIs and music; no application
+update endpoint, signing service or OTA storage is needed on your NAS.
+No Play Store submission is configured.
 
-Android setup installs `platform-tools` explicitly rather than the retired
-`tools` package. The build then installs the SDK, build tools and NDK selected
-by the generated native project.
+EAS's free plan has build, update-user, bandwidth and storage quotas. Check
+[current pricing](https://expo.dev/pricing) before relying on a quota; free
+hosting is not unlimited delivery or a guarantee of immediately available
+build runners. Builds and updates upload application source/bundled assets
+to Expo, not your music library, account database or Mint deployment secrets.
 
-Ordinary mobile JavaScript, TypeScript, styles and bundled content export as
-signed self-hosted OTA updates without recompiling Android. Native changes
-produce a new APK first, then publish the matching runtime update. Downloading
-and installing that APK remains necessary for a new native runtime.
+## Expo project and GitHub access
 
-## One-time setup
+The application configuration is linked to its Expo project. If maintaining
+your own fork, create your own project and update the public project ID and
+matching `https://u.expo.dev/<project-id>` URL together:
 
-Do these steps on an operator-controlled machine. Keep both private keys and
-the publisher token outside the checkout, backed up securely. Android APK
-signing and OTA manifest signing are **different keys**.
+```bash
+npm install --global eas-cli
+cd apps/mobile
+eas login
+eas init --id <your-expo-project-id>
+```
 
-1. Generate a stable Android signing keystore using JDK `keytool`, outside the
-   repository. It prompts for passwords and certificate details:
+On a machine without permission to install global packages, use a
+user-owned npm prefix or invoke the workflow's pinned EAS CLI with `npx`.
+Being signed into Expo on one machine does not authenticate another host
+or GitHub Actions.
 
-   ```bash
-   keytool -genkeypair -storetype JKS -keystore mint-release.keystore \
-     -alias mint -keyalg RSA -keysize 4096 -validity 10000
-   base64 -w 0 mint-release.keystore > mint-release.keystore.base64
-   keytool -exportcert -keystore mint-release.keystore -alias mint -file mint-apk-cert.der
-   openssl x509 -inform DER -in mint-apk-cert.der -noout -fingerprint -sha256
-   ```
+Create an Expo access token with access to the linked project at
+[Expo access tokens](https://expo.dev/settings/access-tokens), then configure
+**Repository Settings > Secrets and variables > Actions**:
 
-   On macOS use `base64 -i mint-release.keystore | tr -d '\n'` instead.
-   Never upload the keystore to the repository or an Actions artifact.
+| Kind | Name | Purpose |
+| --- | --- | --- |
+| Secret | `EXPO_TOKEN` | Authenticate EAS project initialization, builds and update publication |
+| Secret | `ANDROID_KEYSTORE_BASE64` | Base64 contents of the existing stable Android keystore |
+| Secret | `ANDROID_KEYSTORE_PASSWORD` | Existing keystore password |
+| Secret | `ANDROID_KEY_ALIAS` | Existing private-key alias |
+| Secret | `ANDROID_KEY_PASSWORD` | Existing alias password |
+| Variable | `ANDROID_SIGNING_CERT_SHA256` | SHA256 of the existing APK signing certificate |
 
-2. Generate a separate long-lived OTA RSA private key and public code-signing
-   certificate. SDK 58 requires both Digital Signature and Code Signing usages:
+Keep the Android keystore and passwords backed up outside the checkout.
+The CI workflow supplies the existing keystore to EAS rather than generating
+a different signer. APK verification also retains 16-KiB ZIP/ELF alignment
+checks for Pixel devices. Never commit a filled `credentials.json`, keystore,
+access token or private key, or upload them as a GitHub artifact.
+Protect the default branch and its Actions secrets.
 
-   ```bash
-   openssl req -x509 -newkey rsa:2048 -nodes \
-     -keyout ota-private-key.pem -out ota-certificate.pem -days 3650 \
-     -subj "/CN=Mint OTA signing" \
-     -addext keyUsage=digitalSignature -addext extendedKeyUsage=codeSigning
-   openssl rand -hex 32 > ota-publish-token.txt
-   tr -d '\n' < ota-publish-token.txt | openssl dgst -sha256
-   node -e 'const fs=require("fs"); console.log(JSON.stringify({main:fs.readFileSync("ota-certificate.pem","utf8")}))' \
-     > ota-certificates.json
-   ```
+For a new fork without an existing signing key, generate one using JDK
+`keytool` on an operator-controlled machine:
 
-   The token hash must be over the exact secret, **without a trailing newline**.
-   The certificate is public; the private key and raw token are not.
+```bash
+keytool -genkeypair -storetype JKS -keystore mint-release.keystore \
+  -alias mint -keyalg RSA -keysize 4096 -validity 10000
+base64 -w 0 mint-release.keystore > mint-release.keystore.base64
+keytool -exportcert -keystore mint-release.keystore -alias mint -file mint-apk-cert.der
+openssl x509 -inform DER -in mint-apk-cert.der -noout -fingerprint -sha256
+```
 
-3. Deploy the OTA server code on the existing public HTTPS Mint host, with
-   isolated persistent storage. For the CLI Compose stack, add the following
-   to the operator's private `.env` (never commit filled values):
+On macOS use `base64 -i mint-release.keystore | tr -d '\n'` instead.
+Do not replace an existing key: Android upgrades must retain the package
+identifier and signer and use an increasing versionCode.
 
-   ```dotenv
-   OTA_PUBLISH_TOKEN_SHA256=<lowercase token hash>
-   OTA_SIGNING_CERTIFICATES='{"main":"<public PEM certificate with escaped newlines>"}'
-   OTA_MAX_STORAGE_BYTES=1073741824
-   ```
+## APK builds and compatible updates
 
-   Use the actual one-line JSON from `ota-certificates.json`. Start the optional
-   overlay with `docker compose -f docker-compose.yml -f docker-compose.updates.yml up -d`.
-   Use both files for subsequent upgrades. This requires the updated web image;
-   an old deployed server will return 404. The overlay initializes a dedicated
-   `ota_updates` volume for UID 1000 and mounts it only into web, never music,
-   worker or hub. Back it up. It is suitable for a single web instance/shared
-   POSIX volume, not ephemeral Vercel storage. For NAS project editors, configure
-   the same server variables and dedicated writable mount in the web service;
-   do not paste private signing keys into Compose. See the server guide for
-   TLS/proxy limits, disk budgets and recovery.
+The default-branch workflow checks the Android native runtime against
+successful EAS APK builds. A missing/unknown baseline, changed native runtime
+or explicit force rebuild creates a new APK. Compatible JavaScript-only
+changes publish through EAS Update without consuming another Android build.
+A failed new native build must not authorize publishing a matching update.
 
-4. In **Repository Settings > Secrets and variables > Actions**, configure:
+Native dependencies, config plugins, permissions, native artwork and update
+configuration are compatibility inputs. A Git commit hash or only the previous
+commit is not a safe native baseline. Keep the guarded Android audio config
+plugin: EAS must apply it during native generation, just as local prebuild does.
+Changing SDK/toolchain requirements still requires support from the selected
+EAS build image; moving a build to Expo does not make unavailable Android SDK
+packages available.
 
-   | Kind | Name | Value |
-   | --- | --- | --- |
-   | Secret | `ANDROID_KEYSTORE_BASE64` | Base64 contents of the stable keystore |
-   | Secret | `ANDROID_KEYSTORE_PASSWORD` | Keystore password |
-   | Secret | `ANDROID_KEY_ALIAS` | `mint` or your chosen alias |
-   | Secret | `ANDROID_KEY_PASSWORD` | Alias private-key password |
-   | Variable | `ANDROID_SIGNING_CERT_SHA256` | APK certificate SHA256, with or without colons |
-   | Variable | `MINT_OTA_URL` | `https://mint.example.com/api/updates` using your public host |
-   | Variable | `OTA_SIGNING_CERTIFICATE` | Entire public `ota-certificate.pem` |
-   | Secret | `OTA_SIGNING_PRIVATE_KEY_PEM` | Entire `ota-private-key.pem` |
-   | Secret | `OTA_PUBLISH_TOKEN` | Exact token from `ota-publish-token.txt`, without newline |
-   | Variable | `OTA_PUBLISH_ENABLED` | `true` after the server is deployed/configured |
+Production APKs and updates use the **production** channel. Runtime isolation
+prevents a JavaScript update built for changed native modules from loading into
+an old APK. Preview/development builds remain separate. Embedded/cached launch
+and Expo recovery remain enabled; updates are checked at launch and may be
+used on a later cold launch, not by forcibly restarting music playback.
 
-   Public URL/certificate configuration is mandatory before building the first
-   OTA-enabled APK. Missing signing credentials fail explicitly; the workflow
-   never distributes Expo's default debug-signed release APK. The certificate
-   is validated and pinned against the last distributed build. Preserve package
-   identifier, keystore, alias and certificate to allow upgrades.
+Open **Actions > Android EAS Build and Update** and run the workflow on the default
+branch for the first build. Use **force_rebuild** when intentionally embedding
+current JavaScript in a fresh APK even if native compatibility is unchanged.
+The run links to EAS build/update results. Newly built, verified APKs are also
+retained in the `mint-android-apk` GitHub artifact for 30 days. An APK build embeds
+the current JavaScript; that run does not also publish an OTA update. Subsequent
+compatible changes publish an update instead. Expo owns APK compilation and
+hosting; a submitted or queued build is not a completed APK.
 
-   With `OTA_PUBLISH_ENABLED` unset/false, the workflow still builds required
-   APKs and retains exported JS assets, but **does not deliver OTA changes**.
-   This lets an operator bootstrap without silently deploying to a host.
-   Only protected default-branch pushes/manual runs distribute code; there is
-   no pull-request or fork-secret workflow. Protect that branch and Actions
-   secrets accordingly.
+Download the APK from the completed EAS build page, then open it on your phone
+and allow installation from that browser/file manager when Android asks.
+Alternatively:
 
-## First APK, downloads and updates
+```bash
+adb install -r app-release.apk
+```
 
-After the workflow is published to GitHub, open **Actions > Android APK and OTA >
-Run workflow** on the default branch. No baseline means the first APK builds
-automatically. Select **force_rebuild** for an intentional new APK even without
-native changes, for example to embed current JS while OTA hosting is disabled.
-No repository automation is dispatched merely by configuring it locally.
+Install over the existing release app; uninstalling clears account/download
+state. A debug/development installation has a different signer and cannot
+be upgraded in place with the release keystore. Physical-device launch,
+playback, background audio, offline recovery and OTA application still need
+device testing even when CI and EAS Build pass.
 
-Open the completed run's **APK** job summary and download `mint-android-apk`.
-GitHub downloads a ZIP; extract `app-release.apk` and its SHA256 file. On your
-Pixel, open the APK and allow installs from that browser/file manager if Android
-prompts. Alternatively use `adb install -r app-release.apk`. Use the same key
-and install over the existing app; uninstalling clears local account/download
-data. An old debug/development installation has another signer and cannot be
-upgraded in place by this release keystore.
+## Retiring self-hosted OTA
 
-APKs and native-baseline metadata are retained for **30 days**; intermediate
-exports for **3 days**, and published signed manifests for **30 days**. Keep a
-private backup of known-good export directories for rollback. There is no
-GitHub Release, public app store, or unlimited artifact retention configured.
+The previous `/api/updates/**` server, custom manifest publisher and
+`docker-compose.updates.yml` overlay have been removed. Install an EAS-enabled
+APK before expecting EAS updates; an existing APK's embedded update URL and
+certificate cannot be changed by an update served only from Expo.
 
-Compatible apps check for production OTA updates on launch, download in the
-background and use them on a later cold launch. There is no forced reload during
-music playback. Cached/embedded launch and Expo anti-bricking recovery stay
-enabled; missing network or an unknown runtime does not justify loading another
-runtime. Physical-device launch, recovery, playback and offline behavior still
-need device testing.
+Remove these obsolete GitHub settings:
 
-## How the native gate saves Actions time
+- Secrets: `OTA_SIGNING_PRIVATE_KEY_PEM`, `OTA_PUBLISH_TOKEN`.
+- Variables: `MINT_OTA_URL`, `OTA_SIGNING_CERTIFICATE`, `OTA_PUBLISH_ENABLED`.
 
-Only mobile/client/build-related paths start this workflow. A short job installs
-the locked graph, prebuilds Android (including the guarded audio patch), computes
-the runtime and exports JS. The expensive Gradle job runs only when the runtime
-differs from the last successfully uploaded APK, the retained baseline is
-missing/expired, or a manual force rebuild is requested.
+The Android signing settings are **not** obsolete. Keep them and `EXPO_TOKEN`.
+There is no self-hosted OTA private signing key or public signing certificate
+required for the EAS free-plan setup.
 
-The runtime combines the installed SDK 58 `@expo/fingerprint` strict Android
-sources with native/plugin npm **resolved versions and integrity**, native
-generation tools, root install hooks/overrides/patches, OTA certificate bytes
-and native build workflow/helpers. It covers Expo/RN upgrades, transitive
-native lockfile changes, local modules, plugin source/options, permissions,
-native icons/splash/fonts and guarded native patches. JS-only/web-only lockfile
-churn is not itself a native change. Unknown/unhashed native inputs or API errors
-fail explicitly instead of reporting OTA compatibility.
+For private NAS Compose copies, remove OTA settings, the `ota-storage-init`
+service, its web dependency and the dedicated OTA web mount. Keep native API
+CORS configuration, database/secrets/media mounts and existing service values.
+See [server migration](self-hosting.md#expo-consumer-app-and-browser-sign-in).
+Back up the old OTA folder/volume rather than deleting it as part of migration.
 
-App version/versionCode and the explicit runtime string are excluded to avoid
-fingerprint recursion and a build on every version increment. Android native
-module/plugin **file contents** are hashed, not just package names. JS app sources,
-styles, ordinary content, OTA export/manifests and the OTA publisher implementation
-are not native sources. Conservative false-positive rebuilds are preferable to
-serving incompatible code.
-
-The baseline is a small retained state artifact tied to the exact commit/run and
-live APK artifact, with the **APK job's success** checked via the Actions API.
-Successful JS-only runs, failed/cancelled APK builds and the previous commit
-never become baselines. An OTA publication failure after a successful APK does
-not cause repeated native builds. Multiple pushes/retries/cancellations therefore
-compare against what was actually distributed, not `HEAD~1`. At most 1,000
-completed runs are searched; missing history conservatively bootstraps.
-
-Version codes are seconds since January 1, 2025, or the last retained APK code
-plus one, whichever is higher. This survives workflow recreation and reruns.
-Distribution is serialized per default branch; stale runs are cancelled. Keep
-the runner clock and stable workflow ordering intact. The helper refuses codes
-outside Android's supported positive range rather than producing a downgrade.
-
-The native project selects SDK/build-tools/NDK from the resolved RN catalog and
-prebuild overrides. The inspected SDK 58 project uses Gradle 9.4.1, AGP 9.2.1,
-JDK 17, compile SDK 37, build-tools 37.0.0 and NDK 27.1.12297006. npm and Gradle
-caches, arm64-only compilation, two Gradle workers, bounded timeouts/retention and
-concurrency cancellation limit work. The APK verifier checks signer/version,
-non-debuggable release, arm64-only libraries and 16-KiB ZIP/ELF page alignment.
-Changing SDK/native dependencies may require adapting tooling; do not bypass
-guarded patch/signing/alignment failures.
-
-## Rollback and troubleshooting
-
-For an OTA rollback, restore a **known-good export** into `.android-ci/export`,
-retain its Expo asset keys and native runtime, and use the same certificate,
-channel and publisher. Run the publisher with the configured environment:
-`PUBLISH_OTA=true node deploy/mobile/ota-publish.mjs`. It creates a new UUID and
-new timestamp/signature, uploads/verifies immutable assets first, activates the
-manifest last, then reads back and verifies the signed result. Do not edit an old
-manifest UUID or republish it with an old creation time. Keep
-`.android-ci/expo-config.json` and the public certificate alongside the export.
-This is a deliberate operator publication, not an automatic remote action.
-
-An upload/signature/runtime/quota failure leaves the active update untouched.
-Rerun a failed publishing job after fixing its cause; never disable signing or
-embedded recovery to work around it. Certificate/URL/channel/native configuration
-changes require a new APK; changing the Android keystore prevents normal
-upgrades. See [server errors and rotation](mobile-updates-server.md#rollback-rotation-and-storage-recovery).
-
-Local validation:
-`node --import tsx --test deploy/mobile/*.test.mjs`,
-`npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts`,
-mobile typecheck/lint, Expo Doctor and an Android prebuild/export. These checks
-do not prove a GitHub Gradle build ran, an APK exists, deployment completed, or
-Pixel installation/OTA/background playback worked. Actual signing secrets,
-published workflow, server setup and device testing are operator prerequisites.
+Manage subsequent update rollback in EAS for the same compatible runtime.
+Do not roll an incompatible native update onto an old APK or disable recovery
+to conceal a failed update. Keep a known-good APK and its stable signing key
+for native rollback/recovery.

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -25,6 +25,20 @@ test("Expo web exact-origin allowlist reaches CLI and self-contained NAS web ser
   assert.equal(nas.services.web.environment.NATIVE_WEB_ORIGINS, origin);
   assert.equal(nas.services.worker.environment.NATIVE_WEB_ORIGINS, undefined);
   assert.equal(nas.services.hub.environment.NATIVE_WEB_ORIGINS, undefined);
+});
+
+test("EAS updates need no self-hosted OTA endpoints or Compose storage", () => {
+  for (const file of ["../../docker-compose.yml", "../../docker-compose.nas.yml"]) {
+    const { services } = resolve(readFileSync(new URL(file, import.meta.url), "utf8"));
+    assert.equal(services["ota-storage-init"], undefined);
+    assert.ok(Object.keys(services.web.environment).every(key => !key.startsWith("OTA_")));
+    assert.ok((services.web.volumes || []).every(mount => mount.target !== "/var/lib/mint/updates"));
+  }
+  for (const file of [
+    "../../docker-compose.updates.yml",
+    "../../apps/web/src/app/api/updates/route.ts",
+    "../../apps/web/src/lib/ota-updates.ts",
+  ]) assert.equal(existsSync(new URL(file, import.meta.url)), false);
 });
 
 test("separate analysis machines have configurable resources without media-server credentials or open ports", () => {
