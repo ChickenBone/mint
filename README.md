@@ -218,6 +218,8 @@ server restart/redeployment; iOS/Android do not require browser CORS.
 
 - [Public agent handbook](agents/README.md) — product decisions, architecture boundaries, design guidance, Playwright fixtures and validation.
 - [Portable starter prompt](agents/starter-prompt.md) — reusable instructions for future chats. `npm run agents -- context "<request>" [paths…]` produces a focused guidance/contract/validation packet; add `--json` for automation.
+- [Focused mobile features](agents/mobile-features.md) — feature-owned UI, shared contracts and future extension seams. [Ignored agent memory](agents/local-memory.md) is explicitly opt-in and task-scoped, never public context or publication permission.
+- [Mint mobile UX skill](.github/skills/mint-mobile-ux/SKILL.md) — compact native interaction guidance with pinned official Expo references loaded on demand; not an app UI rewrite or performance certification.
 - [Native app and account transport](docs/mobile.md) · [Native design](docs/mobile-design.md) · [Playback limits](docs/mobile-playback.md) · [Android APKs and EAS updates](docs/android-builds.md)
 - [Full self-hosting and integration reference](docs/self-hosting.md)
 - [Spotify playlist setup and restrictions](docs/spotify.md)

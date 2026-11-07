@@ -1,1 +1,1 @@
-export { LibraryScreen as default } from "../src/screens/LibraryScreen";
+export { LibraryScreen as default } from "../src/features/your-music/LibraryScreen";

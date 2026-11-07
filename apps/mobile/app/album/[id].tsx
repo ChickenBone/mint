@@ -1,6 +1,6 @@
-import { DetailScreen } from "../../src/screens/DetailScreen";
+import { AlbumScreen } from "../../src/features/albums/AlbumScreen";
 import { useLocalSearchParams } from "expo-router";
 export default function AlbumRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  return <DetailScreen key={id} kind="album" />;
+  return <AlbumScreen key={id} />;
 }

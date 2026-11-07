@@ -48,6 +48,8 @@ export function compileManifest(manifest) {
   for (const d of manifest.domains) {
     if (!/^[a-z][a-z0-9-]*$/.test(d.id)) throw new Error(`Invalid domain id: ${d.id}`);
     if (ids.has(d.id)) throw new Error(`Duplicate domain id: ${d.id}`);
+    if (d.surface !== undefined && !["mobile", "server"].includes(d.surface)) throw new Error(`Invalid surface for domain: ${d.id}`);
+    if (d.consumer !== undefined && (typeof d.consumer !== "boolean" || (d.consumer && d.surface !== "mobile"))) throw new Error(`Invalid consumer flag for domain: ${d.id}`);
     ids.add(d.id);
   }
   return {
@@ -158,7 +160,20 @@ export function exportedNames(source) {
 
 // ---------- routing ----------
 
+export const MEMORY_ROOT = ".agent-memory";
+export const isLocalMemoryPath = (file) => file.split(/[\\/]/).some((part) => part.toLowerCase() === MEMORY_ROOT);
+
+/** Task IDs are labels, never arbitrary filesystem paths. */
+export function memoryScope(compiled, domain, task) {
+  if (!compiled.domains.some((d) => d.id === domain)) throw new Error("memory: unknown domain; use agents -- route or agents -- help");
+  if (typeof task !== "string" || !/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/.test(task)) {
+    throw new Error("memory: task-id must be 1–64 lowercase letters, digits or hyphens, starting and ending with a letter or digit");
+  }
+  return `${MEMORY_ROOT}/${domain}/${task}`;
+}
+
 const STOP = new Set(["the", "and", "for", "with", "from", "into", "that", "this", "add", "fix", "make", "change", "update", "page", "when", "should", "have", "new", "use", "not"]);
+const SURFACE_WORDS = new Set(["mobile", "native", "android", "ios", "expo", "web", "browser", "backend", "server", "nextjs"]);
 
 export function tokenize(text) {
   return text
@@ -189,7 +204,8 @@ export function routeQuery(compiled, owners, args) {
       }
     }
     if (!matched) {
-      for (const d of compiled.domains) if (d.patterns.some((p) => p.re.test(norm))) bump(d.id, 10, `pattern ${norm}`);
+      const owner = resolveOwnership(compiled, [norm]).owners.get(norm);
+      if (owner) bump(owner, 10, `pattern ${norm}`);
     }
   }
 
@@ -199,7 +215,7 @@ export function routeQuery(compiled, owners, args) {
       const re = new RegExp(`(?:^|[^a-z0-9])${escapeRe(k)}(?:s|es)?(?:[^a-z0-9]|$)`);
       if (re.test(text)) bump(d.id, k.includes(" ") ? 5 : 3, `keyword "${kw}"`);
     }
-    if (words.includes(d.id)) bump(d.id, 4, `domain "${d.id}"`);
+    if (words.includes(d.id) && !(d.surface === "mobile" && d.id === "mobile" && words.length > 1)) bump(d.id, 4, `domain "${d.id}"`);
   }
 
   // File-name hits catch vocabulary the keyword lists miss; capped so they only break ties.
@@ -207,10 +223,26 @@ export function routeQuery(compiled, owners, args) {
   for (const [file, id] of owners) {
     const base = path.posix.basename(file).toLowerCase();
     for (const w of words) {
-      if (w.length >= 4 && base.includes(w)) nameHits.set(id, (nameHits.get(id) ?? 0) + 1);
+      if (w.length >= 4 && !SURFACE_WORDS.has(w) && base.includes(w)) nameHits.set(id, (nameHits.get(id) ?? 0) + 1);
     }
   }
   for (const [id, n] of nameHits) bump(id, Math.min(3, n), "file names");
+
+  const surfaceText = args.filter((arg) => !/^[^\s]*\/[^\s]*$/.test(arg)).join(" ").toLowerCase();
+  const server = /\b(?:web|browser|next(?:\.?js)?|server|backend|api|endpoint|database|migration|worker|indexing|metadata|transport|dto|bearer|provider|oauth|sync|admin|management|acquisition|catalog)\b/.test(surfaceText);
+  const mobile = !server && /\b(?:mobile|android|ios|expo|native)\b/.test(surfaceText);
+  const engine = !server && /\b(?:engine|decoder|dsp|transcode|background audio|native playback|native queue|native offline|expo audio)\b/.test(surfaceText);
+  const consumer = !server && !engine && compiled.domains.some((d) => d.consumer && scores.get(d.id).score > 0);
+  for (const d of compiled.domains) {
+    const entry = scores.get(d.id);
+    if (!entry.score || [...entry.why].some((why) => /^(path|pattern) /.test(why))) continue;
+    if (![...entry.why].some((why) => /^(keyword|domain) /.test(why))) continue;
+    if ((server && d.surface === "server") || ((mobile || engine) && d.surface === "mobile") || (consumer && d.consumer)) {
+      bump(d.id, 4, server ? "server surface" : mobile ? "mobile surface" : engine ? "native engine surface" : "primary consumer surface");
+    } else if ((server && d.surface === "mobile") || ((mobile || consumer) && d.surface === "server")) {
+      entry.score = Math.max(0, entry.score - 8);
+    }
+  }
 
   return [...scores]
     .filter(([, s]) => s.score > 0)
@@ -240,6 +272,7 @@ export function routingPlan(compiled, owners, args) {
 /** Context packets contain public repository metadata, never private paths or file bodies. */
 export function contextPathAllowed(file) {
   if (!file || path.posix.isAbsolute(file) || file.includes("\\") || /[\0\r\n]/.test(file)) return false;
+  if (isLocalMemoryPath(file)) return false;
   const parts = file.replace(/^\.\//, "").split("/");
   if (parts.some((p) => p === "..")) return false;
   if (parts.some((p) => /^(?:\.git|\.copilot|\.expo|\.ssh|\.gnupg|node_modules|data|secrets|private|logs|backups|session-state|coverage|dist|build)$/i.test(p))) return false;

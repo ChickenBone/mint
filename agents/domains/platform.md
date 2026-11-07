@@ -32,7 +32,7 @@
 - **Scope:** Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing.
 - **Read before editing:** [agents/architecture.md](../architecture.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`library`](library.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map platform` (exports, line counts, cross-domain import edges).
 
 ### Owned files (34)

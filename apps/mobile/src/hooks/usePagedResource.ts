@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { appendPage } from "../screens/browse-model";
+import { appendPage } from "./paged-model";
 
 export type ResourcePage<T> = { items: T[]; total: number; next: number | null };
 type View<T> = {

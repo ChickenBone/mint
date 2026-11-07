@@ -16,6 +16,13 @@
 
 Read [self-hosting architecture](../docs/self-hosting.md#architecture) and the Compose files for current service wiring.
 
+Mobile UI uses [focused feature folders](mobile-features.md): `mobile` is shared
+foundation, `mobile-contracts` owns client DTOs/native server transport, and
+`mobile-player` presentation consumes `mobile-playback` core. Use
+`npm run agents -- map mobile-search` (or the relevant capability), not the
+foundation card as an inventory of every screen. These UI seams do not move
+existing backend business rules.
+
 ## Non-negotiable boundaries
 
 - The public web app has no music mount, Plex administrator token or direct media-network access.

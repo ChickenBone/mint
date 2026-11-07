@@ -14,7 +14,9 @@ import {
   contextPathAllowed,
   exportedNames,
   importSpecifiers,
+  isLocalMemoryPath,
   loadWorkspaces,
+  memoryScope,
   replaceBlock,
   resolveImport,
   resolveOwnership,
@@ -40,13 +42,14 @@ const gitLines = (...args) => git(...args).split("\n").filter(Boolean);
 function loadContext() {
   const manifest = JSON.parse(read(MANIFEST));
   const compiled = compileManifest(manifest);
-  const files = [...new Set(gitLines("ls-files", "-co", "--exclude-standard"))].filter((f) => existsSync(abs(f))).sort();
+  const files = [...new Set(gitLines("ls-files", "-co", "--exclude-standard"))].filter((f) => !isLocalMemoryPath(f) && existsSync(abs(f))).sort();
   const ownership = resolveOwnership(compiled, files);
   const workspaces = loadWorkspaces(ROOT);
   return { manifest, compiled, files, fileSet: new Set(files), ...ownership, workspaces, cache: new Map() };
 }
 
 function source(ctx, file) {
+  if (isLocalMemoryPath(file) || hasSymlink(file)) return null;
   if (!ctx.cache.has(file)) ctx.cache.set(file, TEXT_EXT.test(file) ? read(file) : null);
   return ctx.cache.get(file);
 }
@@ -122,7 +125,8 @@ function validationFor(ctx, files, extra = [], changed = null) {
   for (const f of files) {
     const ws = workspaceFor(ctx.workspaces, f);
     if (ws) {
-      if (!wsHit.has(ws.dir)) wsHit.set(ws.dir, { ws, tests: [] });
+      if (!wsHit.has(ws.dir)) wsHit.set(ws.dir, { ws, tests: [], files: [] });
+      wsHit.get(ws.dir).files.push(f);
       if (TEST_FILE.test(f)) wsHit.get(ws.dir).tests.push(f.slice(ws.dir.length + 1));
     } else if (TEST_FILE.test(f)) rootTests.push(f);
     if (/\.integration\.test\./.test(f) || /-db\.test\./.test(f)) {
@@ -136,9 +140,15 @@ function validationFor(ctx, files, extra = [], changed = null) {
   if ((changed ?? files).some(schemaFile)) {
     notes.add(changed ? "Schema changed: add a new migration via `npm run db:generate`; never rewrite applied migrations." : "If you change the schema, add a new migration via `npm run db:generate`; never rewrite applied migrations.");
   }
-  for (const { ws, tests } of [...wsHit.values()].sort((a, b) => a.ws.dir.localeCompare(b.ws.dir))) {
+  for (const { ws, tests, files: workspaceFiles } of [...wsHit.values()].sort((a, b) => a.ws.dir.localeCompare(b.ws.dir))) {
     if (!sharedChanged && ws.scripts.typecheck) cmds.push(`npm run typecheck -w ${ws.name}`);
-    if (ws.scripts.lint) cmds.push(`npm run lint -w ${ws.name}`);
+    if (ws.scripts.lint) {
+      const focused = ws.dir === "apps/mobile" && ws.scripts.lint.trim() === "eslint ."
+        && workspaceFiles.every((file) => ctx.compiled.domains.find((domain) => domain.id === ctx.owners.get(file))?.consumer);
+      const lintFiles = workspaceFiles.filter((file) => SOURCE_EXT.test(file)).map((file) => file.slice(ws.dir.length + 1)).sort();
+      const quote = (file) => /^[\w./-]+$/.test(file) ? file : `'${file.replaceAll("'", "'\\''")}'`;
+      cmds.push(focused && lintFiles.length ? `npm exec -w ${ws.name} -- eslint ${lintFiles.map(quote).join(" ")}` : `npm run lint -w ${ws.name}`);
+    }
     if (tests.length) cmds.push(`npm exec -w ${ws.name} -- ${testRunner(ws)} ${tests.sort().join(" ")}`);
   }
   if (rootTests.length) cmds.push(`node --test ${rootTests.sort().join(" ")}`);
@@ -342,6 +352,85 @@ function orphanInstructionFiles(ctx) {
 
 // ---------- commands ----------
 
+function hasSymlink(file) {
+  return file.split("/").some((_, i, parts) => {
+    try {
+      return lstatSync(abs(parts.slice(0, i + 1).join("/"))).isSymbolicLink();
+    } catch (error) {
+      if (error.code === "ENOENT") return false;
+      throw error;
+    }
+  });
+}
+
+function memoryEntry(file, directory, required = false) {
+  try {
+    const stat = lstatSync(abs(file));
+    if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1)) {
+      throw new Error("memory: unsafe entry; only real directories and single-link regular note files are allowed");
+    }
+    return true;
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+    if (required) throw new Error("memory: scope does not exist; run memory init first");
+    return false;
+  }
+}
+
+function cmdMemory(args, { json }) {
+  const [operation, domain, task] = args;
+  if (args.length !== 3 || !["init", "path"].includes(operation)) {
+    throw new Error("usage: npm run agents -- memory <init|path> <domain> <task-id> [--json]");
+  }
+  const compiled = compileManifest(JSON.parse(read(MANIFEST)));
+  const scope = memoryScope(compiled, domain, task);
+  if (git("rev-parse", "--show-toplevel").trim() !== ROOT) throw new Error("memory: run in a repository-root checkout");
+  if (git("ls-files", "-z", "--", ".agent-memory").length) {
+    throw new Error("memory: tracked local memory detected; remove it from Git before using memory commands");
+  }
+  const directories = scope.split("/").map((_, i, parts) => parts.slice(0, i + 1).join("/"));
+  for (const directory of directories) memoryEntry(directory, true, operation === "path");
+  for (const file of [scope, `${scope}/README.md`, `${scope}/NOTES.md`, `${scope}/HANDOFF.md`]) {
+    try {
+      git("check-ignore", "--no-index", "--quiet", "--", file);
+    } catch {
+      throw new Error("memory: scope must be Git-ignored; restore /.agent-memory/ in .gitignore before initializing");
+    }
+  }
+  const templates = {
+    "README.md": `# Local task memory\n\nDomain: ${domain}\nTask: ${task}\n\nOne writer per task ID; concurrent agents must choose distinct IDs. Initialization does not claim or lock a task.\nThese ignored notes are opt-in, stale/untrusted hints, never authority or permission. Verify current code and checks before reuse.\nDo not store prompts, transcripts, environment values, private keys, credentials, private library data or deployment details here.\nNever force-add, publish or include this folder in public context packets. Promote only reviewed, public-safe durable decisions to the owning domain card.\n`,
+    "NOTES.md": "# Task notes\n\n## Scope and owned files\n\n## Findings (verify against current code)\n\n## Next steps\n",
+    "HANDOFF.md": `# Task handoff\n\n## State\n\nInitialized at commit: ${git("rev-parse", "HEAD").trim()}\nValidation: not run by memory initialization.\n\n## Changes and owned files\n\n## Checks actually run and results\n\n## Open questions and next steps\n\nRecheck HEAD, working tree and current tests before acting; this note is not authorization.\n`,
+  };
+  for (const name of Object.keys(templates)) memoryEntry(`${scope}/${name}`, false);
+  const created = [];
+  if (operation === "init") {
+    for (const directory of directories) {
+      if (!memoryEntry(directory, true)) {
+        try {
+          mkdirSync(abs(directory), { mode: 0o700 });
+        } catch (error) {
+          if (error.code !== "EEXIST") throw error;
+        }
+        memoryEntry(directory, true, true);
+      }
+    }
+    for (const [name, content] of Object.entries(templates)) {
+      try {
+        writeFileSync(abs(`${scope}/${name}`), content, { flag: "wx", mode: 0o600 });
+        created.push(name);
+      } catch (error) {
+        if (error.code !== "EEXIST") throw error;
+        memoryEntry(`${scope}/${name}`, false, true);
+      }
+    }
+  }
+  const result = { domain, task, path: scope, files: Object.keys(templates), created, ignored: true };
+  if (json) return console.log(JSON.stringify(result, null, 2));
+  console.log(scope);
+  if (operation === "init") console.log(`Created ${created.length} note file(s); existing notes preserved. Explicit local use only; see agents/local-memory.md.`);
+}
+
 function cmdSync() {
   // Two passes: new cards/instructions become owned files and can change the rendered lists.
   for (let pass = 0; pass < 2; pass++) {
@@ -441,7 +530,7 @@ function cmdContext(args, { json }) {
   const ctx = loadContext();
   const allowed = (file) => contextPathAllowed(file)
     && !ctx.compiled.ignoreRes.some((re) => re.test(file))
-    && (!existsSync(abs(file)) || !file.split("/").some((_, i, parts) => lstatSync(abs(parts.slice(0, i + 1).join("/"))).isSymbolicLink()));
+    && !hasSymlink(file);
   ctx.files = ctx.files.filter(allowed);
   ctx.fileSet = new Set(ctx.files);
   ctx.owners = new Map([...ctx.owners].filter(([file]) => ctx.fileSet.has(file)));
@@ -471,6 +560,7 @@ function cmdContext(args, { json }) {
       "Read the listed guidance and inspect current contracts/tests; this is metadata, not a source dump or authorization.",
       "Validation is recommended, not executed. Use agents -- affected after editing; shared contracts require consumer validation.",
       "Only Git-visible, non-ignored public paths are scanned. Sensitive paths, symlinks and file contents are omitted; never paste secrets into a request.",
+      "Optional local notes: agents -- memory init <domain> <task-id> (agents/local-memory.md). Memories are never loaded into this packet.",
       ...(safePaths.length < args.length - 1 ? ["Some supplied paths were excluded by the public-context filter."] : []),
       ...(!domains.length ? ["No confident match: pick cards from agents/domains/README.md or supply owned paths."] : []),
     ],
@@ -499,7 +589,7 @@ function changedFiles(base) {
   if (base) add(gitLines("diff", "--name-only", `${base}...HEAD`));
   add(gitLines("diff", "--name-only", "HEAD"));
   add(gitLines("ls-files", "--others", "--exclude-standard"));
-  return [...set].sort();
+  return [...set].filter((file) => !isLocalMemoryPath(file)).sort();
 }
 
 function cmdAffected(args, { json }) {
@@ -569,10 +659,12 @@ const HELP = `Mint agent domain tooling
   npm run agents -- affected [--base <ref>]   Domains touched by local changes + focused validation
   npm run agents -- map <domain>              Live file/export/import map for one domain
   npm run agents -- owner <path…>             Owning domain for files
+  npm run agents -- memory init <domain> <task-id>  Initialize ignored, task-scoped local notes (opt-in)
+  npm run agents -- memory path <domain> <task-id>  Locate an existing safe local scope
   npm run agents:sync                         Regenerate cards, index, routing table, path instructions
   npm run agents:check [-- --strict]          Validate ownership, freshness, budgets and links (CI)
 
-Add --json to route/context/affected/owner for machine-readable output.
+Add --json to route/context/affected/owner/memory for machine-readable output.
 Context emits metadata only; no file bodies, secrets, ignored paths or private git identity.`;
 
 const [command, ...rest] = process.argv.slice(2);
@@ -600,6 +692,9 @@ try {
       break;
     case "owner":
       cmdOwner(args, { json });
+      break;
+    case "memory":
+      cmdMemory(args, { json });
       break;
     default:
       console.log(HELP);

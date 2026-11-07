@@ -31,7 +31,7 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Scope:** Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth.
 - **Read before editing:** [agents/integrations-and-charts.md](../integrations-and-charts.md), [docs/charts.md](../../docs/charts.md), [docs/spotify.md](../../docs/spotify.md) (UI: also check desktop/mobile per DESIGN.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map providers` (exports, line counts, cross-domain import edges).
 
 ### Owned files (41)

@@ -15,6 +15,13 @@ platform sans-serif rather than downloading a font at runtime. Semantic colors,
 spacing, typography and responsive geometry live in
 `apps/mobile/src/theme/tokens.ts`.
 
+The visual contract is shared; implementation ownership is feature-local under
+`apps/mobile/src/features/`. Albums and artists have their own entry screens,
+not branches of an editable-playlist screen. Reusable detail rendering, music
+rows and page styles remain foundation presentation, without importing Home.
+See [feature ownership](mobile.md#feature-ownership) before loading unrelated
+screens for a focused change.
+
 Home, Search and Your Library have an account avatar alongside the page title,
 not a branded header. Phones have three bottom destinations. At 900px and above,
 these become a persistent sidebar. Content scrolls independently of the

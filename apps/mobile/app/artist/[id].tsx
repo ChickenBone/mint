@@ -1,6 +1,6 @@
-import { DetailScreen } from "../../src/screens/DetailScreen";
+import { ArtistScreen } from "../../src/features/artists/ArtistScreen";
 import { useLocalSearchParams } from "expo-router";
 export default function ArtistRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  return <DetailScreen key={id} kind="artist" />;
+  return <ArtistScreen key={id} />;
 }

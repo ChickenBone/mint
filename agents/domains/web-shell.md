@@ -31,8 +31,8 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 
 - **Scope:** App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views.
 - **Read before editing:** [agents/design.md](../design.md), [DESIGN.md](../../DESIGN.md), [docs/ui-library.md](../../docs/ui-library.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map web-shell` (exports, line counts, cross-domain import edges).
 
 ### Owned files (60)

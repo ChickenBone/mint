@@ -6,6 +6,39 @@ and retain their existing features. The native app does not expose chart
 acquisition, provider setup, worker controls or administration. Search can
 read existing charts as a browse category.
 
+## Feature ownership
+
+Expo Router files in `apps/mobile/app/` are thin entry points. Listener UI,
+feature models and feature-specific hooks live in `apps/mobile/src/features/`:
+
+| Folder | Existing responsibility |
+| --- | --- |
+| `home` | Personal shelves, recent additions, rediscovery and album recommendations |
+| `artists` | Artist song selection, album shelf, portrait and attributed biography |
+| `albums` | Read-only album song selection and artist navigation |
+| `playlists` | Native/smart/source-managed/liked selections, revision-checked edits and copies |
+| `search` | Library/recording search, explicit requests, Browse all and category/chart paging |
+| `your-music` | Library facets, playlist creation, invitations, folders, pins and imports |
+| `settings` | Account/privacy, download storage, reports and compatible update controls |
+| `player` | Persistent sheet, lyrics, queue controls, gestures, cover palettes and seek UI |
+
+Shared music presentation and page styles belong to `src/components/music`;
+generic primitives remain in `src/components/ui`. `CollectionDetail` renders
+the common bounded song window and full-selection playback controls; album,
+artist and playlist entry screens own distinct API loads and only playlists
+supply mutation controls. Generic paging/resource hooks remain in `src/hooks`,
+not in Home or Search. `src/shell` owns navigation and the persistent outlet;
+auth, API and theme remain shared foundation contracts.
+
+The player engine and offline adapters remain in `src/playback` and
+`src/offline`, independent of UI features. The `/player` deep link still opens
+the same persistent sheet with Home underneath, not another engine.
+Feature tests use flat `tests/<feature>-*.test.ts` names so existing npm test
+discovery retains all coverage and each domain can run its focused selectors.
+See [domain routing](../agents/domains/README.md) for bounded feature context.
+Events, listener profiles and Jams/Devices are extension boundaries, not newly
+implemented mobile screens.
+
 ## Local development
 
 Node.js 22+ and npm are required. From the repository root:

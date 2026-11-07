@@ -19,6 +19,10 @@ engine, not Expo. The [mobile playback card](domains/mobile-playback.md) and
 `@mint/client` queue/catalog contracts without assuming browser DSP or device
 bridge parity. Native metadata must use the selected public Mint server's
 artwork URL; relative browser URLs are not proof of Android lockscreen artwork.
+The [mobile player card](domains/mobile-player.md) owns presentation separately;
+screen-only work starts with its focused guide/tests, not this browser engine
+guide. `npm run agents -- map mobile-playback` and `map mobile-player` show the
+current contract seam.
 
 ## Playback continuity and access
 

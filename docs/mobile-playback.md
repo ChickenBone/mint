@@ -155,6 +155,10 @@ not represented as guaranteed remote revocation.
 
 ## Player, artwork and lyrics
 
+Presentation lives in `apps/mobile/src/features/player`; playback and offline
+engines remain in `src/playback` and `src/offline`. The shell imports the
+presentation once. Feature routes do not own or recreate audio engines.
+
 The mini-player sits above navigation. Header/artwork/metadata drags directly
 follow the finger or mouse, use recent release velocity, and can interrupt or
 reverse settling. Controls and seek sliders are outside drag activation;
@@ -193,8 +197,10 @@ Focused checks:
 
 ```sh
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint src/playback src/offline src/components/player tests/playback*.test.ts tests/offline-native.test.ts
+npm exec -w @mint/mobile -- eslint src/playback src/offline tests/playback*.test.ts tests/offline-native.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/playback*.test.ts tests/offline-native.test.ts
+npm exec -w @mint/mobile -- eslint src/features/player tests/player-*.test.ts
+npm exec -w @mint/mobile -- tsx --test tests/player-*.test.ts
 ```
 
 Tests exercise complete queue membership, duplicates, races, paused restore,

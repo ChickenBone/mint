@@ -17,34 +17,134 @@
   "domains": [
     {
       "id": "mobile",
-      "title": "Native consumer app",
-      "summary": "Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport",
-      "keywords": ["expo", "native app", "mobile app", "ios", "android", "securestore", "native auth", "browse all", "search categories"],
-      "guides": ["docs/mobile.md", "docs/mobile-design.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "surface": "mobile",
+      "title": "Mobile foundation",
+      "summary": "Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle",
+      "keywords": ["expo config", "mobile shell", "mobile navigation", "mobile theme", "securestore", "mobile auth", "sign in", "native app setup"],
+      "guides": ["agents/mobile-features.md"],
       "paths": [
         "apps/mobile/**",
-        "packages/client/**",
-        "apps/web/src/app/api/native/**",
-        "apps/web/src/lib/native-*.ts",
-        "apps/web/tests/native-*.test.ts",
         "docs/mobile.md",
         "docs/mobile-design.md"
       ]
     },
     {
+      "id": "mobile-contracts",
+      "surface": "server",
+      "title": "Native client and server contracts",
+      "summary": "Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions",
+      "keywords": ["native api", "native bearer", "native session", "native transport", "client dto", "client schema", "native browse endpoint", "mint/client"],
+      "guides": ["agents/architecture.md", "docs/mobile.md"],
+      "paths": [
+        "packages/client/**",
+        "apps/web/src/app/api/native/**",
+        "apps/web/src/lib/native-*.ts",
+        "apps/web/tests/native-*.test.ts"
+      ]
+    },
+    {
       "id": "mobile-playback",
+      "surface": "mobile",
       "title": "Native playback and offline",
-      "summary": "Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation",
-      "keywords": ["expo audio", "native playback", "native offline", "native player", "album colors"],
-      "guides": ["docs/mobile.md", "docs/mobile-playback.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "summary": "Expo audio engine, progressive queues, lyrics parsing, native adapters and account-scoped offline storage",
+      "keywords": ["expo audio", "native playback", "mobile playback", "native offline", "mobile offline", "native queue", "native audio", "android audio", "offline downloads", "playback engine"],
+      "guides": ["docs/mobile-playback.md"],
       "paths": [
         "apps/mobile/src/playback/**",
         "apps/mobile/src/offline/**",
-        "apps/mobile/src/components/player/**",
         "apps/mobile/tests/playback*.test.ts",
         "apps/mobile/tests/offline-native.test.ts",
         "docs/mobile-playback.md"
       ]
+    },
+    {
+      "id": "mobile-home",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Home",
+      "summary": "Listener Home recommendations, bounded album shelves and recent additions",
+      "keywords": ["home", "home screen", "home shelves", "recent additions", "rediscovery"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/home/**", "apps/mobile/app/index.tsx", "apps/mobile/tests/home-model.test.ts"]
+    },
+    {
+      "id": "mobile-artists",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Artists",
+      "summary": "Artist detail navigation, artist identity and bounded artist song/album presentation",
+      "keywords": ["artist", "artists", "artist detail", "artist screen"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/artists/**", "apps/mobile/app/artist/**", "apps/mobile/tests/artists-detail.test.ts"]
+    },
+    {
+      "id": "mobile-albums",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Albums",
+      "summary": "Album detail navigation, album identity and full-selection playback actions",
+      "keywords": ["album", "albums", "album detail", "album screen"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/albums/**", "apps/mobile/app/album/**", "apps/mobile/tests/albums-detail.test.ts"]
+    },
+    {
+      "id": "mobile-playlists",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Playlists",
+      "summary": "Playlist and liked-song details, occurrence-based editing and collection actions",
+      "keywords": ["playlist", "playlists", "liked songs", "playlist editing", "collection detail"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/playlists/**", "apps/mobile/app/collection/**", "apps/mobile/tests/playlists-*.test.ts"]
+    },
+    {
+      "id": "mobile-search",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Search and Discover",
+      "summary": "Local and recording Search, Browse all discovery/categories and read-only chart destinations",
+      "keywords": ["search", "discover", "discovery", "browse all", "browse category", "search categories", "recording search"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/search/**", "apps/mobile/app/search.tsx", "apps/mobile/app/browse/**", "apps/mobile/tests/search-*.test.ts"]
+    },
+    {
+      "id": "mobile-your-music",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Your Music",
+      "summary": "Your Library overview, collection browsing, folders/pins and playlist invitations",
+      "keywords": ["your music", "your library", "library", "library screen", "library tab", "playlist invitations", "folders", "pins"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/your-music/**", "apps/mobile/app/library.tsx", "apps/mobile/tests/your-music-model.test.ts"]
+    },
+    {
+      "id": "mobile-settings",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Settings",
+      "summary": "Listener settings, privacy/history, local storage, app information and compatible update checks",
+      "keywords": ["settings", "app info", "manual update", "private session", "history deletion", "mp3 compatibility"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/settings/**", "apps/mobile/app/settings.tsx", "apps/mobile/tests/settings-*.test.ts"]
+    },
+    {
+      "id": "mobile-player",
+      "surface": "mobile",
+      "consumer": true,
+      "title": "Mobile Player presentation",
+      "summary": "Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures and artwork colors",
+      "keywords": ["player", "player sheet", "mini player", "now playing", "player ui", "album colors", "player gestures", "lyrics panel"],
+      "guides": ["agents/mobile-features.md"],
+      "paths": ["apps/mobile/src/features/player/**", "apps/mobile/app/player.tsx", "apps/mobile/tests/player-presentation.test.ts"]
+    },
+    {
+      "id": "mobile-design",
+      "surface": "mobile",
+      "title": "Mobile UX skills and interaction guidance",
+      "summary": "Compact Mint mobile UX skill and pinned official Expo native UI/animation references, loaded on demand",
+      "keywords": ["native ux", "mobile ux", "mobile design", "mint-mobile-ux", "expo-native-ui", "expo-animation", "tap response", "native animation", "swipe gestures", "high fps", "button flows", "mobile performance"],
+      "guides": [],
+      "paths": [".github/skills/**"]
     },
     {
       "id": "platform",
@@ -97,6 +197,7 @@
     },
     {
       "id": "playback",
+      "surface": "server",
       "title": "Playback engine",
       "summary": "Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery",
       "keywords": [
@@ -164,6 +265,7 @@
     },
     {
       "id": "library",
+      "surface": "server",
       "title": "Library catalog and metadata",
       "summary": "Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing",
       "keywords": [
@@ -226,6 +328,7 @@
     },
     {
       "id": "collections",
+      "surface": "server",
       "title": "Collections and discovery",
       "summary": "Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves",
       "keywords": [
@@ -284,6 +387,7 @@
     },
     {
       "id": "providers",
+      "surface": "server",
       "title": "Charts and provider sync",
       "summary": "Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth",
       "keywords": [
@@ -335,6 +439,7 @@
     },
     {
       "id": "acquisition",
+      "surface": "server",
       "title": "Acquisition pipeline",
       "summary": "Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages",
       "keywords": [
@@ -394,6 +499,7 @@
     },
     {
       "id": "analysis",
+      "surface": "server",
       "title": "Audio analysis",
       "summary": "Measured audio analysis (mint-dsp), scheduling/backfills, remote analysis workers and analysis UI",
       "keywords": [
@@ -435,6 +541,7 @@
     },
     {
       "id": "devices",
+      "surface": "server",
       "title": "Devices and parties",
       "summary": "Device registry, handoff, remote control and single-output listening parties",
       "keywords": [
@@ -466,6 +573,7 @@
     },
     {
       "id": "workers",
+      "surface": "server",
       "title": "Volunteer workers and upload hub",
       "summary": "Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI",
       "keywords": [
@@ -504,6 +612,7 @@
     },
     {
       "id": "realtime",
+      "surface": "server",
       "title": "Realtime events",
       "summary": "WebSocket service, Redis event channels, realtime tickets and live client components",
       "keywords": [
@@ -530,6 +639,7 @@
     },
     {
       "id": "web-shell",
+      "surface": "server",
       "title": "Web shell, auth and management",
       "summary": "App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views",
       "keywords": [
@@ -614,9 +724,28 @@
       ]
     },
     {
+      "id": "agent-tooling",
+      "title": "Agent routing and local memory",
+      "summary": "Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory",
+      "keywords": ["agent context", "domain", "routing", "instructions", "context tooling", "starter prompt", "system prompt", "agent memory", "local memory", "task tracking", "session todos", "session sql", "mint-task-tracking", "feature folders", "events feature", "profiles", "jams", "future mobile", "extension seam"],
+      "guides": ["agents/working-at-scale.md", "agents/local-memory.md"],
+      "paths": [
+        "scripts/agents/**",
+        "agents/domains.json",
+        "agents/domains/**",
+        ".github/instructions/**",
+        ".github/skills/mint-task-tracking/**",
+        "agents/working-at-scale.md",
+        "agents/local-memory.md",
+        "agents/starter-prompt.md",
+        "agents/mobile-features.md"
+      ],
+      "validate": ["npm run agents:check -- --strict", "npm run test:agents"]
+    },
+    {
       "id": "handbook",
       "title": "Handbook and public docs",
-      "summary": "README, product/design contracts, agent handbook, domain routing tooling, UX docs and screenshots",
+      "summary": "README, product/design decisions, curated engineering/topic guides, UX docs and screenshots",
       "keywords": [
         "readme",
         "docs",
@@ -625,16 +754,10 @@
         "agents",
         "screenshot",
         "product",
-        "domain",
-        "routing",
-        "instructions",
-        "context tooling",
-        "starter prompt",
-        "system prompt"
+        "public guidance"
       ],
       "guides": [
         "agents/README.md",
-        "agents/working-at-scale.md",
         "agents/browser-testing-and-mocks.md"
       ],
       "paths": [
@@ -644,13 +767,10 @@
         "AGENTS.md",
         ".gitignore",
         "agents/**",
-        "scripts/agents/**",
-        ".github/instructions/**",
         "docs/**"
       ],
       "validate": [
-        "npm run agents:check",
-        "npm run test:agents"
+        "npm run agents:check"
       ]
     }
   ]

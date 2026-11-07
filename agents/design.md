@@ -2,6 +2,13 @@
 
 The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-first consumer service rather than a backend dashboard.
 
+For native UI tasks, read the compact repo-local
+[Mint mobile UX skill](../.github/skills/mint-mobile-ux/SKILL.md) first, then only
+task-relevant references. It preserves task-first action hierarchy, accessible
+gesture equivalents, immediate feedback and Mint's existing tokens/player;
+generic Expo advice does not override runtime or privacy constraints. Native
+release-device profiling, not a successful export, substantiates FPS claims.
+
 ## Identity and hierarchy
 
 - Preserve the dark charcoal/Figtree/mint-green identity. Artwork and music supply the color; mint marks actions and focus.
