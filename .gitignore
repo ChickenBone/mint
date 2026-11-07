@@ -13,3 +13,7 @@ coverage
 data/
 existing-library/
 .impeccable/
+.expo/
+apps/mobile/android/
+apps/mobile/ios/
+.android-ci/

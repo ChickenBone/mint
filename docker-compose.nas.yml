@@ -4,6 +4,9 @@
 # Do not publish your filled-in copy: it contains your personal integration keys.
 x-settings:
   MINT_DOMAIN: &domain "mint.example.com"
+  # Optional Expo web origins, comma-separated (scheme + hostname + port; no paths).
+  # Native iOS/Android do not need this. Example: https://app.example.com
+  NATIVE_WEB_ORIGINS: &native-web-origins ""
   # Required: connector token from a remotely managed Cloudflare Tunnel.
   # Route MINT_DOMAIN to http://caddy:80 in the Cloudflare dashboard.
   # This is a tunnel token (eyJ...), NOT a Cloudflare API token.
@@ -184,6 +187,7 @@ services:
     environment:
       MINT_DOMAIN: *domain
       PLAYBACK_WORKER_URL: http://worker:8080
+      NATIVE_WEB_ORIGINS: *native-web-origins
       MINT_CHARTS_ENABLED: *charts-enabled
       MINT_CHART_SOURCE_URL: *chart-source-url
       GOOGLE_CLIENT_ID: *google-id

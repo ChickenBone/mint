@@ -6,11 +6,12 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { boundedJson, publicUrl } from "@/lib/request";
 import { trackPlayerItem } from "@/lib/player-protocol";
+import { validConsumerMutation } from "@/lib/native-context";
 
 export async function POST(request: Request) {
   const headers = { "cache-control": "private, no-store" };
   if (!await getUser()) return Response.json({ error: "Approved membership required" }, { status: 401, headers });
-  if (request.headers.get("origin") !== new URL(publicUrl()).origin) return Response.json({ error: "Invalid request origin" }, { status: 403, headers });
+  if (!validConsumerMutation(request, publicUrl())) return Response.json({ error: "Invalid request origin" }, { status: 403, headers });
   if (Number(request.headers.get("content-length")) > 2_000_000) return Response.json({ error: "Queue too large" }, { status: 413, headers });
   let input: unknown;
   try { input = await boundedJson(request, 2_000_000); } catch { return Response.json({ error: "Invalid JSON or queue exceeds its 2 MB limit" }, { status: 400, headers }); }

@@ -6,16 +6,18 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 
 | Domain | Scope | Files | Imports from |
 | --- | --- | ---: | --- |
+| [`mobile`](mobile.md) | Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport | 71 | `collections` `library` `mobile-playback` `platform` `playback` `web-shell` |
+| [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation | 30 | `mobile` |
 | [`platform`](platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing | 34 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
-| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `platform` `providers` `realtime` `web-shell` |
-| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 41 | `acquisition` `collections` `platform` `playback` `providers` `realtime` `web-shell` |
-| [`collections`](collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves | 29 | `acquisition` `analysis` `library` `platform` `playback` `providers` `realtime` `web-shell` |
+| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `mobile` `platform` `providers` `realtime` `web-shell` |
+| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 41 | `acquisition` `collections` `mobile` `platform` `playback` `providers` `realtime` `web-shell` |
+| [`collections`](collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves | 29 | `acquisition` `analysis` `library` `mobile` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`providers`](providers.md) | Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth | 41 | `acquisition` `collections` `library` `platform` `playback` `realtime` `web-shell` |
 | [`acquisition`](acquisition.md) | Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages | 32 | `collections` `library` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`analysis`](analysis.md) | Measured audio analysis (mint-dsp), scheduling/backfills, remote analysis workers and analysis UI | 20 | `acquisition` `library` `platform` `playback` `web-shell` |
 | [`devices`](devices.md) | Device registry, handoff, remote control and single-output listening parties | 16 | `library` `platform` `playback` `web-shell` |
 | [`workers`](workers.md) | Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI | 21 | `acquisition` `platform` `realtime` `web-shell` |
 | [`realtime`](realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components | 9 | `acquisition` `library` `platform` `playback` `web-shell` `workers` |
-| [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 59 | `acquisition` `analysis` `collections` `devices` `library` `platform` `playback` `providers` `realtime` `workers` |
-| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 21 | — |
-| [`handbook`](handbook.md) | README, product/design contracts, agent handbook, domain routing tooling, UX docs and screenshots | 74 | — |
+| [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 60 | `acquisition` `analysis` `collections` `devices` `library` `mobile` `platform` `playback` `providers` `realtime` `workers` |
+| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 34 | `mobile` |
+| [`handbook`](handbook.md) | README, product/design contracts, agent handbook, domain routing tooling, UX docs and screenshots | 78 | — |

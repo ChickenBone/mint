@@ -16,6 +16,17 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("Expo web exact-origin allowlist reaches CLI and self-contained NAS web services", () => {
+  const origin = "https://app.example.com,http://localhost:8081";
+  const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
+  assert.equal(resolve(cli, { NATIVE_WEB_ORIGINS: origin }).services.web.environment.NATIVE_WEB_ORIGINS, origin);
+  assert.equal(resolve(source).services.web.environment.NATIVE_WEB_ORIGINS, "");
+  const nas = resolve(source.replace('&native-web-origins ""', `&native-web-origins "${origin}"`));
+  assert.equal(nas.services.web.environment.NATIVE_WEB_ORIGINS, origin);
+  assert.equal(nas.services.worker.environment.NATIVE_WEB_ORIGINS, undefined);
+  assert.equal(nas.services.hub.environment.NATIVE_WEB_ORIGINS, undefined);
+});
+
 test("separate analysis machines have configurable resources without media-server credentials or open ports", () => {
   const analysis = readFileSync(new URL("../../docker-compose.analysis.yml", import.meta.url), "utf8");
   const env = { ANALYSIS_SERVER_URL: "http://100.64.0.10:8080", ANALYSIS_WORKER_TOKEN: "fixture-only-separate-analysis-token-at-least-32" };

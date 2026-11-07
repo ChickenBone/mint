@@ -31,11 +31,11 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 
 - **Scope:** App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views.
 - **Read before editing:** [agents/design.md](../design.md), [DESIGN.md](../../DESIGN.md), [docs/ui-library.md](../../docs/ui-library.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map web-shell` (exports, line counts, cross-domain import edges).
 
-### Owned files (59)
+### Owned files (60)
 
 - `apps/web/src/app/` `error.tsx`, `globals.css`, `layout.tsx`, `manifest.ts`, `not-found.tsx`
 - `apps/web/src/app/(public)/` `activity/page.tsx`, `layout.tsx`, `login/login-form.tsx`, `login/page.tsx`, `page.tsx`, `request-access/page.tsx`, `request-access/request-form.tsx`
@@ -45,7 +45,7 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 - `apps/web/src/components/` `form.tsx`, `install-app.tsx`, `logo.tsx`, `site-header.tsx`
 - `apps/web/src/components/app/` `admin-controls.tsx`, `copy-button.tsx`, `manage-view.tsx`, `page-header.tsx`, `report-issue.tsx`, `settings-view.tsx`, `setup-nudge.tsx`, `sidebar-nav.tsx`, `sign-out.tsx`
 - `apps/web/src/components/ui/` `confirm-dialog.tsx`, `index.ts`, `interactive.tsx`, `layout.tsx`, `primitives.tsx`, `shelf.tsx`, `toast.tsx`
-- `apps/web/src/lib/` `app-routes.ts`, `auth.ts`, `format.ts`, `issue-report-model.ts`, `issue-reports.ts`, `unified-search.ts`
+- `apps/web/src/lib/` `account-login.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `issue-report-model.ts`, `issue-reports.ts`, `unified-search.ts`
 - `apps/web/tests/` `issue-reports.test.ts`, `routes.test.ts`, `ui.test.ts`, `unified-search.test.ts`
 - `apps/web/tests/fixtures/` `redesign-network.mjs`, `redesign-preview.mjs`
 - `packages/core/src/` `stats.ts`, `views.ts`

@@ -91,6 +91,7 @@ services:
     environment:
       <<: *public-env
       PLAYBACK_WORKER_URL: http://worker:8080
+      NATIVE_WEB_ORIGINS: ${NATIVE_WEB_ORIGINS:-}
       MINT_CHARTS_ENABLED: ${MINT_CHARTS_ENABLED:-true}
       MINT_CHART_SOURCE_URL: ${MINT_CHART_SOURCE_URL:-}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}

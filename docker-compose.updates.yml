@@ -1,0 +1,23 @@
+# Optional signed, self-hosted Expo OTA storage for the existing public web service.
+# docker compose -f docker-compose.yml -f docker-compose.updates.yml up -d
+services:
+  ota-storage-init:
+    image: alpine:3.23
+    user: "0:0"
+    restart: "no"
+    network_mode: none
+    command: ["sh", "-c", "chown 1000:1000 /updates && chmod 700 /updates"]
+    volumes:
+      - ota_updates:/updates
+  web:
+    environment:
+      OTA_STORAGE_DIR: /var/lib/mint/updates
+      OTA_PUBLISH_TOKEN_SHA256: ${OTA_PUBLISH_TOKEN_SHA256:?Set the SHA-256 publisher token hash}
+      OTA_SIGNING_CERTIFICATES: ${OTA_SIGNING_CERTIFICATES:?Set the JSON public signing certificate map}
+      OTA_MAX_STORAGE_BYTES: ${OTA_MAX_STORAGE_BYTES:-1073741824}
+    volumes:
+      - ota_updates:/var/lib/mint/updates
+    depends_on:
+      ota-storage-init: { condition: service_completed_successfully }
+volumes:
+  ota_updates:

@@ -1,0 +1,13 @@
+{
+  "name": "@mint/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./playback": "./src/playback.ts", "./auth": "./src/auth.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": { "zod": "^4.6.7" },
+  "devDependencies": { "@types/node": "^22.15.0", "typescript": "^5.9.3", "tsx": "^4.23.15" }
+}

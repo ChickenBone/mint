@@ -69,9 +69,10 @@ export async function createIssueReport(db: Db, userId: string, raw: unknown, no
 export async function handleIssueReportPost(
   request: Request,
   context: { userId: string | null; db: () => Db; origin: string },
+  authorizeOrigin: () => boolean = () => sameOriginRequest(request, context.origin),
 ) {
   try {
-    if (!sameOriginRequest(request, context.origin)) throw new IssueReportError(403, "Same-origin requests only.");
+    if (!authorizeOrigin()) throw new IssueReportError(403, "Same-origin requests only.");
     if (!context.userId) throw new IssueReportError(401, "Sign in to report an issue.");
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
       throw new IssueReportError(415, "Send the report as JSON.");

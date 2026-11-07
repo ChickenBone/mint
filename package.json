@@ -10,8 +10,15 @@
   "engines": {
     "node": ">=22"
   },
+  "overrides": {
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native-gesture-handler": "3.3.0",
+    "react-native-worklets": "0.13.0"
+  },
   "scripts": {
     "dev:web": "npm run dev -w @mint/web",
+    "dev:mobile": "npm run start -w @mint/mobile",
     "dev:worker": "npm run dev -w @mint/worker",
     "dev:realtime": "npm run dev -w @mint/realtime",
     "dev:hub": "npm run dev:hub -w @mint/worker",

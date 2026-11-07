@@ -183,6 +183,11 @@ Use `docker compose ps` and `docker compose logs --tail=100 worker` for details.
 
 ## Advanced setup and development
 
+The [Expo consumer app setup](docs/mobile.md) includes native builds and
+server configuration. A separately hosted Expo **web** app requires its
+exact browser origin in the server's `NATIVE_WEB_ORIGINS` setting and a web
+server restart/redeployment; iOS/Android do not require browser CORS.
+
 - [Public agent handbook](agents/README.md) — product decisions, architecture boundaries, design guidance, Playwright fixtures and validation.
 - [Full self-hosting and integration reference](docs/self-hosting.md)
 - [Spotify playlist setup and restrictions](docs/spotify.md)

@@ -6,6 +6,7 @@ import { MusicError } from "@mint/core/music";
 import { searchRecordings, requestRecording, type RecordingSearchResponse } from "@/lib/music-requests";
 import { rateLimit } from "@/lib/rate-limit";
 import { enqueueRequested } from "@/lib/queues";
+import { validConsumerMutation } from "@/lib/native-context";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const json = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
@@ -18,7 +19,7 @@ async function handle(request: Request) {
       if (!(await rateLimit(`recordings:${user.id}`, 20, 60)) || !(await rateLimit("recording-catalog", 1, 1))) return json({ error: "Wait a second before searching the recording catalog again." }, 429);
       return json({ items: await searchRecordings(user.id, q, fetch, undefined, { signal: request.signal }) } satisfies RecordingSearchResponse);
     }
-    if (request.headers.get("origin") !== new URL(publicUrl()).origin) return json({ error: "Request origin not allowed." }, 403);
+    if (!validConsumerMutation(request, publicUrl())) return json({ error: "Request origin not allowed." }, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return json({ error: "Send a JSON request." }, 400);
     if (!(await rateLimit(`music-request:${user.id}`, 30, 600))) return json({ error: "Too many song requests. Try again in ten minutes." }, 429);
     const input = z.object({ token: z.string().max(10_000), youtubeUrl: z.string().max(2048).optional() }).parse(await boundedJson(request, 15000));

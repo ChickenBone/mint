@@ -28,6 +28,8 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 
 | Domain | Covers |
 | --- | --- |
+| [`mobile`](agents/domains/mobile.md) | Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport |
+| [`mobile-playback`](agents/domains/mobile-playback.md) | Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation |
 | [`platform`](agents/domains/platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing |
 | [`playback`](agents/domains/playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery |
 | [`library`](agents/domains/library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing |

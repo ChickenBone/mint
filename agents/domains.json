@@ -16,6 +16,41 @@
   ],
   "domains": [
     {
+      "id": "mobile",
+      "title": "Native consumer app",
+      "summary": "Expo iOS/Android and responsive web consumer app, client-safe API contracts and native account transport",
+      "keywords": ["expo", "native app", "mobile app", "ios", "android", "securestore", "native auth"],
+      "guides": ["docs/mobile.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "paths": [
+        "apps/mobile/**",
+        "packages/client/**",
+        "apps/web/src/app/api/native/**",
+        "apps/web/src/lib/native-*.ts",
+        "apps/web/tests/native-*.test.ts",
+        "apps/web/src/app/api/updates/**",
+        "apps/web/src/lib/ota-updates.ts",
+        "apps/web/tests/ota-updates.test.ts",
+        "docs/mobile.md",
+        "docs/mobile-design.md",
+        "docs/mobile-updates-server.md"
+      ]
+    },
+    {
+      "id": "mobile-playback",
+      "title": "Native playback and offline",
+      "summary": "Expo audio engine, progressive native queues, lyrics, account-scoped downloads and album-color player presentation",
+      "keywords": ["expo audio", "native playback", "native offline", "native player", "album colors"],
+      "guides": ["docs/mobile.md", "agents/architecture.md", "agents/playback-and-library.md"],
+      "paths": [
+        "apps/mobile/src/playback/**",
+        "apps/mobile/src/offline/**",
+        "apps/mobile/src/components/player/**",
+        "apps/mobile/tests/playback*.test.ts",
+        "apps/mobile/tests/offline-native.test.ts",
+        "docs/mobile-playback.md"
+      ]
+    },
+    {
       "id": "platform",
       "title": "Platform core",
       "summary": "Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing",
@@ -569,10 +604,12 @@
         "docker-compose*.yml",
         "deploy/**",
         ".github/workflows/**",
-        "docs/self-hosting.md"
+        "docs/self-hosting.md",
+        "docs/android-builds.md"
       ],
       "validate": [
-        "docker compose config --quiet"
+        "docker compose config --quiet",
+        "node --import tsx --test deploy/mobile/*.test.mjs"
       ]
     },
     {

@@ -3,13 +3,14 @@
 import { CHANNEL, publish } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
-import { hash, verify } from "@node-rs/argon2";
+import { hash } from "@node-rs/argon2";
 import { eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createSession, destroySession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request";
+import { authenticateAccount } from "@/lib/account-login";
 
 export interface FormState {
   error?: string;
@@ -18,10 +19,6 @@ export interface FormState {
   /** Echoed back so React's post-action form reset doesn't wipe what the user typed. Never includes passwords. */
   values?: Record<string, string>;
 }
-
-// Verified against for unknown emails so they cost the same time as wrong passwords.
-let dummyHash: Promise<string> | undefined;
-const getDummyHash = () => (dummyHash ??= hash("mint-timing-equaliser"));
 
 const loginSchema = z.object({
   email: z.email().max(200),
@@ -35,15 +32,9 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   if (!parsed.success) return { error: "Enter your email and password.", values };
   const { email, password } = parsed.data;
   const ip = await clientIp();
-  if (!(await rateLimit(`login:ip:${ip}`, 20, 900)) || !(await rateLimit(`login:email:${email.toLowerCase()}`, 8, 900))) {
-    return { error: "Too many attempts. Wait 15 minutes and try again.", values };
-  }
-  const user = await getDb().query.users.findFirst({ where: sql`lower(${schema.users.email}) = ${email.toLowerCase()}` });
-  const valid = await verify(user?.passwordHash ?? (await getDummyHash()), password).catch(() => false);
-  if (!user || !valid) return { error: "That email and password don't match an account.", values };
-  if (user.status === "pending") return { error: "Your request is still waiting for approval. You'll be able to sign in once an admin lets you in.", values };
-  if (user.status !== "active") return { error: "This account can't sign in. Contact the admin.", values };
-  await createSession(user.id);
+  const result = await authenticateAccount(email, password, ip);
+  if ("error" in result) return { error: result.error, values };
+  await createSession(result.user.id);
   const next = parsed.data.next;
   redirect(next && next.startsWith("/app") ? next : "/app");
 }

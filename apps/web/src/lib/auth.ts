@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { clientIp, publicUrl, userAgent } from "./request";
+import { currentNativeContext } from "./native-context";
 
 export type SessionUser = Pick<typeof schema.users.$inferSelect, "id" | "email" | "name" | "role" | "status">;
 
@@ -33,8 +34,11 @@ export async function destroySession() {
 
 /** Current user for this request (memoised per render). Returns null for visitors and inactive accounts. */
 export const getUser = cache(async (): Promise<SessionUser | null> => {
+  const native = currentNativeContext();
+  if (native) return native.user;
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
+  if (token.startsWith("mn1.")) return null;
   const [row] = await getDb()
     .select({
       id: schema.users.id,
@@ -49,6 +53,13 @@ export const getUser = cache(async (): Promise<SessionUser | null> => {
     .limit(1);
   return row && row.status === "active" ? row : null;
 });
+
+export async function getSessionHash(): Promise<string | null> {
+  const native = currentNativeContext();
+  if (native) return native.sessionHash;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  return token && !token.startsWith("mn1.") ? sha256(token) : null;
+}
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getUser();

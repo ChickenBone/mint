@@ -30,8 +30,8 @@ Details: [playback and library](../playback-and-library.md#artwork) and [integra
 
 - **Scope:** Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing.
 - **Read before editing:** [agents/playback-and-library.md](../playback-and-library.md), [agents/design.md](../design.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`mobile`](mobile.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map library` (exports, line counts, cross-domain import edges).
 
 ### Owned files (41)

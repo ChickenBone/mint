@@ -25,6 +25,18 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 
 Use only music you are authorized to download, store and share. Public pages reveal library metadata and artwork, but never provide public audio streaming.
 
+### Expo consumer app and browser sign-in
+
+The [Expo setup guide](mobile.md) covers iOS/Android and the secondary web app.
+For Expo web hosted on another origin, set server-side `NATIVE_WEB_ORIGINS`
+to the browser page's exact origin(s), including scheme and port, with no
+paths or wildcards. The CLI stack reads it from `.env`; NAS users set it in
+the template's top settings block; Vercel users add it to the web project's
+environment. Restart/recreate or redeploy the web server after changing it.
+Local Expo commonly uses `http://localhost:8081`; `127.0.0.1` is a different
+origin. Native iOS/Android do not need browser CORS. Existing web-cookie
+authentication and CSRF protections remain unchanged.
+
 ## NAS setup: copy, paste, deploy
 
 **UGREEN NAS OS, Portainer, or another Docker project editor:** open [`docker-compose.nas.yml`](../docker-compose.nas.yml), copy the **entire file**, and paste it into a new Compose project named `mint`. No terminal, `.env`, Git checkout, build, or extra config files.

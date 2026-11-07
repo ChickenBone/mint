@@ -10,6 +10,7 @@ import { collectionDetail, createCollection, deleteHistory, listCollections, mus
 import { discoverMusic } from "@/lib/music-discovery";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { toTrackView } from "@mint/core/views";
+import { validConsumerMutation } from "@/lib/native-context";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
@@ -21,8 +22,7 @@ async function handle(request: Request, context: Context) {
   try {
     const url = new URL(request.url), method = request.method;
     if (method !== "GET") {
-      const origin = request.headers.get("origin");
-      if (origin !== new URL(publicUrl()).origin) throw new MusicError("Request origin not allowed.", 403);
+      if (!validConsumerMutation(request, publicUrl())) throw new MusicError("Request origin not allowed.", 403);
     }
     const body = async () => {
       if (!request.headers.get("content-type")?.includes("application/json")) throw new MusicError("Send a JSON request.");

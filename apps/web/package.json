@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mint/client": "*",
     "@mint/core": "*",
     "@node-rs/argon2": "^2.2.2",
     "bullmq": "^5.81.5",
@@ -21,8 +22,8 @@
     "lucide-react": "^1.66.0",
     "next": "^16.4.4",
     "pg": "^8.16.0",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "server-only": "^0.0.1",
     "zod": "^4.6.7"
   },

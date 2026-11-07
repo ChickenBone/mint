@@ -1,0 +1,21 @@
+def requiredEnv = { String name ->
+    def value = System.getenv(name)
+    if (!value) throw new GradleException("Missing ${name}; release signing is mandatory.")
+    value
+}
+
+android {
+    signingConfigs {
+        mintRelease {
+            storeFile file(requiredEnv("MINT_RELEASE_KEYSTORE"))
+            storePassword requiredEnv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias requiredEnv("ANDROID_KEY_ALIAS")
+            keyPassword requiredEnv("ANDROID_KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.mintRelease
+        }
+    }
+}
