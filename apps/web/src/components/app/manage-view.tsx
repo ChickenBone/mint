@@ -2,33 +2,35 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import type { ReactNode } from "react";
 import type { TrackView } from "@mint/core/events";
 import type { WorkerView } from "@mint/core";
 import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
-  Cpu,
-  ListChecks,
   MinusCircle,
   ShieldCheck,
   UserCheck,
-  Users,
-  Waves,
   XCircle,
 } from "lucide-react";
-import { decideRequest, retryAllFailed, setMemberRole, setMemberStatus } from "@/app/actions/admin";
+import {
+  decideRequest,
+  retryAllFailed,
+  setIssueReportResolved,
+  setMemberRole,
+  setMemberStatus,
+} from "@/app/actions/admin";
 import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
-import { Tabs } from "@/components/ui/interactive";
 import { Badge } from "@/components/ui/primitives";
 import { resolveManageTab, type ManageTab } from "@/lib/app-routes";
 import type { Health } from "@/lib/data";
+import { issueCategoryLabel, type IssueReportView } from "@/lib/issue-report-model";
 import { formatCount, timeAgo } from "@/lib/format";
 import { ActionButton } from "./admin-controls";
 import { AnalysisPanel } from "./analysis-panel";
 import { LiveTrackList } from "./live-track-list";
-import { PageHeader } from "./page-header";
 import { AdminWorkers, WorkersPanel } from "./workers-panel";
 
 type AdminWorkerRow = WorkerView & {
@@ -69,7 +71,7 @@ export interface ManageViewProps {
   allWorkers: AdminWorkerRow[];
   myWorkers: MyWorkerRow[];
   remotePoolSize: number;
-  workersOnline: number;
+  issueReports: { open: IssueReportView[]; resolved: IssueReportView[]; openCount: number };
 }
 
 const SERVICE_LABEL = {
@@ -111,9 +113,8 @@ export function ManageView({
   allWorkers,
   myWorkers,
   remotePoolSize,
-  workersOnline,
+  issueReports,
 }: ManageViewProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const tab = resolveManageTab(searchParams.get("tab"));
   const [now, setNow] = useState<number | null>(null);
@@ -130,128 +131,46 @@ export function ManageView({
   const pendingWorkers = allWorkers.filter((w) => w.status === "pending").length;
   const localOnline = Boolean(health?.localWorker?.online);
   const serviceKeys = Object.keys(SERVICE_LABEL) as Array<keyof typeof SERVICE_LABEL>;
-  const reachableServices = health
-    ? serviceKeys.filter((k) => health.services[k] === true).length
-    : 0;
-  const configuredServices = health
-    ? serviceKeys.filter((k) => health.services[k] !== null).length
-    : 0;
-
-  function setTab(nextTab: string) {
-    const resolved = resolveManageTab(nextTab);
-    const next = new URLSearchParams(searchParams.toString());
-    if (resolved === "requests") {
-      next.delete("tab");
-    } else {
-      next.set("tab", resolved);
-    }
-    const qs = next.toString();
-    router.replace(qs ? `/app/manage?${qs}` : "/app/manage", { scroll: false });
-  }
+  const page = {
+    requests: {
+      title: "Members",
+      description: "Review access requests and manage the people who can listen to Mint.",
+    },
+    reports: {
+      title: "Reports",
+      description: "Triage issues sent by members and revisit recently resolved reports.",
+    },
+    jobs: {
+      title: "Activity",
+      description: "Monitor service reachability, processing queues and failed jobs.",
+    },
+    workers: {
+      title: "Workers",
+      description: "Manage the built-in server worker and optional volunteer machines.",
+    },
+    analysis: {
+      title: "Audio analysis",
+      description: "Configure analysis and inspect processing coverage and results.",
+    },
+  }[tab];
 
   return (
-    <div className="space-y-8">
-      <PageHeader
-        title="Management"
-        sub="Access requests, members, pipeline queue, volunteer workers and audio analysis."
-      />
+    <div className="admin-frame mx-auto max-w-7xl space-y-8">
+      <header className="mb-9 border-b border-line/70 pb-6">
+        <h1 className="text-3xl leading-tight font-bold tracking-[-0.03em] text-fg">{page.title}</h1>
+        <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">{page.description}</p>
+        {tab === "requests" && requests.length > 0 && (
+          <p className="mt-4 inline-flex min-h-8 items-center rounded-full bg-warn/10 px-3 text-sm font-semibold text-warn">
+            {formatCount(requests.length)} waiting for review
+          </p>
+        )}
+      </header>
 
-      {/* Summary strip */}
-      <section aria-label="System summary" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <button
-          type="button"
-          onClick={() => setTab("requests")}
-          className={clsx(
-            "flex min-h-24 flex-col justify-between rounded-xl border p-4 text-left transition-colors hover:bg-hover/60",
-            tab === "requests" ? "border-mint/50 bg-elevated" : "border-line/70 bg-elevated/60",
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Requests & members</span>
-            <Users className="size-4 text-muted" aria-hidden />
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-lg font-bold tabular text-fg">
-              {requests.length > 0 ? `${formatCount(requests.length)} waiting` : "0 waiting"}
-            </p>
-            <span className="text-xs text-muted tabular">{formatCount(members.length)} members</span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab("jobs")}
-          className={clsx(
-            "flex min-h-24 flex-col justify-between rounded-xl border p-4 text-left transition-colors hover:bg-hover/60",
-            tab === "jobs" ? "border-mint/50 bg-elevated" : "border-line/70 bg-elevated/60",
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Pipeline queue</span>
-            <ListChecks className="size-4 text-muted" aria-hidden />
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-lg font-bold tabular text-fg">
-              {formatCount(activeTracks.length)} active
-            </p>
-            <span className={clsx("text-xs font-medium tabular", failedTracks.length > 0 ? "text-danger" : "text-muted")}>
-              {formatCount(failedTracks.length)} failed
-            </span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab("workers")}
-          className={clsx(
-            "flex min-h-24 flex-col justify-between rounded-xl border p-4 text-left transition-colors hover:bg-hover/60",
-            tab === "workers" ? "border-mint/50 bg-elevated" : "border-line/70 bg-elevated/60",
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Workers</span>
-            <Cpu className="size-4 text-muted" aria-hidden />
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-lg font-bold text-fg">
-              {localOnline ? "NAS online" : "NAS offline"}
-            </p>
-            <span className={clsx("text-xs font-medium tabular", pendingWorkers > 0 ? "text-warn" : "text-muted")}>
-              {pendingWorkers > 0
-                ? `${formatCount(pendingWorkers)} to approve`
-                : `${formatCount(workersOnline)} volunteers`}
-            </span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setTab("jobs")}
-          className="flex min-h-24 flex-col justify-between rounded-xl border border-line/70 bg-elevated/60 p-4 text-left transition-colors hover:bg-hover/60"
-        >
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold tracking-wider text-faint uppercase">Services</span>
-            <Waves className="size-4 text-muted" aria-hidden />
-          </div>
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-lg font-bold tabular text-fg">
-              {health ? `${reachableServices} of ${configuredServices || 4} ready` : "Awaiting worker"}
-            </p>
-            <span className="text-xs text-muted">
-              {health ? `Checked ${formatRelative(health.checkedAt, now)}` : "No heartbeat yet"}
-            </span>
-          </div>
-        </button>
-      </section>
-
-      <Tabs
-        label="Management sections"
+      <AdminSectionContent
         value={tab}
-        onValueChange={setTab}
-        tabs={[
+        sections={[
           {
             value: "requests",
-            label: requests.length > 0 ? `Requests (${formatCount(requests.length)})` : "Requests",
             content: (
               <div className="space-y-10">
                 <section aria-labelledby="manage-access-requests">
@@ -476,11 +395,46 @@ export function ManageView({
             ),
           },
           {
+            value: "reports",
+            content: (
+              <div className="space-y-10">
+                <section aria-labelledby="manage-open-reports">
+                  <div className="mb-4">
+                    <h2 id="manage-open-reports" className="text-xl font-bold">
+                      Open reports{" "}
+                      {issueReports.openCount > 0 && (
+                        <span className="text-mint tabular">({formatCount(issueReports.openCount)})</span>
+                      )}
+                    </h2>
+                    <p className="mt-1 max-w-prose text-sm text-muted">
+                      Problems members sent with Report an issue. Mark each one resolved once it&apos;s handled.
+                    </p>
+                  </div>
+                  {issueReports.open.length === 0 ? (
+                    <p className="rounded-xl border border-line/60 bg-elevated/50 p-5 text-sm text-muted">
+                      No open reports. New ones appear here when a member sends one.
+                    </p>
+                  ) : (
+                    <IssueReportList reports={issueReports.open} now={now} />
+                  )}
+                  {issueReports.open.length < issueReports.openCount && (
+                    <p className="mt-3 text-xs text-muted">
+                      Showing the newest {formatCount(issueReports.open.length)}. Resolve some to see older reports.
+                    </p>
+                  )}
+                </section>
+
+                {issueReports.resolved.length > 0 && (
+                  <section aria-labelledby="manage-resolved-reports">
+                    <h2 id="manage-resolved-reports" className="mb-4 text-xl font-bold">Recently resolved</h2>
+                    <IssueReportList reports={issueReports.resolved} now={now} />
+                  </section>
+                )}
+              </div>
+            ),
+          },
+          {
             value: "jobs",
-            label:
-              failedTracks.length + activeTracks.length > 0
-                ? `Jobs and queue (${formatCount(failedTracks.length + activeTracks.length)})`
-                : "Jobs and queue",
             content: (
               <div className="space-y-10">
                 <section aria-labelledby="manage-services">
@@ -661,7 +615,6 @@ export function ManageView({
           },
           {
             value: "workers",
-            label: pendingWorkers > 0 ? `Workers (${formatCount(pendingWorkers)})` : "Workers",
             content: (
               <div className="space-y-10">
                 <section aria-labelledby="manage-nas-worker" className="rounded-xl border border-line/70 bg-elevated p-5">
@@ -726,11 +679,61 @@ export function ManageView({
           },
           {
             value: "analysis",
-            label: "Analysis",
             content: <AnalysisPanel />,
           },
         ]}
       />
     </div>
+  );
+}
+
+function AdminSectionContent({
+  value,
+  sections,
+}: {
+  value: ManageTab;
+  sections: Array<{ value: ManageTab; content: ReactNode }>;
+}) {
+  return <>{sections.find((section) => section.value === value)?.content}</>;
+}
+
+function IssueReportList({ reports, now }: { reports: IssueReportView[]; now: number | null }) {
+  return (
+    <ul className="divide-y divide-line rounded-xl border border-line/70 bg-elevated">
+      {reports.map((report) => (
+        <li key={report.id} className="flex flex-wrap items-start justify-between gap-4 p-4">
+          <div className="min-w-0 flex-1 space-y-1.5">
+            <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-fg">
+              {issueCategoryLabel(report.category)}
+              {report.status === "resolved" && (
+                <Badge tone="positive">
+                  <CheckCircle2 className="size-3.5" aria-hidden />
+                  Resolved
+                </Badge>
+              )}
+            </p>
+            {report.context && (
+              <p className="text-sm break-words text-muted">
+                About <span className="text-fg">{report.context}</span>
+              </p>
+            )}
+            <p className="max-w-prose text-sm whitespace-pre-wrap break-words text-fg">{report.message}</p>
+            <p className="text-xs break-words text-faint">
+              {report.reporter ? `${report.reporter.name} · ${report.reporter.email}` : "Former member"} · Sent{" "}
+              {formatRelative(report.createdAt, now)}
+              {report.status === "resolved" &&
+                ` · Resolved ${formatRelative(report.resolvedAt, now)}${report.resolvedBy ? ` by ${report.resolvedBy}` : ""}`}
+            </p>
+          </div>
+          {report.status === "open" ? (
+            <ActionButton action={setIssueReportResolved.bind(null, report.id, true)} tone="primary">
+              Mark resolved
+            </ActionButton>
+          ) : (
+            <ActionButton action={setIssueReportResolved.bind(null, report.id, false)}>Reopen</ActionButton>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }

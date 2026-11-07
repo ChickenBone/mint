@@ -25,7 +25,7 @@ const config: NextConfig = {
   // Vercel builds its own output; standalone is for the self-hosted Docker image.
   output: process.env.VERCEL ? undefined : "standalone",
   outputFileTracingRoot: path.join(import.meta.dirname, "../../"),
-  transpilePackages: ["@mint/core"],
+  transpilePackages: ["@mint/core", "@mint/client"],
   serverExternalPackages: ["@node-rs/argon2", "bullmq", "pg", "ioredis"],
   poweredByHeader: false,
   reactStrictMode: true,

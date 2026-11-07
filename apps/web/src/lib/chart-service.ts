@@ -1,11 +1,13 @@
 import { getDb, schema } from "@mint/core/db";
 import { createRedis } from "@mint/core/redis";
+import { redisPublicCacheStore } from "@mint/core/public-cache";
 import { PLAYABLE } from "@mint/core/playback";
 import { MusicError } from "@mint/core/music";
 import { toTrackView } from "@mint/core/views";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
-import { CHARTS, chartIdentity, chartKey, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
+import { CHARTS, chartIdentity, chartKey, chartRecordingResolution, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
 import { cachedChart, type CachedChart, type ChartCacheStore } from "./chart-cache";
+import { cachedChartSource } from "./chart-source";
 import { readRequestRecording, requestRecording, searchRecordings } from "./music-requests";
 import { trackPlayerItem } from "./player-protocol";
 
@@ -16,17 +18,19 @@ function cacheStore(): ChartCacheStore {
     connections.__mintChartRedis.on("error", (error) => console.error("Chart cache connection failed", error.message));
   }
   const redis = connections.__mintChartRedis;
-  return {
-    get: (key) => redis.get(key),
-    set: async (key, value, seconds, onlyIfAbsent) => (onlyIfAbsent
-      ? await redis.set(key, value, "EX", seconds, "NX")
-      : await redis.set(key, value, "EX", seconds)) === "OK",
-    release: async (key, value) => { await redis.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end", 1, key, value); },
-  };
+  return redisPublicCacheStore(() => redis);
 }
 async function loadChart(chart: ChartDefinition): Promise<CachedChart> {
   if (process.env.MINT_CHARTS_ENABLED === "false") return { snapshot: null, status: "error", retryAt: null,
     notice: "Charts are disabled on this instance. The operator can enable MINT_CHARTS_ENABLED on the web service." };
+  if (process.env.MINT_CHART_SOURCE_URL) {
+    try { return await cachedChartSource(chart, process.env.MINT_CHART_SOURCE_URL); }
+    catch (error) {
+      console.error("Chart source request failed", error instanceof Error ? error.name : "Unknown error");
+      return { snapshot: null, status: "error", retryAt: null,
+        notice: "The configured chart source is unavailable or returned invalid data. Check MINT_CHART_SOURCE_URL and service health." };
+    }
+  }
   try { return await cachedChart(chart, cacheStore()); }
   catch (error) {
     console.error("Chart cache unavailable", error instanceof Error ? error.message : "Unknown cache error");
@@ -80,15 +84,13 @@ export async function chartAcquisition(userId: string, input: { chart: string; e
   if (local?.availability === "available") return { status: "available" as const };
   let token = input.token;
   if (!token) {
-    const results = await searchRecordings(userId, `${entry.artist} ${entry.title}`.slice(0, 100), fetch, entry.isrc);
-    const safe = results.filter((result) => compatibleChartRecording(entry, result) &&
-      (entry.recordingId === result.id || entry.durationSec && result.durationSec) &&
-      (!entry.isrc || result.isrcs?.includes(entry.isrc)) &&
-      (!entry.album || result.album && chartKey(entry.album) === chartKey(result.album)));
-    if (safe.length !== 1 || local?.availability === "ambiguous") return { status: "resolve" as const,
+    const { results, automatic } = chartRecordingResolution(entry,
+      await searchRecordings(userId, `${entry.artist} ${entry.title}`.slice(0, 100), fetch, entry.isrc),
+      local?.availability === "ambiguous");
+    if (!automatic) return { status: "resolve" as const,
       message: "Choose the exact recording and, if needed, a source video. Nothing has been requested yet.",
       query: `${entry.artist} ${entry.title}`.slice(0, 100), results };
-    token = safe[0]!.token;
+    token = automatic.token;
   }
   const recording = readRequestRecording(userId, token);
   if (!compatibleChartRecording(entry, recording)) throw new MusicError("That recording differs in artist, title, version or duration. Choose the chart's exact recording; nothing was requested.", 409);

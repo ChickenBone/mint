@@ -23,13 +23,16 @@ test("public artwork proxies only signed track-specific image requests without l
     assert.equal(verifyToken("playback", token), null);
     assert.equal(init?.redirect, "error");
     return new Response(init?.method === "HEAD" || status !== 200 ? null : png, { status,
-      headers: { "content-type": type, "content-length": "4", "cache-control": "public, max-age=3600", etag: '"fixture"' } });
+      headers: { "content-type": type, "content-length": "4", "cache-control": "public, max-age=3600", etag: '"fixture"',
+        "x-mint-cache-age": "86410", "x-mint-cache-status": "stale" } });
   });
   const response = await GET(new Request(`https://mint.example/api/artwork/${id}`), { params });
   assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
   assert.equal(response.headers.get("content-type"), "image/png");
   assert.equal(response.headers.get("cache-control"), "public, max-age=3600");
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-mint-cache-age"), "86410");
+  assert.equal(response.headers.get("x-mint-cache-status"), "stale");
   assert.ok(!JSON.stringify([...response.headers]).includes("private-worker"));
   const notModified = await GET(new Request(`https://mint.example/api/artwork/${id}`, { headers: { "if-none-match": '"fixture"' } }), { params });
   assert.equal(notModified.status, 304); assert.equal(await notModified.text(), "");

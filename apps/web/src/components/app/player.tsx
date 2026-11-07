@@ -1,12 +1,11 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MoreHorizontal, SlidersHorizontal, Volume2, X } from "lucide-react";
+import { ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { GlobalSearch } from "./global-search";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
 import { analysisSchema } from "@mint/core/analysis";
 import { authorizeOffline, clearOffline, listOffline, offlineAudio, offlineSettings } from "@/lib/offline";
@@ -15,11 +14,26 @@ import { ListeningHistory } from "@/lib/listening-history";
 import { TrackMusicActions } from "./track-music-actions";
 import { NativePlayer } from "@/lib/native-player";
 import { collectionParams, itemCollection } from "@/lib/browser-catalog";
-import { AudioPanel, LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
+import { LyricsPanel, PlayerPanel, QueueContents } from "./player-panels";
 import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
+import { playerSheetArtworkOrigin, playerSheetDestination, playerSheetProgress, playerSheetReleaseVelocity, stepPlayerSheetSpring } from "./player-sheet-gesture";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
+type SheetGesture = {
+  pointerId: number;
+  startX: number;
+  startY: number;
+  startProgress: number;
+  travel: number;
+  origin: HTMLElement;
+  captureTarget: HTMLElement;
+  scrollCollapse: boolean;
+  active: boolean;
+  samples: { y: number; time: number }[];
+};
 interface PlayerContext {
   ready: boolean;
   busy: boolean;
@@ -30,18 +44,48 @@ interface PlayerContext {
 const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
   nowPlaying: boolean; ready: boolean;
-  panel: "queue" | "audio" | "lyrics" | null; setPanel: (panel: "queue" | "audio" | "lyrics" | null) => void;
+  sheetActive: boolean;
+  measureSheetArtwork: () => void;
+  panel: "queue" | "lyrics" | null; setPanel: (panel: "queue" | "lyrics" | null) => void;
   returnTo: string; rememberReturn: () => void;
+  restorePageScroll: () => void;
+  expandPlayer: (opener?: HTMLElement | null) => void;
+  collapsePlayer: () => void;
+  onSheetPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSheetPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSheetPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSheetPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSheetLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
+  onSheetClickCapture: (event: ReactMouseEvent<HTMLElement>) => void;
 }
 const ShellContext = createContext<ShellContext | null>(null);
 export const usePlayer = () => useContext(Context);
 const empty: PlayerState = { playing: false, time: 0, duration: 0, volume: 100, shuffle: false, repeat: 0, track: null, queue: [], queueTotal: 0, queueOffset: 0 };
 
-export function MusicNavigation() {
-  return <nav aria-label="Search" className="flex min-w-0 flex-1 justify-end lg:justify-start"><GlobalSearch /></nav>;
+export function SearchShortcut() {
+  const pathname = usePathname(), router = useRouter();
+  useEffect(() => {
+    const keydown = (event: globalThis.KeyboardEvent) => {
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.isContentEditable || target.matches("input,textarea,select,button,[role=button],[role=menuitem]"))) return;
+      const shortcut = event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey ||
+        event.key.toLowerCase() === "k" && (event.metaKey || event.ctrlKey) && !event.altKey;
+      if (!shortcut) return;
+      event.preventDefault();
+      if (pathname === "/app/search") window.dispatchEvent(new Event("mint:focus-search"));
+      else router.push("/app/search");
+    };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [pathname, router]);
+  return null;
 }
 
 export function PlayerProvider({ children, memberId }: { children: React.ReactNode; memberId: string }) {
+  const pathname = usePathname();
+  const params = useSearchParams();
+  const router = useRouter();
+  const nowPlaying = pathname === "/app/now-playing";
   const first = useRef<HTMLAudioElement>(null), second = useRef<HTMLAudioElement>(null);
   const engine = useRef<NativePlayer | null>(null);
   const selectionRequest = useRef<string | null>(null);
@@ -51,15 +95,272 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   const [error, setError] = useState<string | null>(null);
   const [selection, setSelection] = useState<Menu | null>(null);
   const [returnTo, setReturnTo] = useState("/app/library");
+  const returnToRef = useRef(returnTo);
+  const [sheetActive, setSheetActive] = useState(nowPlaying);
+  const sheetProgress = useRef(0);
+  const sheetFrame = useRef<number | null>(null);
+  const sheetTarget = useRef(0);
+  const gesture = useRef<SheetGesture | null>(null);
+  const suppressClick = useRef(false);
+  const suppressClickTimer = useRef<number | null>(null);
+  const focusReturn = useRef<HTMLElement | null>(null);
+  const pageScrollPosition = useRef(0);
+  const pendingFocusRestore = useRef(false);
   const [panelSelection, setPanelSelection] = useState<{ surface: string; value: ShellContext["panel"] } | null>(null);
-  const pathname = usePathname();
-  const params = useSearchParams();
   const surface = `${pathname}?${params.toString()}`;
-  const panel = panelSelection?.surface === surface ? panelSelection.value : null;
+  const requestedPanel = pathname === "/app/now-playing" && (params.get("tab") === "lyrics" || params.get("tab") === "queue") ? params.get("tab") as "lyrics" | "queue" : null;
+  const panel = panelSelection?.surface === surface ? panelSelection.value : requestedPanel;
   const setPanel = useCallback((value: ShellContext["panel"]) => setPanelSelection({ surface, value }), [surface]);
-  const router = useRouter();
-  const nowPlaying = pathname === "/app/now-playing";
-  const rememberReturn = useCallback(() => setReturnTo(`${location.pathname}${location.search}`), []);
+  const nowPlayingRef = useRef(nowPlaying);
+  const restorePageScroll = useCallback(() => {
+    const content = document.querySelector<HTMLElement>(".listening-content");
+    if (content) content.scrollTop = pageScrollPosition.current;
+  }, []);
+  useEffect(() => {
+    nowPlayingRef.current = nowPlaying;
+    returnToRef.current = returnTo;
+  }, [nowPlaying, returnTo]);
+  const rememberReturn = useCallback(() => {
+    const destination = `${location.pathname}${location.search}`;
+    returnToRef.current = destination;
+    setReturnTo(destination);
+    focusReturn.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    pageScrollPosition.current = document.querySelector<HTMLElement>(".listening-content")?.scrollTop ?? 0;
+    setSheetActive(true);
+  }, []);
+
+  const writeSheetProgress = useCallback((progress: number) => {
+    sheetProgress.current = progress;
+    document.documentElement.style.setProperty("--player-progress", String(progress));
+    document.documentElement.toggleAttribute("data-player-sheet-moving", progress !== 1);
+  }, []);
+
+  const measureSheet = useCallback(() => {
+    const dock = document.querySelector<HTMLElement>(".player-dock");
+    const offset = dock ? dock.getBoundingClientRect().top : window.innerHeight;
+    document.documentElement.style.setProperty("--player-collapse-offset", `${Math.max(0, offset)}px`);
+  }, []);
+
+  const measureSheetArtwork = useCallback(() => {
+    measureSheet();
+    const root = document.documentElement;
+    const progress = sheetProgress.current;
+    root.style.setProperty("--player-progress", "1");
+    let mini: DOMRect | undefined;
+    let expanded: DOMRect | undefined;
+    try {
+      mini = document.querySelector<HTMLElement>(".player-mini-artwork")?.getBoundingClientRect();
+      expanded = document.querySelector<HTMLElement>(".player-expanded-artwork .now-playing-art")?.getBoundingClientRect();
+    } finally {
+      writeSheetProgress(progress);
+    }
+
+    if (!mini || !expanded) {
+      root.style.setProperty("--player-art-from-x", "0px");
+      root.style.setProperty("--player-art-from-y", "0px");
+      root.style.setProperty("--player-art-from-scale", "1");
+      return;
+    }
+
+    const collapseOffset = Number.parseFloat(root.style.getPropertyValue("--player-collapse-offset")) || 0;
+    const origin = playerSheetArtworkOrigin(
+      { x: mini.left, y: mini.top, width: mini.width, height: mini.height },
+      { x: expanded.left, y: expanded.top, width: expanded.width, height: expanded.height },
+      collapseOffset,
+    );
+    root.style.setProperty("--player-art-from-x", `${origin.x}px`);
+    root.style.setProperty("--player-art-from-y", `${origin.y}px`);
+    root.style.setProperty("--player-art-from-scale", String(origin.scale));
+    root.style.setProperty("--player-art-expanded-x", `${expanded.left}px`);
+    root.style.setProperty("--player-art-expanded-y", `${expanded.top}px`);
+    root.style.setProperty("--player-art-expanded-width", `${expanded.width}px`);
+  }, [measureSheet, writeSheetProgress]);
+
+  const finishSheet = useCallback((destination: number, navigate: boolean) => {
+    sheetTarget.current = destination;
+    writeSheetProgress(destination);
+    if (destination === 1) {
+      setSheetActive(true);
+      if (navigate && !nowPlayingRef.current) router.push("/app/now-playing", { scroll: false });
+      return;
+    }
+
+    setSheetActive(false);
+    if (navigate && nowPlayingRef.current) {
+      pendingFocusRestore.current = true;
+      router.replace(returnToRef.current, { scroll: false });
+    } else {
+      requestAnimationFrame(() => {
+        const preferred = focusReturn.current;
+        const fallback = document.querySelector<HTMLElement>('[aria-label="Expand player"]');
+        (preferred?.isConnected ? preferred : fallback)?.focus({ preventScroll: true });
+      });
+    }
+  }, [router, writeSheetProgress]);
+
+  const settleSheet = useCallback((destination: number, velocity = 0, navigate = true) => {
+    if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
+    sheetFrame.current = null;
+    measureSheetArtwork();
+    sheetTarget.current = destination;
+    setSheetActive(true);
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      sheetFrame.current = null;
+      finishSheet(destination, navigate);
+      return;
+    }
+
+    let spring = { position: sheetProgress.current, velocity };
+    let previous = performance.now();
+    const frame = (time: number) => {
+      const elapsed = Math.min(time - previous, 32);
+      previous = time;
+      spring = stepPlayerSheetSpring(spring, destination, elapsed);
+      writeSheetProgress(spring.position);
+      if (Math.abs(spring.position - destination) < 0.001 && Math.abs(spring.velocity) < 0.01) {
+        sheetFrame.current = null;
+        finishSheet(destination, navigate);
+      } else {
+        sheetFrame.current = requestAnimationFrame(frame);
+      }
+    };
+    sheetFrame.current = requestAnimationFrame(frame);
+  }, [finishSheet, measureSheetArtwork, writeSheetProgress]);
+
+  const expandPlayer = useCallback((opener?: HTMLElement | null) => {
+    if (!nowPlayingRef.current) {
+      const destination = `${pathname}${location.search}`;
+      returnToRef.current = destination;
+      setReturnTo(destination);
+      pageScrollPosition.current = document.querySelector<HTMLElement>(".listening-content")?.scrollTop ?? 0;
+    }
+    focusReturn.current = opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    settleSheet(1);
+  }, [pathname, settleSheet]);
+
+  const collapsePlayer = useCallback(() => settleSheet(0), [settleSheet]);
+
+  const onSheetPointerDown = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (!event.isPrimary || event.button !== 0 || gesture.current) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const handle = target?.closest("[data-player-drag-handle]");
+    const dragRegion = target?.closest("[data-player-drag-region]");
+    const dragSurface = target?.closest("[data-player-drag-surface]");
+    const scrollTarget = target?.closest("[data-player-sheet-scroll]");
+    const scrollRegion = scrollTarget instanceof HTMLElement ? scrollTarget : null;
+    if (!handle && !dragRegion && !dragSurface && !scrollRegion) return;
+    if (target?.closest("button,input,select,textarea,[role=button],[role=menuitem],[contenteditable=true]") && !handle) return;
+    if (scrollRegion && (scrollRegion.scrollTop > 0 || !nowPlayingRef.current)) return;
+    if (nowPlayingRef.current) measureSheetArtwork();
+    suppressClick.current = false;
+    if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
+    const time = performance.now();
+    const currentTarget = event.currentTarget;
+    const captureTarget = target?.closest<HTMLElement>("a[href]") ?? currentTarget;
+    if (!scrollRegion) {
+      try { captureTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have been canceled. */ }
+    }
+    gesture.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startProgress: sheetProgress.current,
+      travel: Math.max(1, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--player-collapse-offset")) || window.innerHeight),
+      origin: currentTarget,
+      captureTarget,
+      scrollCollapse: Boolean(scrollRegion),
+      active: false,
+      samples: [{ y: event.clientY, time }],
+    };
+  }, [measureSheetArtwork]);
+
+  const onSheetPointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const current = gesture.current;
+    if (!current || event.pointerId !== current.pointerId) return;
+    const deltaX = event.clientX - current.startX;
+    const deltaY = event.clientY - current.startY;
+    if (!current.active) {
+      if (Math.abs(deltaX) < 6 && Math.abs(deltaY) < 6) return;
+      if (Math.abs(deltaY) <= Math.abs(deltaX) * 1.15) {
+        gesture.current = null;
+        return;
+      }
+      if (current.scrollCollapse && deltaY < 0) {
+        gesture.current = null;
+        return;
+      }
+      if (window.getSelection() && !window.getSelection()?.isCollapsed) {
+        gesture.current = null;
+        return;
+      }
+      if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
+      sheetFrame.current = null;
+      current.active = true;
+      current.startProgress = sheetProgress.current;
+      current.startY = event.clientY;
+      current.samples = [];
+      setSheetActive(true);
+      if (!nowPlayingRef.current) {
+        focusReturn.current = current.origin;
+        const destination = `${pathname}${location.search}`;
+        returnToRef.current = destination;
+        setReturnTo(destination);
+        pageScrollPosition.current = document.querySelector<HTMLElement>(".listening-content")?.scrollTop ?? 0;
+      }
+      if (!current.captureTarget.hasPointerCapture(event.pointerId)) {
+        try { current.captureTarget.setPointerCapture(event.pointerId); } catch { /* The browser may have taken over scrolling. */ }
+      }
+      if (!current.scrollCollapse && event.nativeEvent.cancelable) event.preventDefault();
+    }
+    const time = performance.now();
+    current.samples.push({ y: event.clientY, time });
+    while (current.samples.length > 2 && time - (current.samples[0]?.time ?? time) > 120) current.samples.shift();
+    writeSheetProgress(playerSheetProgress(current.startProgress, current.startY, event.clientY, current.travel));
+  }, [pathname, writeSheetProgress]);
+
+  const suppressNextClick = useCallback(() => {
+    suppressClick.current = true;
+    if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
+    suppressClickTimer.current = window.setTimeout(() => { suppressClick.current = false; }, 500);
+  }, []);
+
+  const onSheetPointerUp = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const current = gesture.current;
+    if (!current || event.pointerId !== current.pointerId) return;
+    gesture.current = null;
+    if (!current.active) return;
+    suppressNextClick();
+    const velocity = playerSheetReleaseVelocity(current.samples, current.travel, performance.now());
+    settleSheet(playerSheetDestination(sheetProgress.current, velocity), velocity);
+  }, [settleSheet, suppressNextClick]);
+
+  const onSheetPointerCancel = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const current = gesture.current;
+    if (!current || event.pointerId !== current.pointerId) return;
+    gesture.current = null;
+    if (!current.active) return;
+    suppressNextClick();
+    settleSheet(playerSheetDestination(sheetProgress.current, 0), 0);
+  }, [settleSheet, suppressNextClick]);
+
+  const onSheetLostPointerCapture = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const current = gesture.current;
+    if (!current || event.pointerId !== current.pointerId) return;
+    gesture.current = null;
+    if (current.active) {
+      suppressNextClick();
+      settleSheet(playerSheetDestination(sheetProgress.current, 0), 0);
+    }
+  }, [settleSheet, suppressNextClick]);
+
+  const onSheetClickCapture = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    if (!suppressClick.current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    suppressClick.current = false;
+    if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
+  }, []);
 
   const command = useCallback((command: PlayerCommand): Promise<boolean> => {
     if (!engine.current) { setError("The player is still starting. Try again in a moment."); return Promise.resolve(false); }
@@ -202,13 +503,75 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     };
   }, [memberId]);
   useEffect(() => {
-    if (!nowPlaying) return;
     const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !event.defaultPrevented && !selection) router.push(returnTo);
+      if (event.key === "Escape" && !event.defaultPrevented && !selection && (nowPlaying || sheetActive)) {
+        event.preventDefault();
+        collapsePlayer();
+      }
     };
     window.addEventListener("keydown", escape);
     return () => window.removeEventListener("keydown", escape);
-  }, [nowPlaying, router, returnTo, selection]);
+  }, [collapsePlayer, nowPlaying, selection, sheetActive]);
+  const previousRoute = useRef(false);
+  useEffect(() => {
+    if (previousRoute.current === nowPlaying) return;
+    previousRoute.current = nowPlaying;
+    if (nowPlaying) {
+      if (sheetProgress.current < 0.999) settleSheet(1, 0, false);
+    } else if (sheetProgress.current > 0.001) {
+      settleSheet(0, 0, false);
+    }
+  }, [nowPlaying, settleSheet]);
+  useEffect(() => {
+    if (nowPlaying || !pendingFocusRestore.current) return;
+    pendingFocusRestore.current = false;
+    requestAnimationFrame(() => {
+      const preferred = focusReturn.current;
+      const fallback = document.querySelector<HTMLElement>('[aria-label="Expand player"]');
+      (preferred?.isConnected ? preferred : fallback)?.focus({ preventScroll: true });
+    });
+  }, [nowPlaying]);
+  useEffect(() => {
+    const app = document.querySelector<HTMLElement>(".app-shell");
+    if (!app) return;
+    app.inert = nowPlaying;
+    return () => { app.inert = false; };
+  }, [nowPlaying]);
+  useEffect(() => {
+    const dock = document.querySelector<HTMLElement>(".player-dock");
+    measureSheet();
+    const observer = dock && "ResizeObserver" in window ? new ResizeObserver(measureSheetArtwork) : null;
+    if (dock) observer?.observe(dock);
+    const resize = () => {
+      measureSheetArtwork();
+      const current = gesture.current;
+      if (!current) return;
+      gesture.current = null;
+      if (current.active) {
+        suppressNextClick();
+        settleSheet(playerSheetDestination(sheetProgress.current, 0), 0);
+      }
+    };
+    const visibility = () => {
+      if (document.visibilityState !== "hidden") return;
+      const current = gesture.current;
+      gesture.current = null;
+      if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
+      sheetFrame.current = null;
+      finishSheet(current?.active ? playerSheetDestination(sheetProgress.current, 0) : sheetTarget.current, true);
+    };
+    window.addEventListener("resize", resize);
+    window.visualViewport?.addEventListener("resize", resize);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", resize);
+      window.visualViewport?.removeEventListener("resize", resize);
+      document.removeEventListener("visibilitychange", visibility);
+      if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
+      if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
+    };
+  }, [finishSheet, measureSheet, measureSheetArtwork, settleSheet, suppressNextClick]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || !state.track) return;
@@ -227,6 +590,10 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   }, [selection]);
   const showMenu: PlayerContext["menu"] = (item, point, returnTo) => setSelection({ item, ...point, path: surface, returnTo: returnTo ?? null });
   const browse = (item: PlayerItem) => {
+    if (item.type === "playlist") {
+      router.push(`/app/collection/${encodeURIComponent(item.id)}`);
+      return;
+    }
     const query = new URLSearchParams({ type: item.type === "artist" ? "album" : "track" });
     const route = item.type === "artist" ? "artists" : "albums";
     router.push(`/app/library/${route}/${encodeURIComponent(item.id)}?${query}`);
@@ -234,7 +601,10 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
 
   return (
     <Context.Provider value={{ ready, busy, state, command, menu: showMenu }}>
-      <ShellContext.Provider value={{ nowPlaying, ready, panel, setPanel, returnTo, rememberReturn }}>
+      <ShellContext.Provider value={{
+        nowPlaying, sheetActive, measureSheetArtwork, ready, panel, setPanel, returnTo, rememberReturn, restorePageScroll, expandPlayer, collapsePlayer,
+        onSheetPointerDown, onSheetPointerMove, onSheetPointerUp, onSheetPointerCancel, onSheetLostPointerCapture, onSheetClickCapture,
+      }}>
         {children}
       </ShellContext.Provider>
       {(error || selection) && createPortalSafe(
@@ -257,51 +627,99 @@ function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 export function MusicStage({ children }: { children: React.ReactNode }) {
-  const { nowPlaying, ready, panel, setPanel, returnTo } = useContext(ShellContext)!;
+  const shell = useContext(ShellContext)!;
+  const { nowPlaying, sheetActive, ready, panel, setPanel, measureSheetArtwork, restorePageScroll } = shell;
   const player = usePlayer()!;
+  useLayoutEffect(() => {
+    if (sheetActive || nowPlaying) measureSheetArtwork();
+  }, [measureSheetArtwork, nowPlaying, player.state.track?.id, sheetActive]);
+  useLayoutEffect(() => {
+    if (!nowPlaying) restorePageScroll();
+  }, [nowPlaying, restorePageScroll]);
   const closeQueue = useCallback(() => {
     setPanel(null);
-    document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : panel === "lyrics" ? "Lyrics" : "Audio settings"}"]`)?.focus();
+    document.querySelector<HTMLButtonElement>(`button[aria-label="${panel === "queue" ? "Queue" : "Lyrics"}"]`)?.focus();
   }, [setPanel, panel]);
   return <div className="relative min-h-0 flex-1">
     {!nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin">{children}</main>}
-    {nowPlaying && <NowPlaying state={player.state} ready={ready} command={player.command} panel={panel} setPanel={setPanel} returnTo={returnTo} onMore={(track, button) => {
-      const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
-    }} />}
     {!nowPlaying && panel === "queue" && <PlayerPanel title="Queue" close={closeQueue}><QueueContents state={player.state} command={player.command} /></PlayerPanel>}
-    {!nowPlaying && panel === "audio" && <PlayerPanel title="Audio settings" close={closeQueue}><AudioPanel state={player.state} command={player.command} /></PlayerPanel>}
     {!nowPlaying && panel === "lyrics" && <PlayerPanel title="Lyrics" close={closeQueue}><LyricsPanel state={player.state} command={player.command} /></PlayerPanel>}
+    {(nowPlaying || sheetActive) && createPortalSafe(
+      <NowPlaying
+        state={player.state}
+        ready={ready}
+        command={player.command}
+        panel={panel}
+        setPanel={setPanel}
+        interactive={nowPlaying}
+        onCollapse={shell.collapsePlayer}
+        onPointerDown={shell.onSheetPointerDown}
+        onPointerMove={shell.onSheetPointerMove}
+        onPointerUp={shell.onSheetPointerUp}
+        onPointerCancel={shell.onSheetPointerCancel}
+        onLostPointerCapture={shell.onSheetLostPointerCapture}
+        onClickCapture={shell.onSheetClickCapture}
+        onMore={(track, button) => {
+          const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
+        }}
+      />,
+    )}
   </div>;
 }
 
 export function PlayerBar() {
   const { state, ready, command } = usePlayer()!;
-  const { panel, setPanel, nowPlaying, rememberReturn } = useContext(ShellContext)!;
+  const shell = useContext(ShellContext)!;
+  const { panel, setPanel, nowPlaying, sheetActive, rememberReturn, expandPlayer } = shell;
   const track = state.track;
-  if (nowPlaying) return null;
-  return <section aria-label="Music player" className="player-dock grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-bg px-3 py-2 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-8 lg:px-8 lg:py-4">
-    <div className="flex min-w-0 items-center gap-3">
-      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
+  const previousVolume = useRef(100);
+  return <section
+    aria-label="Music player"
+    aria-hidden={nowPlaying}
+    data-sheet-active={sheetActive || undefined}
+    data-player-drag-surface
+    inert={nowPlaying}
+    onPointerDown={shell.onSheetPointerDown}
+    onPointerMove={shell.onSheetPointerMove}
+    onPointerUp={shell.onSheetPointerUp}
+    onPointerCancel={shell.onSheetPointerCancel}
+    onLostPointerCapture={shell.onSheetLostPointerCapture}
+    onClickCapture={shell.onSheetClickCapture}
+    onClick={(event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target?.closest("a,button,input,select,textarea,[role=button]")) expandPlayer(event.currentTarget);
+    }}
+    className="player-dock relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-line bg-surface px-3 py-3 md:col-span-2 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1.3fr)_minmax(0,1fr)] lg:gap-6 lg:px-6"
+  >
+    <MusicItem item={track} data-player-drag-surface className="flex min-w-0 items-center gap-3">
+      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Expand player"
+        onKeyDown={(event) => { if (event.key === "ArrowUp") { event.preventDefault(); expandPlayer(event.currentTarget); } }}
+        className="player-mini-artwork shrink-0 rounded"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
-        <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Your music, ready when you are"}</Link>
-        <p className="truncate text-xs text-muted">{track?.artist ?? (ready ? "Choose a song to start listening" : "Connecting to your library…")}</p>
+        <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Nothing playing"}</Link>
+        <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to play" : "Connecting…"}</p>
       </div>
-    </div>
+      {track && <div className="hidden xl:block"><TrackMenuButton item={track} /></div>}
+    </MusicItem>
     <div className="flex items-center justify-end gap-2 lg:col-start-2 lg:row-start-1 lg:flex-col lg:gap-1">
       <PlaybackControls state={state} ready={ready} command={command} />
+      <Link href="/app/now-playing?tab=queue" onClick={rememberReturn} aria-label="Open queue" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg lg:hidden"><ListMusic className="size-5" /></Link>
       <div className="hidden w-full lg:block"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
     </div>
-    <div className="hidden min-w-0 items-center gap-2 lg:flex lg:col-start-3 lg:row-start-1 lg:justify-end">
-      <div className="min-w-0 flex-1 lg:hidden"><SeekControl key={track?.queueId ?? "empty"} state={state} ready={ready} command={command} /></div>
+    <div className="hidden min-w-0 items-center gap-2 lg:col-start-3 lg:row-start-1 lg:flex lg:justify-end">
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
-      <Transport label="Audio settings" active={panel === "audio"} disabled={!ready} onClick={() => setPanel(panel === "audio" ? null : "audio")}><SlidersHorizontal /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
-      <label className="hidden max-w-36 items-center gap-2 xl:flex">
-        <Volume2 className="size-4 shrink-0 text-muted" /><span className="sr-only">Volume</span>
+      <Link href="/app/settings?section=devices" aria-label="Devices" title="Devices" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MonitorSpeaker className="size-5" /></Link>
+      <div className="flex max-w-36 items-center gap-1">
+        <Transport label={state.volume ? "Mute" : "Unmute"} disabled={!ready} onClick={() => {
+          if (state.volume) previousVolume.current = state.volume;
+          command({ action: "volume", value: state.volume ? 0 : previousVolume.current });
+        }}>{state.volume ? <Volume2 /> : <VolumeX />}</Transport>
         <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} disabled={!ready}
-          onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-4 min-w-0 w-24 accent-mint" />
-      </label>
+          onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-20 accent-mint" />
+      </div>
     </div>
+    <div aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-line lg:hidden"><div className="h-full bg-mint" style={{ width: `${state.duration ? Math.min(100, state.time / state.duration * 100) : 0}%` }} /></div>
   </section>;
 }
 
@@ -375,5 +793,5 @@ export function TrackMenuButton({ item }: { item: PlayerItem }) {
   return <button aria-label={`More options for ${item.title}`} aria-haspopup="menu" onClick={(event) => {
     const rect = event.currentTarget.getBoundingClientRect();
     player.menu(item, { x: rect.x, y: rect.bottom }, event.currentTarget);
-  }} className="rounded-full p-2 text-muted hover:bg-elevated hover:text-fg"><MoreHorizontal className="size-4" /></button>;
+  }} className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-elevated hover:text-fg"><MoreHorizontal className="size-4" /></button>;
 }

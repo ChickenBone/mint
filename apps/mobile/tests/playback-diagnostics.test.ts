@@ -1,0 +1,112 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { PlaybackDiagnostics, DIAGNOSTICS_SAMPLES, DIAGNOSTICS_EVENTS } from "../src/playback/diagnostics";
+import { TrackAnalysisRequest } from "../src/playback/analysis-request";
+import { emptyPlayerState } from "../src/playback/types";
+import type { PlaylistStatus } from "../src/playback/engine";
+import type { TrackAnalysisResponse } from "@mint/client";
+
+const status: PlaylistStatus = { currentIndex: 0, currentTime: 2, duration: 180, playing: true, isBuffering: false, isLoaded: true };
+const state = { ...emptyPlayerState, track: { id: "track", title: "Song", occurrenceId: "one" } };
+test("diagnostics default off, throttle at 1 Hz, remain bounded and clear on disable/track", async () => {
+  let now = 0;
+  const recorder = new PlaybackDiagnostics(() => now);
+  assert.equal(recorder.status(status, state, 2), false);
+  await recorder.request("queue request", async () => 1);
+  assert.deepEqual(recorder.read().samples, []);
+  assert.deepEqual(recorder.read().events, []);
+  recorder.setEnabled(true);
+  recorder.source("track", "offline");
+  assert.equal(recorder.status(status, state, 2), true);
+  now = 250;
+  assert.equal(recorder.status(status, state, 2), false);
+  for (let index = 1; index < 100; index++) {
+    now = index * 1000;
+    recorder.status({ ...status, currentTime: index }, state, 2);
+    await recorder.request("queue page", async () => true);
+  }
+  assert.equal(recorder.read().samples.length, DIAGNOSTICS_SAMPLES);
+  assert.equal(recorder.read().events.length, DIAGNOSTICS_EVENTS);
+  assert.equal(recorder.read().source, "offline");
+  now += 1000;
+  recorder.status(status, { ...state, track: { ...state.track, occurrenceId: "two" } }, 2);
+  assert.equal(recorder.read().samples.length, 1);
+  assert.equal(recorder.read().events.length, 0);
+  recorder.setEnabled(false);
+  assert.equal(recorder.read().samples.length, 0);
+  assert.equal(recorder.read().source, null);
+});
+test("missing measurements are null, loading and buffering transitions are observed, errors are numeric only", () => {
+  let now = 0;
+  const recorder = new PlaybackDiagnostics(() => now);
+  recorder.setEnabled(true);
+  recorder.status({ ...status, isLoaded: false, isBuffering: true, currentTime: NaN,
+    error: { code: 2004, responseCode: 403, message: "https://private.example/secret", headers: "private" } }, { ...state, loading: true }, 5);
+  assert.equal(recorder.read().samples[0]!.positionSec, null);
+  assert.equal(recorder.read().samples[0]!.durationSec, null);
+  assert.equal(recorder.read().samples[0]!.statusIntervalMs, null);
+  now = 1000;
+  recorder.status(status, state, 5);
+  assert.equal(recorder.read().loadLatencyMs, 1000);
+  assert.equal(recorder.read().bufferingTransitions, 1);
+  assert.equal(recorder.read().events[0]!.nativeCode, 2004);
+  assert.equal(recorder.read().events[0]!.httpStatus, 403);
+  assert.doesNotMatch(JSON.stringify(recorder.read()), /private|secret|headers/);
+});
+test("late queue requests cannot repopulate a disabled or reenabled trace", async () => {
+  const recorder = new PlaybackDiagnostics();
+  recorder.setEnabled(true);
+  let resolve!: () => void;
+  const pending = recorder.request("queue page", () => new Promise<void>((done) => { resolve = done; }));
+  recorder.setEnabled(false);
+  recorder.setEnabled(true);
+  resolve();
+  await pending;
+  assert.deepEqual(recorder.read().events, []);
+  await assert.rejects(recorder.request("queue page", async () => { throw { status: 429, message: "private" }; }));
+  assert.equal(recorder.read().events[0]!.httpStatus, 429);
+});
+test("initial queue response latency survives the prepared selection without retaining prior track events", async () => {
+  let now = 0;
+  const recorder = new PlaybackDiagnostics(() => now);
+  recorder.setEnabled(true);
+  await recorder.request("queue request", async () => { now = 75; });
+  recorder.trackChanged(state);
+  assert.equal(recorder.read().events[0]!.latencyMs, 75);
+  assert.equal(recorder.read().events[0]!.httpStatus, null, "Successful transport status was not exposed; do not fabricate HTTP 200.");
+  recorder.trackChanged({ ...state, track: null });
+  assert.deepEqual(recorder.read().events, []);
+});
+test("terminal errors and failed API responses publish immediately without another native status tick", async () => {
+  const published: unknown[] = [];
+  const recorder = new PlaybackDiagnostics(() => 0, (snapshot) => published.push(snapshot));
+  recorder.setEnabled(true);
+  recorder.status(status, state, 1);
+  recorder.status({ ...status, error: { code: 2004, responseCode: 401 } }, state, 1);
+  assert.equal(published.length, 1);
+  await assert.rejects(recorder.request("queue page", async () => { throw { status: 503 }; }));
+  assert.equal(published.length, 2);
+  recorder.setEnabled(false);
+  await assert.rejects(recorder.request("queue page", async () => { throw { status: 503 }; }));
+  assert.equal(published.length, 2);
+});
+test("analysis requests abort and discard responses after track changes/disable/logout", async () => {
+  const output: unknown[] = [];
+  const request = new TrackAnalysisRequest((result) => output.push(result));
+  const response: TrackAnalysisResponse = { status: "missing", version: null, upgrading: false, result: null };
+  let oldSignal!: AbortSignal, resolveOld!: (data: TrackAnalysisResponse) => void;
+  request.load((signal) => { oldSignal = signal; return new Promise((resolve) => { resolveOld = resolve; }); });
+  request.load(async () => response);
+  assert.equal(oldSignal.aborted, true);
+  resolveOld({ ...response, status: "failed" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(output.length, 3);
+  assert.deepEqual(output[2], { status: "ready", data: response });
+  let signal!: AbortSignal, resolve!: (data: TrackAnalysisResponse) => void;
+  request.load((next) => { signal = next; return new Promise((done) => { resolve = done; }); });
+  request.cancel();
+  resolve(response);
+  await new Promise((done) => setImmediate(done));
+  assert.equal(signal.aborted, true);
+  assert.equal(output.length, 4);
+});

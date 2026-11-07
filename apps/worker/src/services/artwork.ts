@@ -1,5 +1,7 @@
-import { HttpError, httpJson } from "../http";
 import { albumReleaseGroups } from "./musicbrainz";
+import { readPublicMetadata } from "./public-metadata";
+import { z } from "zod";
+import type { PublicReadCache } from "@mint/core/public-cache";
 
 interface ArchiveImage {
   front: boolean;
@@ -17,17 +19,28 @@ function publicImageUrl(value: string) {
   return url.href;
 }
 
-export async function findAlbumArtwork(artist: string, album: string, releaseGroupId?: string | null): Promise<string | null> {
-  const groups = releaseGroupId ? [releaseGroupId] : await albumReleaseGroups(artist, album);
+const archiveSchema = z.object({ images: z.array(z.object({
+  front: z.boolean(), approved: z.boolean(),
+  thumbnails: z.object({ "500": z.string().max(2048).optional(), large: z.string().max(2048).optional(),
+    "250": z.string().max(2048).optional() }).optional(),
+})).max(100) });
+export async function findAlbumArtwork(artist: string, album: string, releaseGroupId?: string | null,
+  cache?: PublicReadCache | null): Promise<string | null> {
+  const groups = releaseGroupId ? [releaseGroupId] : await albumReleaseGroups(artist, album, cache);
   for (const id of groups) {
     if (!/^[\da-f]{8}-([\da-f]{4}-){3}[\da-f]{12}$/i.test(id)) throw new Error("Invalid MusicBrainz release group ID");
-    let data: { images: ArchiveImage[] };
-    try {
-      data = await httpJson(`https://coverartarchive.org/release-group/${id}`, { timeoutMs: 15_000, retries: 0 });
-    } catch (err) {
-      if (err instanceof HttpError && err.status === 404) continue;
-      throw err;
-    }
+    const data = await readPublicMetadata(`https://coverartarchive.org/release-group/${id}`, {
+      provider: "CoverArtArchive", cache, notFound: () => null,
+      validate: (value): { images: ArchiveImage[] } | null => {
+        if (value === null) return null;
+        const data = archiveSchema.parse(value);
+        for (const image of data.images) for (const url of Object.values(image.thumbnails ?? {})) publicImageUrl(url);
+        return data;
+      },
+      negative: (value) => !value || !value.images.some((image) => image.front && image.approved &&
+        !!(image.thumbnails?.["500"] ?? image.thumbnails?.large ?? image.thumbnails?.["250"])),
+    });
+    if (!data) continue;
     const front = data.images?.find((image) => image.front && image.approved);
     const thumbnail = front?.thumbnails?.["500"] ?? front?.thumbnails?.large ?? front?.thumbnails?.["250"];
     if (thumbnail) return publicImageUrl(thumbnail);

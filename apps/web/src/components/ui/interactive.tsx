@@ -124,7 +124,7 @@ export function Tabs({
 
   return (
     <div className={className}>
-      <div role="tablist" aria-label={label} onKeyDown={handleKeyDown} className="flex min-h-11 gap-1 border-b border-line">
+      <div role="tablist" aria-label={label} onKeyDown={handleKeyDown} className="flex min-h-11 min-w-0 gap-1 overflow-x-auto border-b border-line">
         {tabs.map((tab, index) => {
           const selectedTab = tab.value === selected.value;
           return (
@@ -140,8 +140,8 @@ export function Tabs({
               disabled={tab.disabled}
               onClick={() => onValueChange(tab.value)}
               className={clsx(
-                "min-h-11 rounded-t-control px-4 text-sm font-semibold text-muted hover:text-fg focus-visible:outline-action",
-                selectedTab && "border-b-2 border-action text-fg",
+                "min-h-11 shrink-0 rounded-t-control px-4 text-sm font-semibold whitespace-nowrap text-muted hover:text-fg focus-visible:outline-action",
+                selectedTab && "border-b-2 border-action bg-surface text-fg",
               )}
             >
               {tab.label}
@@ -288,7 +288,7 @@ export function Menu({
         {label}
       </button>
       {open && (
-        <div role="menu" aria-label={label} onKeyDown={onMenuKeyDown} className="absolute right-0 z-[var(--z-overlay)] mt-2 min-w-48 rounded-surface bg-elevated p-1 shadow-raised">
+        <div role="menu" aria-label={label} onKeyDown={onMenuKeyDown} className="ui-menu absolute right-0 z-[var(--z-overlay)] mt-2 min-w-48 max-w-[calc(100vw-2.5rem)] rounded-surface bg-elevated p-1 shadow-floating">
           {items.map((item, index) => (
             <button
               key={`${item.label}-${index}`}

@@ -19,7 +19,9 @@ import {
 } from "@/lib/offline";
 import { Artwork } from "@/components/artwork";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { usePlayer } from "./player";
+import { TrackMenuButton, usePlayer } from "./player";
+import { ArtistLink } from "./music-links";
+import { MusicItem } from "./music-item";
 
 const bytes = (value: number) =>
   value >= 1024 ** 3 ? `${(value / 1024 ** 3).toFixed(1)} GB` : `${(value / 1024 ** 2).toFixed(1)} MB`;
@@ -346,12 +348,12 @@ export function Downloads({ memberId, embedded = false }: { memberId: string; em
       ) : (
         <ol className="divide-y divide-line">
           {songs.map((song) => (
-            <li key={song.id} className="flex items-center gap-3 py-3">
+            <MusicItem as="li" item={song.item} key={song.id} className="flex flex-wrap items-center gap-3 py-3">
               <Artwork track={{ artworkUrl: song.item.thumb ?? "" }} className="size-11" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{song.item.title}</p>
                 <p className="truncate text-xs text-muted">
-                  {song.item.artist} · {bytes(song.bytes)}
+                  <ArtistLink item={song.item} /> · {bytes(song.bytes)}
                 </p>
               </div>
               {player && (
@@ -364,6 +366,7 @@ export function Downloads({ memberId, embedded = false }: { memberId: string; em
                   Play
                 </button>
               )}
+              <TrackMenuButton item={song.item} />
               <button
                 type="button"
                 disabled={busy}
@@ -373,7 +376,7 @@ export function Downloads({ memberId, embedded = false }: { memberId: string; em
               >
                 <Trash2 className="size-4" aria-hidden />
               </button>
-            </li>
+            </MusicItem>
           ))}
         </ol>
       )}

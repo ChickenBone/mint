@@ -40,6 +40,7 @@ Provider coverage, licensing, availability, authentication and rate limits must 
 - Show provider, territory/audience, actual period, publication time when supplied and Mint check time separately.
 - Distinguish empty results, disabled configuration, unavailable provider/Redis, stale cache and old provider publication.
 - Keep provider transport/credentials and library matching server-side.
+- Expo Search's Browse all consumes the existing chart list/pages through a GET-only native facade. Available rows use authenticated Mint playback; missing entries may open Search for an explicit recording request, never automatic acquisition or a native chart-request endpoint.
 
 ## Local availability and explicit acquisition
 

@@ -11,3 +11,9 @@ export async function musicRequest<T>(path: string, method = "GET", data?: unkno
   if (!response.ok) throw new Error(result.error ?? "Your music could not load. Try again.");
   return result as T;
 }
+
+export async function importLikedSongs(trackIds: string[], request = musicRequest) {
+  const unique = [...new Set(trackIds)];
+  if (unique.length > 100) throw new Error("Import at most 100 liked songs at a time.");
+  for (const id of unique) await request(`likes/${id}`, "PUT");
+}

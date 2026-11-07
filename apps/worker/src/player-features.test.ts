@@ -30,7 +30,7 @@ test("lyrics lookup identifies Mint, uses exact metadata, bounds responses and h
     assert.equal(init?.redirect, "error");
     return response;
   });
-  assert.deepEqual(await lookup(Response.json(value)), value);
+  assert.deepEqual(await lookup(Response.json(value)), { ...value, source: "LRCLIB" });
   assert.equal(await lookup(new Response(null, { status: 404 })), null);
   await assert.rejects(lookup(new Response(null, { status: 429, headers: { "retry-after": "120" } })), (error) => error instanceof LyricsBusyError && error.retryAfter === 120);
   assert.equal(retryAfterSeconds("Thu, 01 Jan 1970 00:02:00 GMT", 0), 120);

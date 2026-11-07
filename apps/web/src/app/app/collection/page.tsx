@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
 import { getDb, schema } from "@mint/core/db";
 import { musicHistory } from "@mint/core/music-db";
-import { spotifyPlaylists } from "@mint/core/spotify-db";
-import { spotifyAccountView } from "@mint/core/spotify-store";
 import { toTrackView } from "@mint/core/views";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { requireUser } from "@/lib/auth";
-import { getLikedTracks, getPlaylists, getYoutubeAccount } from "@/lib/data";
-import { listCollections, musicProfile } from "@/lib/music-store";
+import { getPlaylists, getUserMusicTracks, getUserSummary } from "@/lib/data";
+import { importedLikeCandidates, listCollections, musicProfile } from "@/lib/music-store";
 import { YourMusic } from "@/components/app/your-music";
 
-export const metadata: Metadata = { title: "Your music" };
+export const metadata: Metadata = { title: "Your Library" };
 export const dynamic = "force-dynamic";
 
 export default async function CollectionHubPage() {
@@ -19,25 +17,15 @@ export default async function CollectionHubPage() {
 
   const [
     initialCollections,
-    ytPlaylists,
-    spPlaylists,
-    ytAccount,
-    spAccount,
-    likedTracks,
+    importPlaylists,
     profile,
     historyRows,
+    backlogSummary,
+    backlogTracks,
+    importedLikes,
   ] = await Promise.all([
     listCollections(db, user.id),
     getPlaylists(user.id),
-    db
-      .select()
-      .from(spotifyPlaylists)
-      .where(eq(spotifyPlaylists.userId, user.id))
-      .orderBy(asc(spotifyPlaylists.title), asc(spotifyPlaylists.id))
-      .limit(100),
-    getYoutubeAccount(user.id),
-    spotifyAccountView(db, user.id),
-    getLikedTracks(user.id),
     musicProfile(db, user.id),
     db
       .select({ event: musicHistory, track: schema.tracks })
@@ -46,58 +34,26 @@ export default async function CollectionHubPage() {
       .where(and(eq(musicHistory.userId, user.id)))
       .orderBy(desc(musicHistory.createdAt), desc(musicHistory.id))
       .limit(101),
+    getUserSummary(user.id),
+    getUserMusicTracks(user.id, 500),
+    importedLikeCandidates(db, user.id),
   ]);
 
-  const ytIds = ytPlaylists.map((p) => p.id);
-  const [readyCounts, excludedRows] = await Promise.all([
-    ytIds.length
-      ? db
-          .select({
-            playlistId: schema.playlistTracks.playlistId,
-            ready: sql<number>`count(*)::int`,
-          })
-          .from(schema.playlistTracks)
-          .innerJoin(schema.tracks, eq(schema.tracks.id, schema.playlistTracks.trackId))
-          .where(
-            and(
-              inArray(schema.playlistTracks.playlistId, ytIds),
-              inArray(schema.tracks.stage, ["ready", "analyzing"]),
-            ),
-          )
-          .groupBy(schema.playlistTracks.playlistId)
-      : Promise.resolve([]),
-    profile.exclusions.length
-      ? db.select().from(schema.tracks).where(inArray(schema.tracks.id, profile.exclusions))
-      : Promise.resolve([]),
-  ]);
-
-  const readyByPlaylist = new Map(readyCounts.map((r) => [r.playlistId, Number(r.ready)]));
+  const excludedRows = profile.exclusions.length
+    ? await db.select().from(schema.tracks).where(inArray(schema.tracks.id, profile.exclusions))
+    : [];
 
   return (
     <YourMusic
       memberId={user.id}
       initialCollections={initialCollections}
-      youtubePlaylists={ytPlaylists.map((p) => ({
+      importPlaylists={importPlaylists.map((p) => ({
         id: p.id,
         title: p.title,
-        itemCount: p.itemCount,
-        readyCount: readyByPlaylist.get(p.id) ?? 0,
-        syncEnabled: p.syncEnabled,
-        artworkUrl: p.artworkUrl,
       }))}
-      spotifyPlaylists={spPlaylists.map((p) => ({
-        id: p.id,
-        title: p.title,
-        sourceTotal: p.sourceTotal,
-        matchedTotal: p.matchedTotal,
-        syncEnabled: p.syncEnabled,
-        status: p.status,
-        error: p.error,
-        lastSyncedAt: p.lastSyncedAt ? p.lastSyncedAt.toISOString() : null,
-      }))}
-      youtubeLinked={Boolean(ytAccount)}
-      spotifyLinked={Boolean(spAccount)}
-      likedTracks={likedTracks}
+      backlogSummary={backlogSummary}
+      backlogTracks={backlogTracks}
+      importedLikes={{ tracks: importedLikes.tracks.map(toTrackView), nextCursor: importedLikes.nextCursor }}
       history={{
         entries: historyRows.map((r) => ({
           ...r,

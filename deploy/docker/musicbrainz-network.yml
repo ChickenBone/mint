@@ -1,0 +1,13 @@
+# Applied to the upstream musicbrainz-docker project only, never Mint's main stack.
+services:
+  musicbrainz:
+    ports: !reset []
+    networks:
+      default: {}
+      mint_metadata:
+        aliases: [musicbrainz-mirror]
+
+networks:
+  mint_metadata:
+    external: true
+    name: mint_metadata

@@ -14,6 +14,7 @@ import * as plex from "../services/plex";
 import { torboxEnabled } from "../services/torbox";
 import { torboxTick } from "./torbox-bridge";
 import { backfillArtwork } from "./artwork";
+import { scheduleArtistMetadata } from "./artist-metadata";
 
 let lastStats = "";
 
@@ -113,6 +114,8 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
       return indexLibrary();
     case "artwork":
       return backfillArtwork();
+    case "artist-metadata":
+      return scheduleArtistMetadata();
     case "leases":
       return reapLeases();
     case "listening-queues":

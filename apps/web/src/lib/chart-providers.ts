@@ -13,8 +13,18 @@ const safeUrl = (value: string | null | undefined, hosts: string[]) => {
     hosts.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`)) ? url.href : null; }
   catch { return null; }
 };
+const chartArtworkHosts = {
+  apple: ["mzstatic.com"],
+  listenbrainz: ["coverartarchive.org"],
+  audius: ["audius.co"],
+} as const;
+export function validChartArtwork(provider: ChartDefinition["provider"], value: string | null) {
+  return value === null || safeUrl(value, [...chartArtworkHosts[provider]]) === value;
+}
+
 export async function boundedProviderJson(response: Response): Promise<unknown> {
   if (!response.ok) {
+    await response.body?.cancel();
     const raw = response.headers.get("retry-after"), seconds = raw && /^\d+$/.test(raw) ? Number(raw) : raw ? (Date.parse(raw) - Date.now()) / 1000 : 300;
     throw new ChartProviderError(response.status === 429 ? "Provider rate limit reached. Mint will retry after the cooldown." :
       `Chart provider returned HTTP ${response.status}. Try again later.`, Math.max(60, Math.min(86400, Math.ceil(seconds) || 300)));
@@ -43,7 +53,7 @@ export async function fetchChart(definition: ChartDefinition, transport: typeof 
   if (definition.provider === "apple") {
     const feed = z.object({ feed: z.object({ country: z.string(), updated: z.string(), results: z.array(z.object({
       id: z.string().regex(/^\d+$/), name: text, artistName: text, url: z.url(),
-      artworkUrl100: z.string().optional(), genres: z.array(z.object({ name: z.string().max(100) })).max(30).optional(),
+      artworkUrl100: z.string().max(2048).optional(), genres: z.array(z.object({ name: z.string().max(100) })).max(30).optional(),
     })).max(50) }) }).parse(await get(`https://rss.marketingtools.apple.com/api/v2/${definition.country}/music/most-played/50/songs.json`)).feed;
     if (feed.country.toLowerCase() !== definition.country) throw new ChartProviderError("Provider returned the wrong chart territory.");
     providerUpdatedAt = new Date(feed.updated).toISOString();
@@ -55,7 +65,8 @@ export async function fetchChart(definition: ChartDefinition, transport: typeof 
       return { id: entry.id, rank: index + 1, title: entry.name, artist: entry.artistName,
         album: extra?.collectionName ?? null, durationSec: extra?.trackTimeMillis ? extra.trackTimeMillis / 1000 : null,
         recordingId: null, isrc: null, url: safeUrl(entry.url, ["music.apple.com", "itunes.apple.com"]) ?? definition.url,
-        artwork: null, genres: entry.genres?.map((genre) => genre.name).filter((name) => name !== "Music") ?? [] };
+        artwork: safeUrl(entry.artworkUrl100 ?? null, [...chartArtworkHosts.apple]),
+        genres: entry.genres?.map((genre) => genre.name).filter((name) => name !== "Music") ?? [] };
     });
     period = "Current storefront ranking · window not published by Apple";
   } else if (definition.provider === "listenbrainz") {
@@ -68,12 +79,17 @@ export async function fetchChart(definition: ChartDefinition, transport: typeof 
     }) }).parse(body).payload;
     providerUpdatedAt = new Date(payload.last_updated * 1000).toISOString();
     period = `${new Date(payload.from_ts * 1000).toISOString().slice(0, 10)} – ${new Date(payload.to_ts * 1000).toISOString().slice(0, 10)} (UTC)`;
-    entries = payload.recordings.map((entry, index) => ({
-      id: createHash("sha256").update(JSON.stringify([entry.recording_mbid, entry.caa_release_mbid, entry.artist_name, entry.track_name, entry.release_name])).digest("hex"),
-      rank: index + 1, title: entry.track_name, artist: entry.artist_name, album: entry.release_name ?? null,
-      durationSec: null, recordingId: uuidOrNull(entry.recording_mbid), isrc: null, artwork: null, genres: [],
-      url: uuidOrNull(entry.recording_mbid) ? `https://musicbrainz.org/recording/${entry.recording_mbid}` : definition.url,
-    }));
+    entries = payload.recordings.map((entry, index) => {
+      const releaseId = uuidOrNull(entry.caa_release_mbid);
+      const recordingId = uuidOrNull(entry.recording_mbid);
+      return {
+        id: createHash("sha256").update(JSON.stringify([entry.recording_mbid, entry.caa_release_mbid, entry.artist_name, entry.track_name, entry.release_name])).digest("hex"),
+        rank: index + 1, title: entry.track_name, artist: entry.artist_name, album: entry.release_name ?? null,
+        durationSec: null, recordingId, isrc: null,
+        artwork: releaseId ? `https://coverartarchive.org/release/${releaseId}/front-250` : null,
+        genres: [], url: recordingId ? `https://musicbrainz.org/recording/${recordingId}` : definition.url,
+      };
+    });
     const identifiers = entries.flatMap((entry) => entry.recordingId ? [entry.recordingId] : []);
     if (new Set(identifiers).size !== identifiers.length) notice = "ListenBrainz lists some recordings separately by release variant. Its original ranks and order are retained.";
   } else {
@@ -82,10 +98,12 @@ export async function fetchChart(definition: ChartDefinition, transport: typeof 
     const data = z.object({ data: z.array(z.object({
       id: z.string().max(200), title: text, duration: z.number().positive(), genre: z.string().max(100).nullish(),
       permalink: z.string().optional(), isrc: z.string().max(100).nullish(),
+      artwork: z.object({ "150x150": z.string().max(2048).optional(), "480x480": z.string().max(2048).optional() }).nullish(),
       user: z.object({ name: text }), is_available: z.boolean().optional(),
     })).max(50) }).parse(await get(`https://api.audius.co/v1/tracks/trending?${query}`)).data;
     entries = data.map((entry, index) => ({ id: entry.id, rank: index + 1, title: entry.title, artist: entry.user.name,
-      album: null, durationSec: entry.duration, recordingId: null, isrc: entry.isrc ?? null, artwork: null,
+      album: null, durationSec: entry.duration, recordingId: null, isrc: entry.isrc ?? null,
+      artwork: safeUrl(entry.artwork?.["480x480"] ?? entry.artwork?.["150x150"] ?? null, [...chartArtworkHosts.audius]),
       genres: entry.genre ? [entry.genre] : [], url: safeUrl(entry.permalink, ["audius.co"]) ?? definition.url }));
     period = "This week · Audius trending algorithm";
   }

@@ -3,6 +3,7 @@ export const QUEUE = {
   acquire: "mint-acquire",
   finalize: "mint-finalize",
   sonic: "mint-sonic",
+  artistMetadata: "mint-artist-metadata",
   torbox: "mint-torbox",
   maintenance: "mint-maintenance",
 } as const;
@@ -46,6 +47,10 @@ export interface TorboxJob {
   protocol?: "torrent" | "usenet";
 }
 
+export interface ArtistMetadataJob {
+  artistName: string;
+}
+
 export type MaintenanceJob =
   | { kind: "schedule-sync" }
   | { kind: "stats" }
@@ -53,6 +58,7 @@ export type MaintenanceJob =
   | { kind: "health" }
   | { kind: "library-index" }
   | { kind: "artwork" }
+  | { kind: "artist-metadata" }
   | { kind: "leases" }
   | { kind: "listening-queues" }
   | { kind: "plex-playlists"; userId: string };

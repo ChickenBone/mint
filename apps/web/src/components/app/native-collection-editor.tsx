@@ -10,25 +10,27 @@ import { Badge } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { musicRequest, type CollectionDetail } from "@/lib/music-client";
 import { CollectionActions } from "./collection-actions";
-import { MusicTrackList } from "./music-track-list";
+import { MusicTrackList, PlaylistHeader } from "./music-track-list";
 
-const field = "mt-2 min-h-11 w-full rounded-md bg-elevated px-3 py-2 text-sm ring-1 ring-line focus:ring-mint";
+const field = "ui-field mt-2 min-h-11 w-full rounded-control bg-elevated px-4 py-2 text-sm ring-1 ring-line focus:ring-mint";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
 
 export function NativeCollectionEditor({ initial }: { initial: CollectionDetail }) {
   const [data, setData] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [results, setResults] = useState<TrackView[]>([]);
-  const [searched, setSearched] = useState(false);
+  const [search, setSearch] = useState<{ query: string; page: number; nextPage: number | null } | null>(null);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [pendingRevoke, setPendingRevoke] = useState<{ userId: string; name: string } | null>(null);
   const router = useRouter();
 
   const reload = async () => setData(await musicRequest<CollectionDetail>(`collections/${data.id}`));
-  const run = async (fn: () => Promise<void>) => {
+  const run = async (fn: () => Promise<void>, message = "Saving your music…") => {
     setBusy(true);
+    setActivity(message);
     setError("");
     setNotice("");
     try {
@@ -39,6 +41,14 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
       setBusy(false);
     }
   };
+
+  const findSongs = (query: string, page = 0) => run(async () => {
+    const result = await musicRequest<{ tracks: TrackView[]; nextPage: number | null }>(
+      `library?q=${encodeURIComponent(query)}&page=${page}`,
+    );
+    setResults(result.tracks);
+    setSearch({ query, page, nextPage: result.nextPage ?? null });
+  }, "Loading songs…");
 
   const mutate = async (patch: Record<string, unknown>) => {
     await musicRequest(`collections/${data.id}`, "PATCH", { ...patch, revision: data.revision });
@@ -68,20 +78,22 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
   return (
     <section className="mx-auto max-w-6xl">
       <Link href="/app/collection" className="mb-5 inline-flex min-h-11 items-center text-sm text-muted hover:text-fg">
-        ← Your music
+        ← Your Library
       </Link>
 
-      <header className="mb-6 flex flex-wrap items-end gap-5">
-        {data.artworkUrl ? (
-          <Artwork track={{ artworkUrl: data.artworkUrl }} className="size-28 shrink-0 rounded-md sm:size-36" />
+      <PlaylistHeader
+        title={data.title}
+        artworkUrl={data.artworkUrl}
+        artwork={data.artworkUrl ? (
+          <Artwork track={{ artworkUrl: data.artworkUrl }} eager className="size-full rounded-none" />
         ) : (
-          <span className="grid size-28 shrink-0 place-items-center rounded-md bg-elevated text-faint sm:size-36">
+          <span className="grid size-full place-items-center bg-elevated text-faint">
             <ListMusic className="size-10" aria-hidden />
           </span>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <Badge tone="neutral">{data.rules ? "Smart" : "Mint"}</Badge>
+        eyebrow={
+          <>
+            <Badge tone="neutral">{data.rules ? "Smart playlist" : "Playlist"}</Badge>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted">
               {data.rules ? (
                 <>
@@ -91,20 +103,24 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               ) : (
                 <>
                   <CheckCircle2 className="size-3.5 text-mint" aria-hidden />
-                  <span>Saved in Mint</span>
+                  <span>{data.role === "owner" ? "Your playlist" : "Collaborative playlist"}</span>
                 </>
               )}
             </span>
-          </div>
-          <h1 className="break-words text-3xl font-extrabold tracking-tight sm:text-5xl">{data.title}</h1>
-          <p className="mt-3 max-w-prose whitespace-pre-wrap text-sm text-muted">
+          </>
+        }
+        description={
+          <p className="whitespace-pre-wrap">
             {data.description || (data.rules ? "A living playlist, rebuilt from your library rules." : "Your order. Your repeats. Make this one yours.")}
           </p>
-          <p className="mt-2 text-xs text-faint tabular">
-            {data.role === "owner" ? "Owner" : "Collaborating editor"} · {playableCount} of {data.entries.length} playable · Revision {data.revision}
+        }
+        metadata={
+          <p className="text-xs text-faint tabular">
+            {data.role === "owner" ? "Your playlist" : "Collaborating editor"} · {data.entries.length} songs
+            {playableCount < data.entries.length ? ` · ${playableCount} playable` : ""}
           </p>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mb-7 flex flex-wrap items-center gap-3">
         <CollectionActions
@@ -119,9 +135,6 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               : []),
           ]}
         />
-        <button type="button" className={button} disabled={busy} onClick={duplicatePlaylist}>
-          Duplicate as editable playlist
-        </button>
       </div>
 
       {error && (
@@ -132,9 +145,81 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
           </button>
         </div>
       )}
-      <p role="status" className="mb-4 text-sm text-muted">
-        {busy ? "Saving your music…" : notice}
-      </p>
+      {(busy || notice) && (
+        <p role="status" className="mb-4 text-sm text-muted">
+          {busy ? activity : notice}
+        </p>
+      )}
+
+      {!data.entries.length ? (
+        <p className="max-w-prose py-10 text-muted">
+          {data.rules
+            ? "No playable songs match these rules. Adjust the filters below."
+            : "This playlist is ready for its first song. Search your library below."}
+        </p>
+      ) : (
+        <MusicTrackList
+          playAsQueue
+          entries={data.entries.map((e) => ({ key: e.entryId, track: e.track }))}
+          actions={(key, track, index) => (
+            <>
+              <button
+                type="button"
+                className={button}
+                disabled={busy}
+                aria-label={`Like ${track.title}`}
+                onClick={() =>
+                  void run(async () => {
+                    await musicRequest(`likes/${track.id}`, "PUT");
+                    setNotice("Added to Liked songs.");
+                  })
+                }
+              >
+                <Heart className="size-4" aria-hidden />
+              </button>
+              {!data.rules && (
+                <>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy || index === 0}
+                    aria-label={`Move entry ${index + 1} up`}
+                    onClick={() =>
+                      void run(async () => {
+                        await reorder(index, -1);
+                      })
+                    }
+                  >
+                    <ArrowUp className="size-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy || index === data.entries.length - 1}
+                    aria-label={`Move entry ${index + 1} down`}
+                    onClick={() =>
+                      void run(async () => {
+                        await reorder(index, 1);
+                      })
+                    }
+                  >
+                    <ArrowDown className="size-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className={`${button} text-danger`}
+                    disabled={busy}
+                    aria-label={`Remove entry ${index + 1}: ${track.title}`}
+                    onClick={() => void run(() => mutate({ action: "remove", entryId: key }))}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        />
+      )}
 
       <details className="mb-7 border-y border-line py-5">
         <summary className="cursor-pointer font-semibold">Edit playlist{data.rules ? " and smart rules" : ""}</summary>
@@ -201,7 +286,7 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
             <fieldset className="grid gap-4 border-t border-line pt-5 sm:col-span-2 sm:grid-cols-2">
               <legend className="mb-3 text-lg font-bold">Smart rules</legend>
               <p className="max-w-prose text-sm leading-relaxed text-muted sm:col-span-2">
-                All rules must match. These use the owner&apos;s native likes and listening history. No songs are downloaded automatically.
+                All rules must match. These use the owner&apos;s Liked songs and listening history. No songs are downloaded automatically.
               </p>
               <label className="text-sm">
                 Artist contains
@@ -226,15 +311,15 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                 />
               </label>
               <label className="text-sm">
-                Mint likes
+                Liked songs
                 <select
                   name="liked"
                   defaultValue={data.rules.liked === undefined ? "any" : data.rules.liked ? "yes" : "no"}
                   className={field}
                 >
                   <option value="any">Any song</option>
-                  <option value="yes">Liked in Mint</option>
-                  <option value="no">Not liked in Mint</option>
+                  <option value="yes">Liked</option>
+                  <option value="no">Not liked</option>
                 </select>
               </label>
               <label className="text-sm">
@@ -300,14 +385,14 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               </label>
               <label className="flex items-center gap-2 text-sm">
                 <input name="neverPlayed" type="checkbox" defaultChecked={data.rules.neverPlayed} className="size-4 accent-mint" />
-                Never played in Mint
+                Never played
               </label>
             </fieldset>
           )}
           <button
             type="submit"
             disabled={busy}
-            className="min-h-11 justify-self-start rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
+            className="ui-primary min-h-11 justify-self-start rounded-full bg-mint px-5 py-2 text-sm font-bold text-mint-ink disabled:opacity-40"
           >
             Save changes
           </button>
@@ -316,17 +401,13 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
 
       {!data.rules && (
         <details className="mb-7 border-b border-line pb-5">
-          <summary className="cursor-pointer font-semibold">Add songs from your library</summary>
+          <summary className="flex min-h-11 cursor-pointer items-center font-semibold">Add songs from your library</summary>
           <form
             className="mt-5 flex flex-wrap items-end gap-3"
             onSubmit={(e) => {
               e.preventDefault();
               const q = String(new FormData(e.currentTarget).get("q") ?? "");
-              void run(async () => {
-                const result = await musicRequest<{ tracks: TrackView[] }>(`library?q=${encodeURIComponent(q)}`);
-                setResults(result.tracks);
-                setSearched(true);
-              });
+              if (!busy) void findSongs(q.trim());
             }}
           >
             <label className="min-w-0 flex-1 text-sm">
@@ -337,7 +418,11 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               Find songs
             </button>
           </form>
-          {searched && !results.length && <p className="py-5 text-sm text-muted">No playable matches. Try fewer words.</p>}
+          {search && !results.length && (
+            <p className="py-5 text-sm text-muted">
+              {search.page ? "No more playable matches on this page. Go back or search again." : "No playable matches. Try fewer words."}
+            </p>
+          )}
           {!!results.length && (
             <div className="mt-5 max-h-96 overflow-y-auto">
               <MusicTrackList
@@ -357,87 +442,32 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               />
             </div>
           )}
+          {search && (
+            <nav aria-label="Add songs search pages" className="mt-4 flex flex-wrap items-center gap-3">
+              <button type="button" className={button} disabled={busy || search.page === 0}
+                onClick={() => void findSongs(search.query, search.page - 1)}>
+                Previous
+              </button>
+              <span role="status" className="min-w-0 break-words text-sm text-muted">
+                Page {search.page + 1}{search.query ? ` · Results for “${search.query}”` : " · All playable songs"}
+              </span>
+              <button type="button" className={button} disabled={busy || search.nextPage === null}
+                onClick={() => { if (search.nextPage !== null) void findSongs(search.query, search.nextPage); }}>
+                Next
+              </button>
+            </nav>
+          )}
           <p className="mt-3 text-xs text-faint">
             Add a song again to keep a second entry. Removing one entry never removes the other.
           </p>
         </details>
       )}
 
-      {!data.entries.length ? (
-        <p className="max-w-prose py-10 text-muted">
-          {data.rules
-            ? "No playable songs match these rules. Adjust the filters above."
-            : "This playlist is ready for its first song. Search your library above."}
-        </p>
-      ) : (
-        <MusicTrackList
-          playAsQueue
-          entries={data.entries.map((e) => ({ key: e.entryId, track: e.track }))}
-          actions={(key, track, index) => (
-            <>
-              <button
-                type="button"
-                className={button}
-                disabled={busy}
-                aria-label={`Like ${track.title} in Mint`}
-                onClick={() =>
-                  void run(async () => {
-                    await musicRequest(`likes/${track.id}`, "PUT");
-                    setNotice("Added to Mint likes.");
-                  })
-                }
-              >
-                <Heart className="size-4" aria-hidden />
-              </button>
-              {!data.rules && (
-                <>
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={busy || index === 0}
-                    aria-label={`Move entry ${index + 1} up`}
-                    onClick={() =>
-                      void run(async () => {
-                        await reorder(index, -1);
-                      })
-                    }
-                  >
-                    <ArrowUp className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={busy || index === data.entries.length - 1}
-                    aria-label={`Move entry ${index + 1} down`}
-                    onClick={() =>
-                      void run(async () => {
-                        await reorder(index, 1);
-                      })
-                    }
-                  >
-                    <ArrowDown className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={`${button} text-danger`}
-                    disabled={busy}
-                    aria-label={`Remove entry ${index + 1}: ${track.title}`}
-                    onClick={() => void run(() => mutate({ action: "remove", entryId: key }))}
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        />
-      )}
-
       {data.role === "owner" && (
         <section className="mt-10 border-t border-line pt-7">
           <h2 className="text-2xl font-bold">Collaborators</h2>
           <p className="mt-3 max-w-prose text-sm text-muted">
-            Invite an approved Mint member by email. Editors can change songs and details. Only you can invite, revoke or delete.
+            Invite a member by email. Editors can change songs and details. Only you can invite, revoke or delete.
           </p>
           <form
             className="my-5 flex flex-wrap items-end gap-3"
@@ -473,14 +503,6 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className={`${button} mt-8 text-danger`}
-            disabled={busy}
-            onClick={() => setConfirmDeleteOpen(true)}
-          >
-            Delete playlist
-          </button>
         </section>
       )}
 

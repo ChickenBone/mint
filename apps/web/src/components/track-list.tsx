@@ -8,6 +8,8 @@ import { trackPlayerItem, type PlayerCollection } from "@/lib/player-protocol";
 import { formatDuration, youtubeMusicUrl } from "@/lib/format";
 import { Artwork } from "./artwork";
 import { ProgressBar, StageBadge } from "./stage-badge";
+import { AlbumLink, ArtistLink } from "./app/music-links";
+import { MusicItem } from "./app/music-item";
 
 function Row({
   track,
@@ -30,20 +32,8 @@ function Row({
   const play = () => player?.command(collection ? { action: "collection", collection, shuffle: false, id: item.id } : { action: "play", item });
   const inFlight = track.stage !== "ready" && track.stage !== "analyzing" && track.stage !== "failed";
   return (
-    <li
+    <MusicItem as="li" item={playable ? item : null}
       key={flash}
-      onContextMenu={playable ? (event) => {
-        if ((event.target as HTMLElement).closest("a,input,textarea")) return;
-        event.preventDefault();
-        player.menu(item, { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button"));
-      } : undefined}
-      onKeyDown={playable ? (event) => {
-        if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-          event.preventDefault();
-          const rect = event.currentTarget.getBoundingClientRect();
-          player.menu(item, { x: rect.x + 48, y: rect.y + 32 }, event.target as HTMLElement);
-        }
-      } : undefined}
       className={clsx(
         "group grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-3 rounded-md px-3 py-2 transition-colors hover:bg-hover/70 sm:grid-cols-[2rem_minmax(0,1.4fr)_minmax(0,1fr)_7.5rem_6.5rem]",
         flash && "stage-flash",
@@ -59,7 +49,7 @@ function Row({
           {playable ? <button onClick={play} disabled={!player.ready}
             className="block max-w-full truncate text-left font-medium text-fg hover:underline disabled:opacity-40">{track.title}</button>
             : <p className="truncate font-medium text-fg">{track.title}</p>}
-          <p className="truncate text-sm text-muted">{track.artist}</p>
+          <p className="truncate text-sm text-muted">{player ? <ArtistLink item={item} /> : track.artist}</p>
           {(showStage || inFlight || track.stage === "failed") && (
             <div className="mt-1 flex flex-col gap-1 sm:hidden">
               <StageBadge stage={track.stage} progress={track.progress} />
@@ -71,7 +61,7 @@ function Row({
           )}
         </div>
       </div>
-      <p className="hidden truncate text-sm text-muted sm:block">{track.album ?? "Single"}</p>
+      <p className="hidden truncate text-sm text-muted sm:block">{player ? <AlbumLink item={item} /> : track.album ?? "Single"}</p>
       <div className="hidden min-w-0 flex-col gap-1 sm:flex">
         {showStage || inFlight || track.stage === "failed" ? (
           <>
@@ -92,7 +82,7 @@ function Row({
         {playable && <TrackMenuButton item={item} />}
         <span>{formatDuration(track.durationSec)}</span>
       </div>
-    </li>
+    </MusicItem>
   );
 }
 
@@ -133,18 +123,17 @@ export function TrackList({
 export function TrackCard({ track, feature = false, landing = false }: { track: TrackView; feature?: boolean; landing?: boolean }) {
   const player = usePlayer();
   const playable = player && (track.stage === "ready" || track.stage === "analyzing");
-  if (playable) return <div className={clsx("group relative", feature && "col-span-2 row-span-2")}
-    onContextMenu={(event) => { event.preventDefault(); player.menu(trackPlayerItem(track), { x: event.clientX, y: event.clientY }, event.currentTarget.querySelector("button")); }}>
+  if (playable) return <MusicItem item={trackPlayerItem(track)} className={clsx("music-card group relative", feature && "col-span-2 row-span-2")}>
     <button aria-label={`Play ${track.title}`} disabled={!player.ready} onClick={() => player.command({ action: "play", item: trackPlayerItem(track) })}
       className="block w-full rounded-md text-left disabled:opacity-50">
       <div className="relative overflow-hidden rounded-md"><Artwork track={track} eager={feature} className="w-full" />
         <span className="absolute right-3 bottom-3 grid size-11 place-items-center rounded-full bg-mint text-mint-ink shadow-lg transition-transform group-hover:scale-105"><Play className="size-5" fill="currentColor" /></span>
       </div>
       <p className={clsx("mt-3 truncate font-semibold", feature && "sm:text-xl")}>{track.title}</p>
-      <p className="truncate text-sm text-muted">{track.artist}</p>
     </button>
+    <p className="truncate text-sm text-muted"><ArtistLink item={trackPlayerItem(track)} /></p>
     <div className="absolute top-2 right-2 rounded-full bg-bg/90"><TrackMenuButton item={trackPlayerItem(track)} /></div>
-  </div>;
+  </MusicItem>;
   const Element = track.youtubeVideoId ? "a" : "div";
   return (
     <Element

@@ -54,19 +54,38 @@ export interface ChartCandidate {
   id: string; title: string; artist: string; album: string | null; durationSec: number | null; mbRecordingId: string | null;
   stage: string; playable: boolean; progress: number;
 }
-export function compatibleChartRecording(entry: ChartEntry, candidate: { title: string; artist: string; durationSec: number | null; id?: string; isrcs?: string[] }) {
+interface ChartRecordingCandidate {
+  title: string; artist: string; durationSec: number | null; id?: string; isrcs?: string[]; album?: string | null;
+}
+export function compatibleChartRecording(entry: ChartEntry, candidate: ChartRecordingCandidate) {
   return chartKey(entry.title) === chartKey(candidate.title) && chartKey(entry.artist) === chartKey(candidate.artist)
     && (!entry.recordingId || !candidate.id || entry.recordingId === candidate.id)
     && (!entry.isrc || !candidate.isrcs?.length || candidate.isrcs.includes(entry.isrc))
     && (!entry.durationSec || !candidate.durationSec || Math.abs(entry.durationSec - candidate.durationSec) <= 2.5);
+}
+export function confidentChartRecording(entry: ChartEntry, candidate: ChartRecordingCandidate) {
+  if (!compatibleChartRecording(entry, candidate)) return false;
+  const recordingIdentity = !!entry.recordingId && entry.recordingId === candidate.id;
+  const isrcIdentity = !!entry.isrc && !!candidate.isrcs?.includes(entry.isrc);
+  const durationMatch = entry.durationSec !== null && candidate.durationSec !== null;
+  // An absent album is not a conflict, but duration alone cannot identify an unknown edition.
+  const albumMatch = !entry.album || (candidate.album
+    ? chartKey(entry.album) === chartKey(candidate.album)
+    : recordingIdentity || isrcIdentity);
+  return (recordingIdentity || isrcIdentity || durationMatch) && (!entry.isrc || isrcIdentity) && !!albumMatch;
+}
+export function chartRecordingResolution<T extends ChartRecordingCandidate>(entry: ChartEntry, candidates: T[], localAmbiguous = false) {
+  const results = candidates.filter((candidate) => compatibleChartRecording(entry, candidate));
+  const confident = results.filter((candidate) => confidentChartRecording(entry, candidate));
+  return { results, automatic: !localAmbiguous && confident.length === 1 ? confident[0]! : null };
 }
 export function matchChartEntry(entry: ChartEntry, candidates: ChartCandidate[], linkedTrackId?: string) {
   const identity = candidates.filter((candidate) => compatibleChartRecording(entry, { ...candidate, id: candidate.mbRecordingId ?? undefined }));
   const linked = identity.find((candidate) => candidate.id === linkedTrackId);
   const matches = linked ? [linked] : identity.filter((candidate) =>
     (!entry.recordingId || candidate.mbRecordingId === entry.recordingId) &&
-    (entry.recordingId || entry.durationSec && candidate.durationSec) &&
-    (!entry.album || candidate.album && chartKey(entry.album) === chartKey(candidate.album)));
+    // The library index has no ISRC field; it must not claim to have verified one.
+    confidentChartRecording({ ...entry, isrc: null }, { ...candidate, id: candidate.mbRecordingId ?? undefined }));
   if (matches.length > 1 || !matches.length && identity.length) return {
     availability: "ambiguous" as const, trackId: null, progress: null,
     reason: "Recording or edition is uncertain. Choose the exact recording before requesting or playing.",
@@ -78,4 +97,20 @@ export function matchChartEntry(entry: ChartEntry, candidates: ChartCandidate[],
     available: "Available in Mint", failed: "Acquisition failed. Review the source or retry in Jobs.",
     requested: "Already requested. Waiting for acquisition.", processing: `Acquiring · ${found.stage}`,
   }[availability] };
+}
+
+export type ChartRequestOutcome = { status: "available" | "requested" | "resolve" } | { status: "error"; message: string };
+/** Decides how a finished request may affect the UI; `current` is false once the member has changed chart, page or reloaded. */
+export function chartRequestEffect(current: boolean, title: string, outcome: ChartRequestOutcome) {
+  const none = { resolve: false, rowError: null as string | null, markRequested: false, refresh: false, notice: "", error: "" };
+  if (current) {
+    if (outcome.status === "resolve") return { ...none, resolve: true };
+    if (outcome.status === "error") return { ...none, rowError: outcome.message };
+    if (outcome.status === "available") return { ...none, refresh: true, notice: `${title} is already in your library.` };
+    return { ...none, markRequested: true, refresh: true, notice: "Request sent." };
+  }
+  if (outcome.status === "resolve") return { ...none, notice: `Pick a version of ${title} to add it.` };
+  if (outcome.status === "error") return { ...none, error: `Couldn’t add ${title}. ${outcome.message}` };
+  if (outcome.status === "available") return { ...none, notice: `${title} is already in your library.` };
+  return { ...none, notice: `Request sent for ${title}.` };
 }

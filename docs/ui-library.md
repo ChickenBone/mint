@@ -1,6 +1,12 @@
 # Mint UI library
 
-The web UI uses a single **Listening room** design language: charcoal background/surface/elevated/hover layers, Figtree, square artwork, and mint reserved for primary action and focus. Artwork—not extra chrome—provides color. This library is built on Tailwind 4, CSS variables and native HTML; it adds no UI dependency.
+The web UI uses a single **Listening room** design language: cool charcoal background/surface/elevated/hover layers, Figtree, square artwork, and mint reserved for primary action and focus. A restrained teal/blue header wash and artwork-derived atmosphere enrich music surfaces; settings and administration remain quieter. This library is built on Tailwind 4, CSS variables and native HTML; it adds no UI dependency.
+
+This is the **Next.js/browser** component contract. The primary Expo consumer
+app has platform-native primitives and semantic tokens in
+`apps/mobile/src/components/ui` and `apps/mobile/src/theme/tokens.ts`, with
+platform typography. See [mobile design](mobile-design.md); do not import these
+HTML/Tailwind components into the native runtime or assume feature parity.
 
 ## Tokens
 
@@ -10,8 +16,11 @@ Tokens are defined in `apps/web/src/app/globals.css`. Prefer semantic Tailwind n
 | --- | --- |
 | Surfaces | `background` (`bg` compatibility alias), `surface`, `elevated`, `hover` |
 | Content and state | `text` (`fg` compatibility alias), `muted`, `faint`, `action` (`mint` compatibility alias), `success`, `danger`, `warn`, `line` |
+| Complementary color | `info` (soft blue), `accent` (lavender); use sparingly, never in place of semantic error/warning colors |
+| Gradients | `--gradient-action` for primary actions, `--gradient-atmosphere` for music headers, `--gradient-liked` for the favorites sleeve; no gradient text |
 | Type | Figtree only; title 32/48/64px, section 24/32px, body 14/16px |
-| Spacing | 4px base Tailwind spacing scale; 20px phone and up to 48px wide page gutters; 40–64px section rhythm |
+| Spacing | 4px base Tailwind spacing scale; 20px phone and up to 48px wide page gutters; 40–48px section rhythm |
+| Composition | `--space-panel` for 16–24px panel padding, `--space-control-gap` for related controls, `--content-max` for bounded wide listening content |
 | Shape and depth | `radius-control`, `radius-surface`, `radius-pill`, `shadow-raised`, `shadow-floating`; sleeves remain square |
 | Motion | `duration-fast`, `duration-standard`, `duration-emphasis`, `ease-standard`, `ease-out-expo`; reduced motion disables nonessential animation |
 | Layers | `--z-sticky`, `--z-player`, `--z-navigation`, `--z-overlay`, `--z-toast` |
@@ -43,11 +52,12 @@ Import from `@/components/ui` or a direct module when preserving a server/client
 | `Card` | Neutral content grouping; supports div/article/section | Use sparingly as a real grouping | Nested cards as page scaffolding |
 | `Sleeve` | Square clipped composition for album/collection artwork | Use actual album art or a real virtual collection cover | Rounded-square sleeves or invented artwork |
 | `Artwork` | Shared square art with a neutral music-tile fallback | Use only real library art or a real virtual-playlist sleeve | Invented album covers |
+| `ArtworkAtmosphere` | Optional `src` in a `music-atmosphere` parent; clipped decorative image blur and dark scrim | Reuse the existing authorized artwork URL/cache; keep text above the scrim | Pixel sampling, third-party color services, full-screen blur or transparent form/menu surfaces |
 | `Skeleton` | Loading placeholder | Match final geometry to prevent layout shift | Using a skeleton for a failed request |
 | `EmptyState` / `ErrorState` | Distinct empty and failed states, with optional recovery action | Say what happened and what to do next | Making a failure resemble an empty success |
 | `ProgressBar` / `Slider` | Labeled progress or native range control | Expose numeric range/value and keyboard control | Replacing a range input with a pointer-only slider |
 | `Row` | Compact ranked/list row with optional rank and textual status | Preserve rank, availability and state in text | Hiding meaning in color |
-| `Page` / `Section` | Width-safe content wrapper and 40–64px section rhythm | Keep the route's existing landmark ownership | Nesting main landmarks |
+| `Page` / `Section` | Width-safe content wrapper and 40–48px section rhythm | Keep the route's existing landmark ownership | Nesting main landmarks |
 | `Shelf` | Touch-scrollable horizontal list with focus and arrow/Home/End keyboard scrolling | Label the region and provide useful headings outside the rail | Letting the page itself overflow horizontally |
 | `Grid` / `Stack` / `Cluster` | Responsive layout composition with named spacing steps | Prefer composition to component prop proliferation | One-off spacing constants |
 
@@ -61,6 +71,7 @@ Import from `@/components/ui` or a direct module when preserving a server/client
 - Body and secondary text must meet WCAG AA contrast. Keep Figtree as the only family.
 - Respect safe-area insets for persistent mobile navigation and transport. Reduced-motion mode removes nonessential animation and transitions.
 - Failed artwork uses the shared neutral music tile. Loading uses final-size skeletons. Neither state fabricates availability or metadata.
+- Artwork atmosphere has no interaction or accessible content. It uses the existing no-referrer image policy, is bounded to header height, and falls back to a neutral dark field on failure. An opaque dark scrim protects text contrast even on white covers. Menus, controls and queue/lyrics panels remain readable opaque surfaces.
 
 ## Component and route inventory
 
@@ -109,6 +120,7 @@ This is the migration baseline. Styling notes describe the current implementatio
 | `native-collection-editor.tsx` | Native playlist editing | Utility form and action layout | `Input`, `Button`, `Dialog`, `ErrorState` |
 | `native-collections.tsx` | Native collection index | Utility cards and action buttons | `Grid`, `Card`, `Artwork`, `EmptyState` |
 | `native-likes.tsx` | Mint likes collection | Utility list rows and artwork | `Row`, `Artwork`, `EmptyState` |
+| `your-music.tsx` | Playlists, likes, request backlog, downloads and history tabs | Shared tabs, state filters, list rows, collection controls and dialogs | `Tabs`, `Row`, `Button`, `EmptyState` |
 | `now-playing.tsx` | Mint-owned Now Playing workspace | Utility layout plus `.now-playing*` global rules | `Page`, `Tabs`, `Artwork`, `IconButton`; keep player engine mounted |
 | `page-header.tsx` | Shared route heading and cover mosaic | Utility typography/layout, custom mosaic artwork selection | `Section`, `Artwork`, `Grid` |
 | `player-controls.tsx` | Playback transport and seek controls | Utility controls and bespoke range styling | `Button`, `IconButton`, `Slider`, `ProgressBar` |
@@ -163,10 +175,10 @@ The route handlers under `/api` are non-visual contracts, not redesign targets: 
 ## Migration order and status
 
 1. **Tokens and primitive library** — implemented in `globals.css` and `components/ui/` (including `ConfirmDialog`).
-2. **Forms and app shell** — form field/submit wrappers compose the shared primitives; `ToastProvider` is mounted inside the member player shell; mobile navigation exposes Home, Discover, Library and Your music (`/app/collection`) with topbar Settings access and admin pending badge.
+2. **Forms and app shell** — form field/submit wrappers compose the shared primitives; `ToastProvider` is mounted inside the member player shell; navigation exposes Home, Search and Your Library (`/app/collection`) with account Settings access and an admin pending badge.
 3. **Player and Now Playing** — `NowPlaying` workspace at `/app/now-playing` with Queue, Lyrics and Sound tabs; `PlayerProvider` placement above routed content is preserved.
 4. **Shared data components** — stage labels/progress compose `Badge`/`ProgressBar`; track rows share `TrackMenuButton` with 2-tap playlist addition and Undo toast.
-5. **Feature pages (Part 1 & Part 2 completed)** — Home (`/app` with `SetupNudge` first-run welcome and playable progress), Discover (`/app/discover`, `/app/discover/mixes`, `/app/discover/charts`), Library (`/app/library`, albums, artists), Your music (`/app/collection` and `/app/collection/[id]` unifying Mint, Smart, YouTube and Spotify playlists plus Likes, Downloads and History), Settings (`/app/settings` list-to-detail on phone and two-pane on desktop across Account, Connected services, Playback and sound, Devices and Offline storage), Management (`/app/manage` consolidating Requests, Jobs and queue, Workers and Analysis for admins), and Public pages (`/`, `/browse`, `/charts`, `/activity`, `/login`, `/request-access`) are all migrated with legacy redirects in place.
+5. **Feature pages (Part 1 & Part 2 completed)** — Home (`/app` with `SetupNudge` first-run welcome and playable progress), Search (`/app/search` for query results, discovery shelves and the full chart catalog; `/app/discover/charts` redirects here), mix details (`/app/discover/mixes`), Library (`/app/library`, albums, artists), Your music (`/app/collection` and `/app/collection/[id]` unifying Mint, Smart, YouTube and Spotify playlists plus Likes, request-state backlog, Downloads and History), Settings (`/app/settings` list-to-detail on phone and two-pane on desktop across Account, Connected services, Playback and sound, Devices and Offline storage), Management (`/app/manage` consolidating Requests, Jobs and queue, Workers and Analysis for admins), and Public pages (`/`, `/browse`, `/charts`, `/activity`, `/login`, `/request-access`) are all migrated with legacy redirects in place.
 
 This inventory records the planned targets; a listed target is not a claim that the component has already migrated. Update the status and route/component rows as each shippable slice lands.
 

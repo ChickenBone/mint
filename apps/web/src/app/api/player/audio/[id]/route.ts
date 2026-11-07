@@ -1,7 +1,6 @@
-import { cookies } from "next/headers";
-import { SESSION_COOKIE, sha256, signToken } from "@mint/core/crypto";
+import { signToken } from "@mint/core/crypto";
 import { UUID, type PlaybackClaim } from "@mint/core/playback";
-import { getUser } from "@/lib/auth";
+import { getSessionHash, getUser } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,11 +12,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   if (!user) return json("Approved membership required", 401);
   const { id } = await context.params;
   if (!UUID.test(id)) return json("Invalid track", 400);
-  const session = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!session) return json("Sign in required", 401);
+  const sessionHash = await getSessionHash();
+  if (!sessionHash) return json("Sign in required", 401);
   const requested = new URL(request.url).searchParams.get("format");
   if (requested && requested !== "mp3") return json("Unsupported compatibility format", 400);
-  const token = signToken<PlaybackClaim>("playback", { userId: user.id, sessionHash: sha256(session), trackId: id,
+  const token = signToken<PlaybackClaim>("playback", { userId: user.id, sessionHash, trackId: id,
     ...(requested === "mp3" ? { format: "mp3" as const } : {}) }, 30_000);
   const headers: Record<string, string> = { authorization: `Bearer ${token}` };
   if (request.headers.has("range")) headers.range = request.headers.get("range")!;

@@ -32,9 +32,10 @@ test("public covers proxy private Plex through signed worker requests and consis
     if (url.hostname === "private-plex-fixture.test") {
       requests.push(url.href);
       assert.equal(new Headers(init?.headers).get("x-plex-token"), process.env.PLEX_TOKEN);
-      if (url.pathname === "/library/metadata/101") return Response.json({ MediaContainer: { Metadata: [{ parentThumb: "/library/metadata/50/thumb/123" }] } });
+      if (url.pathname === "/library/metadata/101") return Response.json({ MediaContainer: { Metadata: [{ parentThumb: "/library/metadata/50/thumb/123", grandparentThumb: "/library/metadata/70/thumb/789" }] } });
       if (url.pathname === "/library/metadata/102") return Response.json({ MediaContainer: { Metadata: [{}] } });
       assert.equal(url.pathname, "/photo/:/transcode");
+      assert.ok(["/library/metadata/50/thumb/123", "/library/metadata/70/thumb/789"].includes(url.searchParams.get("url") ?? ""));
       return new Response(png, { headers: { "content-type": "image/png" } });
     }
     if (url.hostname === "archive.org") {
@@ -44,7 +45,11 @@ test("public covers proxy private Plex through signed worker requests and consis
     }
     return originalFetch(input, init);
   });
-  const server = createServer((request, response) => void serveArtwork(request, response, request.url!.slice(9)).catch(() => response.destroy()));
+  const server = createServer((request, response) => {
+    const url = new URL(request.url!, "http://worker");
+    void serveArtwork(request, response, url.pathname.slice("/artwork/".length), url.searchParams.get("variant") === "artist" ? "artist" : "album")
+      .catch(() => response.destroy());
+  });
   try {
     await runMigrations(path.resolve("../../packages/core/migrations"));
     const db = getDb();
@@ -60,6 +65,8 @@ test("public covers proxy private Plex through signed worker requests and consis
     assert.equal(catalog.items.find((item) => item.id === song.id)?.thumb, view.artworkUrl);
     const albums = await catalogItems({ userId: "00000000-0000-4000-8000-000000000001", type: "album" });
     assert.equal(albums.items.find((item) => item.title === "Album")?.thumb, view.artworkUrl);
+    const artists = await catalogItems({ userId: "00000000-0000-4000-8000-000000000001", type: "artist" });
+    assert.match(artists.items.find((item) => item.title === "Synthetic only")?.thumb ?? "", /^\/api\/artwork\/[0-9a-f-]{36}\?variant=artist$/i);
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address(); assert.ok(address && typeof address !== "string");
     const base = `http://127.0.0.1:${address.port}`;
@@ -80,6 +87,12 @@ test("public covers proxy private Plex through signed worker requests and consis
     const repeat = await GET(request(song.id), { params });
     assert.deepEqual(Buffer.from(await repeat.arrayBuffer()), png);
     assert.equal(requests.length, 2, "repeat browser requests reuse Plex metadata and cached image");
+    const artist = await GET(request(`${song.id}?variant=artist`), { params });
+    assert.equal(artist.status, 200);
+    assert.deepEqual(Buffer.from(await artist.arrayBuffer()), png);
+    assert.equal(requests.length, 4, "artist art uses its own Plex thumbnail and cache entry");
+    const missingArtist = await GET(request(`${fallback.id}?variant=artist`), { params: Promise.resolve({ id: fallback.id }) });
+    assert.equal(missingArtist.status, 404, "album art is never substituted for a missing artist portrait");
     const head = await HEAD(request(song.id, "HEAD"), { params });
     assert.equal(head.status, 200); assert.equal(await head.text(), "");
     const notModified = await GET(request(song.id, "GET", { "if-none-match": primary.headers.get("etag")! }), { params });
@@ -88,7 +101,7 @@ test("public covers proxy private Plex through signed worker requests and consis
     assert.equal(publicCover.status, 200);
     assert.deepEqual(Buffer.from(await publicCover.arrayBuffer()), png);
     assert.ok(publicCover.headers.get("cache-control")?.includes("max-age=300"));
-    assert.ok(requests.at(-1)?.startsWith("https://archive.org/"));
+    assert.ok(requests.some((url) => url.startsWith("https://archive.org/")));
     for (const response of [primary, repeat, head, publicCover]) {
       const headers = JSON.stringify([...response.headers]);
       assert.ok(!headers.includes("private-plex")); assert.ok(!headers.includes(process.env.PLEX_TOKEN!));

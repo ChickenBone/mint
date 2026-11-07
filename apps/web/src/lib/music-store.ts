@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@mint/core/db";
 import { schema } from "@mint/core/db";
 import { PLAYABLE } from "@mint/core/playback";
@@ -6,10 +6,20 @@ import { musicCollections as collections, musicEntries as entries, musicMembers 
   musicOrganization as organization, musicFolders as folders, musicLikes as likes,
   musicHistory as history, musicPreferences as preferences, musicExclusions as exclusions } from "@mint/core/music-db";
 import { MusicError, type HistoryEvent, type MusicMutation, type SmartRules, type createCollectionSchema } from "@mint/core/music";
-import type { z } from "zod";
+import { z } from "zod";
 
 type Store = Pick<Db, "select" | "insert" | "update" | "delete" | "execute">;
 const t = schema.tracks;
+export async function playlistLibrarySearch(db: Store, query = "", page = 0) {
+  const q = z.string().max(100).parse(query).trim();
+  const index = z.number().int().min(0).max(10000).parse(page);
+  const match = `%${q.replace(/[%_\\]/g, "\\$&")}%`;
+  const rows = await db.select().from(t).where(and(PLAYABLE,
+    ...(q ? [or(ilike(t.title, match), ilike(t.artist, match), ilike(t.album, match))] : [])))
+    .orderBy(asc(t.artist), asc(t.title), asc(t.id)).limit(101).offset(index * 100);
+  return { tracks: rows.slice(0, 100), nextPage: rows.length > 100 && index < 10000 ? index + 1 : null };
+}
+
 export async function collectionAccess(db: Store, userId: string, id: string) {
   const [row] = await db.select().from(collections).where(and(eq(collections.id, id),
     or(eq(collections.ownerId, userId), inArray(collections.id,
@@ -229,4 +239,34 @@ export async function musicProfile(db: Store, userId: string) {
     db.select({ trackId: exclusions.trackId }).from(exclusions).where(eq(exclusions.userId, userId)),
   ]);
   return { privateSession: pref[0]?.privateSession ?? false, likes: liked.map((r) => r.trackId), exclusions: excluded.map((r) => r.trackId) };
+}
+
+const importedLikesCursorSchema = z.object({ likedAt: z.iso.datetime(), trackId: z.uuid() });
+export function parseImportedLikesCursor(cursor?: string | null) {
+  if (!cursor) return undefined;
+  try {
+    if (cursor.length > 256) throw new Error("Cursor too long");
+    return importedLikesCursorSchema.parse(JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")));
+  } catch {
+    throw new MusicError("Invalid imported favorites page.");
+  }
+}
+
+export async function importedLikeCandidates(db: Store, userId: string, cursor?: string | null) {
+  const position = parseImportedLikesCursor(cursor);
+  const nativeLikes = db.select({ id: likes.trackId }).from(likes).where(eq(likes.userId, userId));
+  const rows = await db.select({ track: t,
+    likedAt: sql<string>`to_char(${schema.userTracks.likedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')` }).from(schema.userTracks)
+    .innerJoin(t, eq(t.id, schema.userTracks.trackId))
+    .where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube"), notInArray(t.id, nativeLikes),
+      position ? or(sql`${schema.userTracks.likedAt} < ${position.likedAt}::timestamptz`,
+        and(sql`${schema.userTracks.likedAt} = ${position.likedAt}::timestamptz`, gt(t.id, position.trackId))) : undefined))
+    .orderBy(desc(schema.userTracks.likedAt), asc(t.id)).limit(101);
+  const last = rows[99];
+  return {
+    tracks: rows.slice(0, 100).map((row) => row.track),
+    nextCursor: rows.length > 100 && last
+      ? Buffer.from(JSON.stringify({ likedAt: last.likedAt, trackId: last.track.id })).toString("base64url")
+      : null,
+  };
 }

@@ -5,6 +5,7 @@ import type { TrackView } from "@mint/core/events";
 import { musicRequest } from "@/lib/music-client";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { MusicTrackList } from "./music-track-list";
+import { ArtistLink } from "./music-links";
 
 type Entry = { event: { id: string; createdAt: string; listenedMs: number; completed: boolean }; track: TrackView };
 const button = "inline-flex min-h-11 items-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
@@ -215,7 +216,7 @@ export function ListeningHistory({
               <li key={track.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
                 <p className="min-w-0 truncate">
                   {track.title}
-                  <span className="ml-2 text-sm text-muted">{track.artist}</span>
+                  <span className="ml-2 text-sm text-muted"><ArtistLink item={track} /></span>
                 </p>
                 <button
                   type="button"

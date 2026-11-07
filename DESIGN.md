@@ -1,42 +1,87 @@
-# Mint · Listening room
+# Mint · Music first
 
-The approved redesign is a spacious listening service, not a pipeline dashboard. A listener opens Mint on a desk or a dimly lit phone to find a song and stay with it. Charcoal surfaces reduce glare; artwork supplies color. Figtree and the mint-green action accent preserve Mint's identity.
+Mint is a listening service, not a pipeline dashboard. Its navigation and everyday controls should feel familiar to people who use established music apps, while using Mint's own branding, implementation and assets. Charcoal surfaces reduce glare; artwork supplies color. Figtree and the mint-green action accent identify Mint.
 
 ## Direction contract
 
-**Thesis:** music leads; the machinery stays available without competing for attention.
-**World:** broad charcoal fields, generous gutters, square sleeves, quiet rounded controls, readable secondary text, and mint reserved for action/focus.
-**Path:** Home → Discover → Library; personal collections sit alongside these. Settings is the doorway to integrations and management.
-**First viewport:** a quiet navigation rail, an artwork-led listening invitation, a single play action, and a persistent transport. On phones Home, Discover, Library and Your collection share the bottom bar; the You destination remains the doorway to Settings.
+**Authority:** the native Expo app governs future consumer UX/UI. Independently
+implement familiar Spotify-inspired gestures and controls using Mint's own
+assets; do not claim commercial-service parity. Dynamic color comes from actual
+artwork with a readable neutral fallback. Browser consumer UX is frozen,
+maintenance-only: preserve existing routes/features and security/backend
+compatibility fixes. Next.js backend/API and admin tools continue.
+
+**Thesis:** music and personal collections lead; the machinery stays available without competing for attention.
+**World:** cool charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus. A restrained blue/teal wash establishes listening atmosphere; lavender identifies the Liked songs sleeve. Administrative surfaces stay opaque and neutral.
+**Path:** Home, Search and Your Library lead. Search combines query-based lookup with personalized discovery shelves; charts and mixes remain dedicated drill-in routes. The old Discover landing redirects to Search. Settings holds personal preferences and optional imports; the admin portal holds server operations.
+**First viewport:** navigation, familiar music shelves and an anchored transport. Phones retain the same primary destinations and persistent playback.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
 
-**Discover:** Spotify-style playlist shelves, not a chart administration form. Original generated covers carry oversized typography, a confident color palette and small Mint/source credits. Daily blend, Fresh finds, rediscovery and artist radio open real library mixes; chart and genre covers open their actual ranked collections. Horizontal shelves remain swipeable on phones. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
+**Public landing:** The public homepage is a single artwork-led invitation: authorized library covers when available, an abstract Mint-only illustration when the library is empty or artwork is unavailable, concise copy about the shared library and personal playlists, and a compact recent-additions strip only when live data exists. The strip stays subordinate to the hero; a failed activity query gets a plain recovery link without exposing operational detail. Public navigation keeps Browse and sign-in prominent. Existing chart and activity routes remain functional but are not marketed from the landing page. Do not add setup instructions, pipeline promotion, or private listening data.
 
-## System
+**Search & Explore:** Search is the single entry for finding music and starting discovery. The focused query searches local and external recordings; the empty-query view includes browse shortcuts, personalized playlist shelves, artist radio, genres and charts. Dedicated mix and chart routes retain their detailed flows, with back links returning to Search. Generated covers carry oversized typography, a confident color palette and small Mint/source credits. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
 
-- Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration.
+**Expo consumer app:** Android/mobile leads with Home, Search and Your Library,
+three phone destinations and a responsive wide-screen sidebar. Native primitives
+reuse Mint's semantic charcoal/mint/artwork identity with platform typography;
+the web Figtree/HTML token contract below is not a native component prescription.
+Search's Browse all is a data-backed category grid: recommendations, new arrivals,
+read-only charts, decades, moods and genres. Every card opens a real bounded
+destination; chart scope and availability remain explicit. No podcasts, audiobooks,
+live events or fabricated editorial popularity. Missing chart songs lead to an
+explicit Search request, never automatic acquisition. Native admin/provider setup
+stays on Next.js. See [mobile design](docs/mobile-design.md) and
+[native playback](docs/mobile-playback.md) for platform-specific controls and limits.
+
+## Native interaction and color
+
+Native primitives and tokens in `apps/mobile/src/theme/tokens.ts` are the
+implementation reference for future listener design; see
+[mobile design](docs/mobile-design.md). A persistent mini-player expands into
+the same Now Playing surface without resetting audio. Direct manipulation,
+interruptible settling, reduced motion and labeled button/keyboard alternatives
+matter more than imitation of proprietary animation. Artwork-derived gradients
+remain decorative, bounded and contrast-safe; missing images use neutral music
+tiles and backgrounds, not fabricated colors.
+
+Developer options and Stats for nerds are opt-in listener troubleshooting, not
+admin tools. Keep traces local-only and separate measured engine/analysis values
+from unavailable codec, throughput or DSP information. Do not invent a waveform
+or infer processing from metadata; ordinary playback stays uncluttered.
+
+## Existing browser system (maintenance reference)
+
+The following describes retained browser behavior, not a prescription to
+redesign the native app or expand browser UX.
+
+- Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration. `gradient-action` enriches mint primary controls, `gradient-atmosphere` belongs to music headers, and `gradient-liked` identifies personal favorites; never gradient text, glowing borders or rainbow chrome. `info` and `accent` are complementary roles, not a replacement for warning/error semantics.
 - Figtree is the only typeface. Titles use a compact 32–64px scale, section headings 24–32px, body 14–16px. Long explanations stay below 75 characters per line.
-- Content gutters scale from 20px on phones to 48px on wide screens. Related controls form small groups; sections have 40–64px separation.
+- Content gutters scale from 20px on phones to 48px on wide screens. Listening content is bounded by `content-max`; related controls use `space-control-gap`, panels use `space-panel`, and sections have 40–48px separation. Ordinary page headings use a compact 32–48px scale; album/artist titles stop at 64px. Shelves keep comfortable desktop density; personal collection sleeves stay smaller than album sleeves. Settings and the admin frame are narrower and quieter.
 - Primary controls are mint with dark ink. Secondary controls use neutral fills or quiet outlines. Destructive and warning states use danger/warn, never mint.
 - Touch actions target 44px. Focus is visible. Inputs always have names; ranked rows retain their order and state in accessible text, not color alone.
-- The player is one anchored horizontal surface. Now Playing pairs the sleeve with Queue / Lyrics / Sound, retaining arrow/Home/End tab navigation and pinned phone transport.
+- The player is one anchored three-part surface: song identity, centered transport/seek, then lyrics, queue and mute/volume. The compact phone dock keeps playback and direct queue access with a quiet progress edge, without an extra grab bar or row. Drag its non-control areas or the expanded header, artwork and metadata to move one responsive Now Playing sheet; controls remain outside drag activation, and Queue/Lyrics scroll normally. One visible cover follows expansion outside the content's scrolling clips, returning to its normal layout at rest. Now Playing pairs the sleeve with Queue / Lyrics, retaining arrow/Home/End tab navigation and pinned phone transport. EQ and all sound configuration live in Settings → Playback & sound, linked from Now Playing.
+- Album pages lead with large real library sleeves; artist pages use real Plex artist thumbnails with a readable full-bleed title treatment and neutral fallback. Never substitute album art or invented portraits. Artist pages may show source-linked MusicBrainz identity/relationships, Wikipedia summaries with CC BY-SA attribution, and ListenBrainz community counts; label community counts as provider-specific, not global popularity. Artist names and album titles remain separate navigation targets throughout member listening views.
+- Songs, collection sleeves, recommendations, local chart entries, downloads and queue rows share right-click, 550ms touch/pen hold, options-button and Context Menu/Shift+F10 actions. Movement cancels a hold; releasing a hold never also plays or navigates. Inputs keep native editing gestures, and public browsing keeps native context menus.
 - Motion is brief and purposeful: the existing sleeve reveal and a muted-to-playable chart transition. Reduced motion removes animation and nonessential transitions.
 - Failed artwork uses the shared neutral music tile. Never invent covers, counts, chart ranks or playback availability.
+- Album, playlist and Now Playing headers can reuse `ArtworkAtmosphere` with the existing artwork URL. Color comes directly from the image, without canvas sampling, another provider, or a parallel cache. The decorative layer is clipped to a bounded header, pointer-inert and hidden from assistive technology; a dark scrim keeps foreground contrast independent of artwork brightness. Missing/failed art leaves a neutral background. Do not use full-screen backdrop blur, continuous image animation or glass over forms, menus, queue rows or errors.
 
-## Navigation and capability map
+## Existing browser navigation and capability map
 
 | Capability | Home in the redesigned app |
 | --- | --- |
 | Recommendations, recent likes, new arrivals | Home |
-| Provider charts, territory Top 50, weekly community/trending collections | Discover → playlist cards / All charts |
-| Personal discovery, radio, multi-seed/sonic mixes, rediscovery, saved mixes | Discover → Your mixes |
+| Query-based local and external music search, personalized shelves and discovery entry | Search |
+| Provider charts, territory Top 50, weekly community/trending collections | Search → Explore → playlist cards / All charts |
+| Personal discovery, radio, multi-seed/sonic mixes, rediscovery, saved mixes | Search → Explore → Your mixes |
 | Native albums/artists/songs, search, metadata filters, full-collection queues/shuffle | Library |
-| Native/editable/smart/collaborative playlists, folders/pins and Mint likes | Your collection |
-| YouTube likes and imported playlists | Your collection / Settings → YouTube Music |
-| Spotify metadata playlists and account linking | Your collection / Settings → Spotify |
+| Native/editable/smart/collaborative playlists, folders/pins and liked songs | Your Library |
+| YouTube imports and existing sync controls | Optional import / Settings → Music imports |
+| Spotify metadata playlists and account linking | Settings → Music imports |
 | Persistent playback, seek, repeat, queue editing | Player / Now Playing |
-| DSP/EQ, normalization, Smart Fades, playback compatibility | Player → Sound |
-| Lyrics and personal lyric-match corrections | Player → Lyrics |
+| DSP/EQ, normalization, Smart Fades, playback compatibility | Settings → Playback & sound |
+| Lyrics and issue reporting | Player → Lyrics; reports in Admin → Reports |
+| Personal lyric-match corrections and diagnostics | Player → Lyrics → Admin details (admins only) |
 | Account-scoped offline downloads, storage/retry/removal | Downloads |
 | Private history, private sessions and history deletion | Listening history |
 | Devices, explicit handoff and single-output parties | Settings → Devices & parties |
@@ -45,7 +90,8 @@ The approved redesign is a spacious listening service, not a pipeline dashboard.
 | Worker registration, ownership, approval and revocation | Settings → Workers / Admin |
 | Analysis controls, backfills, coverage and diagnostics | Settings → Admin → Audio analysis |
 | Service diagnostics, read-only Plex indexing/setup | Settings → Admin |
-| Public browsing, chart availability and account requests | Public Library / Charts / Request access |
+| Public library browsing and account requests | Public landing / Browse / Request access |
+| Existing public chart and activity routes | Direct routes and existing bookmarks |
 | Public pipeline visibility | Public footer → Library activity |
 | Docker, GHCR, migrations and CI/CD | Existing deployment tooling and self-hosting guide |
 
@@ -53,10 +99,12 @@ Existing routes remain valid. Public visitors never receive player items or medi
 
 ## Charts and recording safety
 
-Every collection identifies provider, audience/territory, ranking period, provider publication time and Mint check time. “Worldwide” describes only the named provider's community, never an inferred global industry chart. Apple genre labels are metadata, not independent genre rankings; Audius supplies its own genre-specific trending collections.
+Every chart identifies its provider, audience/territory and available ranking period. Provider publication and Mint check times remain in the API for diagnostics rather than crowding the listening screen. “Worldwide” describes only the named provider's community, never an inferred global industry chart. Apple genre labels are metadata, not independent genre rankings; Audius supplies its own genre-specific trending collections.
 
 Missing recordings are muted but readable and have a labeled Add to library action. Requested, processing, failed and ambiguous states have distinct text. Ambiguous identity opens a recording/source chooser instead of silently playing or acquiring. Matching retains version words, compares duration and identifiers where present, and never strips remaster/live/remix qualifiers.
 
 Charts are bounded to 50 entries, paginated in 25-entry windows, server-cached and provider-throttled. Stale rankings, provider failures and genuinely empty results are different states. WebSocket invalidation is supplemented by visible-tab polling so a failed realtime connection never hides progress.
 
-The desktop analysis-worker “Analysis result not accepted fetch failed” report remains an unresolved operational investigation, not a verified redesign fix.
+Builds and screenshots establish only their tested surface. Device lockscreen,
+background/offline recovery, OTA application and deployed-provider behavior need
+separate evidence; do not claim them from browser rendering or CI alone.

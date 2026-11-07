@@ -8,6 +8,7 @@ import { collectionDetail } from "./music-store";
 import { MusicError } from "@mint/core/music";
 import { catalogSearch } from "./catalog-search";
 import { spotifyPlayablePage, spotifyQueueTrackSource } from "@mint/core/spotify-store";
+import { musicLikes } from "@mint/core/music-db";
 
 const t = schema.tracks;
 export class CatalogInputError extends Error {}
@@ -18,6 +19,10 @@ function collectionFilter(collection: PlayerCollection, userId: string): SQL | u
     case "spotify": throw new CatalogInputError("Use the Spotify playlist catalog.");
     case "library": return undefined;
     case "liked": return inArray(t.id, db.select({ id: schema.userTracks.trackId }).from(schema.userTracks).where(and(eq(schema.userTracks.userId, userId), eq(schema.userTracks.origin, "youtube"))));
+    case "native-liked": return and(
+      inArray(t.id, db.select({ id: musicLikes.trackId }).from(musicLikes).where(eq(musicLikes.userId, userId))),
+      collection.id ? eq(t.id, collection.id) : undefined,
+    );
     case "playlist": return inArray(t.id, db.select({ id: schema.playlistTracks.trackId }).from(schema.playlistTracks)
       .innerJoin(schema.playlists, eq(schema.playlistTracks.playlistId, schema.playlists.id))
       .where(and(eq(schema.playlists.userId, userId), eq(schema.playlists.id, collection.id))));
@@ -187,26 +192,42 @@ export async function catalogItems(opts: {
   }
   const q = opts.q ?? (collection.kind === "library" ? collection.query : undefined);
   const where = catalogWhere(collection, opts.userId, q);
+  if (collection.kind === "artist") title = Buffer.from(collection.id.slice(3), "base64url").toString("utf8");
+  if (collection.kind === "album") title = JSON.parse(Buffer.from(collection.id.slice(3), "base64url").toString("utf8"))[1] || "Unknown album";
   if (opts.type === "artist" || opts.type === "album") {
     const album = sql<string>`coalesce(${t.album}, '')`;
     const group = opts.type === "album" ? [t.artist, album] : [t.artist];
+    const representativeTrackId = sql<string>`(array_agg(${t.id} order by (${t.plexRatingKey} is null), ${t.id}))[1]`;
     const selection = db.select({ artist: t.artist, album: opts.type === "album" ? album : sql<string>`''`,
+      representativeTrackId,
       thumb: albumArtwork }).from(t).where(where).groupBy(...group);
     const groupedOrder = opts.sort === "newest"
       ? [desc(sql`max(${t.readyAt})`), asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])]
       : opts.type === "album" && (opts.sort === "title" || opts.sort === "album")
         ? [asc(album), asc(t.artist)]
         : [asc(t.artist), ...(opts.type === "album" ? [asc(album)] : [])];
-    const [rows, count] = await Promise.all([
+    const [rows, count, artistMetadata] = await Promise.all([
       selection.orderBy(...groupedOrder).limit(size).offset(start),
       db.select({ n: opts.type === "album" ? sql<number>`count(distinct (${t.artist}, coalesce(${t.album}, '')))::int`
         : sql<number>`count(distinct ${t.artist})::int` }).from(t).where(where),
+      collection.kind === "artist"
+        ? db.query.artistMetadata.findFirst({ where: eq(schema.artistMetadata.artistName, title ?? "") })
+        : Promise.resolve(undefined),
     ]);
     return { items: rows.map((r) => ({
       id: opts.type === "album" ? albumPlayerId(r.artist, r.album) : artistPlayerId(r.artist),
       title: opts.type === "album" ? r.album || "Unknown album" : r.artist, type: opts.type === "album" ? "album" : "artist",
-      artist: r.artist, artistId: artistPlayerId(r.artist), thumb: r.thumb ?? undefined,
-    })), total: count[0]?.n ?? 0, start, title };
+      artist: r.artist, artistId: artistPlayerId(r.artist),
+      thumb: opts.type === "artist" ? `/api/artwork/${r.representativeTrackId}?variant=artist` : r.thumb ?? undefined,
+    })), total: count[0]?.n ?? 0, start, title,
+      ...(collection.kind === "artist" ? {
+        artistProfile: artistMetadata ? {
+          status: artistMetadata.status,
+          musicBrainzArtistId: artistMetadata.musicBrainzArtistId,
+          profile: artistMetadata.profile,
+          fetchedAt: artistMetadata.fetchedAt?.toISOString() ?? null,
+        } : null,
+      } : {}) };
   }
   const order = catalogOrder(collection, q, opts.sort);
   const [rows, count] = await Promise.all([
@@ -215,5 +236,5 @@ export async function catalogItems(opts: {
   ]);
   return { items: rows.map((track) => ({
     ...trackPlayerItem(toTrackView(track)), duration: (track.durationSec ?? track.existingDurationSec ?? 0) * 1000,
-  })), total: count[0]?.n ?? 0, start };
+  })), total: count[0]?.n ?? 0, start, title };
 }

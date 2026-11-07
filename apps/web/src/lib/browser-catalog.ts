@@ -61,7 +61,7 @@ export async function loadCollection(collection: PlayerCollection, signal: Abort
 
 export function itemCollection(item: PlayerItem): PlayerCollection {
   if (item.type === "artist" || item.type === "album") return { kind: item.type, id: item.id };
-  if (item.type === "playlist") return item.id === "liked" ? { kind: "liked" } : { kind: "playlist", id: item.id };
+  if (item.type === "playlist") return item.id === "liked" ? { kind: "liked" } : { kind: item.playlistSource === "spotify" ? "spotify" : "playlist", id: item.id };
   if (item.albumId) return { kind: "album", id: item.albumId };
   throw new Error("This track has no album selection. Play it from its library collection.");
 }

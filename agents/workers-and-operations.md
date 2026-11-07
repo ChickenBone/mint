@@ -10,6 +10,10 @@
 
 A volunteer token does not authenticate analysis. Volunteer counts do not measure built-in worker or analysis connectivity.
 
+## Artist metadata queue
+
+The built-in worker discovers library artists in small batches and enriches them through a dedicated BullMQ queue. It uses MusicBrainz for exact identity/type/relationships, Wikidata to locate an English Wikipedia summary (with attribution), and ListenBrainz for community listening counts and similar artists. Ambiguous names are not guessed; provider failures are persisted and retried. This queue reads metadata only, does not inspect media files, and is separate from measured audio analysis. The queue appears in the worker's existing queue health counts; no new API secret is required.
+
 ## Analysis behavior
 
 Read `docker-compose.analysis.yml`, `apps/worker/src/analysis-worker.ts`, `analysis-http.ts`, and [analysis setup](../docs/self-hosting.md#optional-separate-analysis-machine).
@@ -37,6 +41,15 @@ Pull images, obtain a fresh Plex claim only for a new unclaimed bundled server, 
 Update the pipeline worker first and wait for migrations/health before updating web. A restart is not image recreation. Pulling an image does not update inline Compose configuration. Verify Release workflow completion before claiming GHCR images are available.
 
 All-in-one Compose is the recommended complete deployment. Vercel cannot resolve Docker's private worker hostname and is not a drop-in native streaming/artwork solution; separately validate private connectivity and platform limits.
+
+Android application distribution is separate: [EAS Build/Update](../docs/android-builds.md)
+hosts APKs and compatible JavaScript/assets, not music or backend services.
+There is no self-hosted OTA endpoint or storage dependency. Retain Android
+signing credentials and `EXPO_TOKEN`; retire only obsolete custom OTA settings.
+Gate updates on a finished APK matching the native fingerprint, production
+channel/runtime and validated signer. EAS quotas apply. A queued build, verified
+APK or published update is not proof of installation, cold-launch update
+application, lockscreen artwork or background playback on a physical device.
 
 ## Networking lessons from troubleshooting
 

@@ -11,8 +11,8 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   const { next } = await searchParams;
   return (
     <div className="mx-auto w-full max-w-sm px-5 py-20">
-      <h1 className="text-4xl font-extrabold tracking-tight">Sign in to Mint</h1>
-      <p className="mt-2 text-muted">Members only. Your account opens once an admin approves your request.</p>
+      <h1 className="text-4xl font-bold tracking-tight">Welcome back.</h1>
+      <p className="mt-3 text-muted">Sign in to your listening room.</p>
       <div className="mt-10">
         <LoginForm next={typeof next === "string" ? next : undefined} />
       </div>
@@ -22,6 +22,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           Request access
         </Link>
       </p>
+      <p className="mt-4 text-sm text-muted">Requested an account? You can sign in once an administrator approves it.</p>
     </div>
   );
 }

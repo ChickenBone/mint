@@ -12,16 +12,49 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [Connect an existing Plex library](#use-an-existing-plex-music-library-read-only)
 - [Linux server and command-line installation](#command-line-setup)
 - [Vercel limitations and setup](#optional-the-website-on-vercel)
+- [Expo app and Android updates](#expo-consumer-app-and-browser-sign-in)
 - [Listening features](#native-browser-listening)
 - [Chart discovery](#chart-discovery)
 - [Upgrades and backups](#updating-an-existing-installation)
 - [Private analysis workers](#optional-separate-analysis-machine)
 - [Architecture](#architecture)
 - [Services, integrations and troubleshooting](#setup-details)
+- [Optional MusicBrainz metadata mirror](#optional-musicbrainz-metadata-mirror)
+- [Optional standalone chart metadata API](#optional-standalone-chart-metadata-api)
 - [Volunteer download workers](#volunteer-workers)
 - [Development](#development) and [CI/CD](#cicd)
 
 Use only music you are authorized to download, store and share. Public pages reveal library metadata and artwork, but never provide public audio streaming.
+
+### Expo consumer app and browser sign-in
+
+The [Expo setup guide](mobile.md) covers iOS/Android and the secondary web app.
+This is the primary consumer client; Next.js still serves browser listening,
+approved-account APIs and admin-only management. Native Search's data-backed
+Browse all and read-only chart categories require a backend version containing
+the native browse/chart facade; updating JavaScript alone cannot add server routes.
+Keep provider and acquisition credentials on the backend, not in Expo settings.
+For Expo web hosted on another origin, set server-side `NATIVE_WEB_ORIGINS`
+to the browser page's exact origin(s), including scheme and port, with no
+paths or wildcards. The CLI stack reads it from `.env`; NAS users set it in
+the template's top settings block; Vercel users add it to the web project's
+environment. Restart/recreate or redeploy the web server after changing it.
+Local Expo commonly uses `http://localhost:8081`; `127.0.0.1` is a different
+origin. Native iOS/Android do not need browser CORS. Existing web-cookie
+authentication and CSRF protections remain unchanged.
+
+Android APKs and OTA application updates now use [EAS Build and EAS Update](android-builds.md).
+Mint's backend still serves native account and music APIs; Expo does not receive
+your music library or backend credentials. No OTA server/container/volume is
+required. When upgrading from the previous self-hosted OTA setup, remove
+`ota-storage-init`, the web OTA mount and dependency, and `OTA_STORAGE_DIR`,
+`OTA_PUBLISH_TOKEN_SHA256`, `OTA_SIGNING_CERTIFICATES` and `OTA_MAX_STORAGE_BYTES`
+from your private Compose configuration. Stop including the retired
+`docker-compose.updates.yml` overlay. Preserve the old update folder/volume
+until backed up; do not delete data to perform this migration. Keep
+`NATIVE_WEB_ORIGINS` and every existing database, media and secrets mount.
+Install the new EAS-enabled APK; an old APK cannot change its embedded update
+server through an EAS update.
 
 ## NAS setup: copy, paste, deploy
 
@@ -174,35 +207,236 @@ Vercel also needs reachable PostgreSQL and Redis; the home server keeps the priv
 3. Import the repository into Vercel. Set **Root Directory** to `apps/web` and leave "Include files outside the root directory" on. Add the variables from [`apps/web/.env.vercel.example`](../apps/web/.env.vercel.example), using Neon's *pooled* URL. Print the shared secrets with `docker compose run --rm init vercel`. `NEXT_PUBLIC_*` values are baked in at build time, so redeploy after changing them.
 4. Add `mint.example.com` as a domain in Vercel.
 
+### Optional MusicBrainz metadata mirror
+
+**Optional advanced setup, not part of Mint's default startup.** Mint continues to use
+public MusicBrainz unless the pipeline worker's `MUSICBRAINZ_MIRROR_URL` is set.
+A real mirror is MusicBrainz's recording/artist/release **metadata database**, not
+a free song/audio collection, not complete coverage of every song, and not a cache.
+It does not replace Plex: local browsing, availability, file paths and primary
+library artwork still use indexed Plex metadata. Existing Plex and original music
+remain read-only when configured that way.
+
+Use the maintained [MetaBrainz musicbrainz-docker stack](https://github.com/metabrainz/musicbrainz-docker)
+in a **separate project**, with its own PostgreSQL, MusicBrainz server, Solr search,
+indexer and Valkey. Mint does not substitute an unverified single-container image,
+share its application database with the mirror, download dumps, build search indexes
+or enable replication automatically.
+
+#### Capacity, licensing and freshness
+
+The upstream README checked in November 2026 recommends **x86-64, 16 CPU threads,
+16 GB RAM and 350 GB disk with indexed search**; without indexed search its estimate
+is 2 threads, 4 GB and 100 GB. These are estimates, not caps: reserve additional
+space for downloads, imports, indexes, backups and growth. Mint's name-based matching
+needs indexed search, so a database-only mirror is insufficient. The upstream stack
+builds images from its supplied build contexts; its current PostgreSQL version and
+schema are independent of Mint's. Do not assume ARM NAS support or sufficient space.
+
+- [Core catalog dumps](https://musicbrainz.org/doc/MusicBrainz_Database/Download)
+  (`mbdump.tar.bz2`) are **CC0**. Derived data (including user tags/ratings),
+  edit/editor/statistics and artwork-reference dumps have **CC BY-NC-SA 3.0**
+  terms. Preserve applicable attribution and share-alike obligations; do not label
+  the whole installation CC0: upstream's default `createdb.sh -fetch` imports
+  noncommercial-licensed dumps too, not just the CC0 core. Artwork-reference dumps do not contain cover images,
+  and metadata licensing does not license audio or artwork.
+- [Live Data Feed](https://musicbrainz.org/doc/Live_Data_Feed) replication packets
+  are **CC BY-NC-SA 3.0**. Personal/noncommercial operators can obtain a free
+  MetaBrainz account/access token. Commercial use requires reviewing MetaBrainz's
+  account/licensing arrangements; do not assume replication is free for any use.
+- A dump-only installation is a **snapshot**, not a live mirror. Database
+  replication does not itself update Solr. Rebuild indexes on a deliberate schedule
+  or evaluate upstream's explicitly experimental live indexing. Upstream's default
+  replication cron is daily, not hourly; monitor both replication lag and index age.
+
+#### Explicit provisioning (large download; operator action required)
+
+Mint includes an opt-in, pinned upstream provisioner,
+[`deploy/docker/musicbrainz.mjs`](../deploy/docker/musicbrainz.mjs), and the checked
+[`docker-compose.musicbrainz.yml`](../docker-compose.musicbrainz.yml) connection
+overlay. These manage actual upstream containers, not a metadata proxy/cache.
+Requirements: Node.js 22+, Git, Bash, Docker Compose 2.24+ and the capacity/license
+review above. Upstream revision is pinned to
+`7536deb1d528508d5ec3ee2f710f9c98c764fb01`; upgrading that pin requires reviewing
+upstream schema and migration guidance.
+
+Run these **from the Mint checkout**, choosing a new, permanent project-relative
+directory (the example under `data` is ignored by Git):
+
+```bash
+# Source checkout and Compose configuration only. No image build, dataset fetch or startup.
+node deploy/docker/musicbrainz.mjs prepare data/musicbrainz-upstream
+node deploy/docker/musicbrainz.mjs config data/musicbrainz-upstream
+# Explicit image build; still no metadata database download.
+node deploy/docker/musicbrainz.mjs build data/musicbrainz-upstream
+# LARGE metadata download/import. Run only after reviewing resources and CC BY-NC-SA terms.
+node deploy/docker/musicbrainz.mjs import data/musicbrainz-upstream --accept-large-download-and-license
+# Start the imported upstream stack, then explicitly build search indexes.
+node deploy/docker/musicbrainz.mjs start data/musicbrainz-upstream
+node deploy/docker/musicbrainz.mjs index data/musicbrainz-upstream
+```
+
+The provisioner refuses an existing preparation directory, a changed upstream
+revision, starting before successful import, and repeating a completed import.
+A failed import does not get a success marker: inspect upstream logs and any
+partially imported database before retrying. It never deletes or resets data
+to repair failures. Do not rerun import as an update mechanism.
+
+Import/indexing may take hours. Upstream's alternative prebuilt indexes
+(approximately 60 GB compressed) remain a separate explicit large download.
+No import or indexing happens during Mint startup, updates, `prepare`, `config`,
+or `start`. The upstream project uses the distinct Compose name `mint-musicbrainz`
+and its own named stores. Retain its directory, volumes and replication secrets
+through updates and back up deliberately.
+
+The supplied upstream override removes **all** API host ports and attaches only
+the MusicBrainz API to the internal `mint_metadata` bridge; its database, Solr and
+Valkey remain on its own network. The provisioner creates that bridge if absent
+and refuses an existing non-internal bridge. Do **not** enable upstream's
+`publishing-all-ports`: its README warns that internal services are unsafe to expose.
+
+Verify lookup **and indexed search** in the imported stack before connecting Mint.
+Then use the checked overlay:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml up -d worker
+```
+
+Use both files on subsequent updates, together with any existing Plex override.
+For the NAS template, use `docker-compose.nas.yml` instead of `docker-compose.yml`;
+project editors may merge the worker attachment and external-network declaration
+from the overlay into their private compose text. Advanced provisioning still
+requires the commands above; this is **not** a one-paste NAS installation. Without
+Git/Bash/build support, use a separately managed upstream installation instead.
+No public service joins `mint_metadata`, and original music mounts remain unchanged.
+Never publish mirror internals through Mint's tunnel.
+
+Optionally enable replication **in the upstream directory**, following its README:
+   `admin/set-replication-token`, `admin/configure add replication-token`, then
+   recreate its services. Run `docker compose exec -T musicbrainz replication.sh`
+   to catch up, and explicitly enable `admin/configure add replication-cron` if
+   desired. Keep that token only in the upstream project's secrets; Mint never needs
+   it. Use `docker compose --project-name mint-musicbrainz` for manual commands in
+   that directory so they operate on the provisioned project's existing stores.
+   Plan search-index refreshes and upstream schema upgrades separately; do not
+   remove the supplied network override when enabling replication.
+
+For a different host, use a trusted private/VPN API endpoint ending in `/ws/2`,
+with firewall/TLS appropriate to that connection; `localhost` inside Mint's worker
+is not the other host. No username/password, query or fragment is accepted in the
+configured API base.
+
+#### Runtime behavior and verification
+
+Only worker `musicBrainzJson` consumers use this setting: recording acquisition,
+artist metadata and album-art identity matching. Web missing-music resolution
+currently still uses public MusicBrainz; Cover Art Archive, Wikidata, Wikipedia
+and ListenBrainz also remain separate public services.
+
+Mirror requests preserve the query and user-agent, allow at most **3 seconds per
+attempt** (or the caller's shorter timeout), do not retry and reject redirects.
+Transport/HTTP/invalid-JSON or malformed endpoint-response failures log a warning and fall back to the original
+public API with its existing timeout/retry settings. The per-worker serialized
+1.1-second MusicBrainz throttle remains in place, including public fallback.
+There is no guaranteed speedup, global fleet-wide throttle or catalog freshness
+check. A valid empty or outdated mirror result is not an outage and does not trigger
+public fallback or silently substitute a different recording. A broken mirror can
+add up to three seconds before the existing public request budget.
+Recording, artist and release-group searches require their expected result arrays
+(including valid empty arrays); lookups require entity identity and title/name.
+An arbitrary `{}` or malformed entries are not accepted as empty successful searches.
+
+Verify a `/ws/2/artist?query=artist:Queen&fmt=json&limit=1` search and a recording
+lookup from the **worker's** network, inspect upstream import/index/replication
+logs, then confirm an explicit missing-recording match. With the mirror stopped,
+confirm the warning and public fallback; if both services fail, the existing
+failure behavior remains. Mint's Compose validation and mocked tests do not prove
+an actual database import, NAS connectivity or replication. The pinned upstream
+checkout/config and Mint overlay were validated without building upstream images
+or importing its database; import, indexed performance and replication remain
+operator verification steps. To disable, remove the connection overlay (or clear
+`MUSICBRAINZ_MIRROR_URL` in your private compose text) and recreate the worker;
+preserve mirror data/backups.
+
+### Optional standalone chart metadata API
+
+The default stacks keep chart fetching in the web server. For a separate
+metadata-only API, both templates include an **opt-in** `chart-source` profile
+and the Dockerfile has a `chart-source` target. The Release workflow builds
+`mint-chart-source` alongside the existing images; verify that workflow published
+your chosen tag before using GHCR. A source change or successful local build
+does not establish image availability.
+
+For the CLI stack, add to your private `.env`:
+
+```dotenv
+COMPOSE_PROFILES=chart-source
+MINT_CHART_SOURCE_URL=http://chart-source:3090
+```
+
+Run `docker compose config --quiet`, pull the available image, then
+`docker compose up -d chart-source web`. To build locally from a checkout before
+publication: `docker build --target chart-source -t mint-chart-source:local .`,
+then use a private Compose override selecting that local image. The packaged
+service bundles its TypeScript and dependencies; it does not need `tsx` at runtime
+or the application/media mounts.
+
+NAS users must enable the `chart-source` profile in their project editor (or
+remove only that service's `profiles: [chart-source]` line in their private copy),
+then set the top-level `MINT_CHART_SOURCE_URL` setting to
+`http://chart-source:3090`. Keep it blank until the service is running; an editor
+without profile controls must not leave a disabled service configured as the
+web upstream. Default NAS deployment still starts the original 13 services.
+
+The service gets only `REDIS_URL`, `PORT=3090` and `MINT_CHARTS_ENABLED`. It runs
+as a non-root user with a read-only filesystem, no secret/media volumes and no
+published ports, on the private `data` network. It requires outbound HTTPS to
+its public metadata providers. `/healthz` checks Redis; `/v1/charts` lists the
+catalog without fetching providers. Check health and a bounded chart request
+from the web container's network. Redis/provider failures remain explicit; an
+unreachable configured API does not silently fall back to direct fetching.
+
+For Vercel, `http://chart-source:3090` is **not reachable** outside Docker. Leave
+the Vercel setting unset unless you separately design and secure connectivity
+to an independently hosted API. Do not expose this unauthenticated internal
+service through Mint's Caddy/Cloudflare routes as a workaround. To disable,
+clear the web setting and recreate web before disabling the profile; preserve
+Redis and all existing application data.
+
 ## Architecture
 
 ### Native browser listening
 
-`/app/music` is entirely Mint-owned: native browsing, search, artist/album views, queues and a persistent two-deck HTMLAudio/Web Audio player. There is no embedded Plexamp, vendor download, patched module loader, synthetic Plex server/cloud API or iframe. `/listen` remains a redirect to Music; obsolete `/listen/engine`, asset and compatibility routes are removed. Plex remains the private library server and existing acquisition/indexing integrations are preserved.
+Browser listening is entirely Mint-owned: library browsing, Search, artist/album views, queues and a persistent two-deck HTMLAudio/Web Audio player. Here "native browser" means independently implemented, not the Expo runtime. `/app/music` and `/listen` are legacy entry points; current destinations are Home, Search, Library and Your Library. There is no embedded Plexamp, vendor download, patched module loader, synthetic Plex server/cloud API or iframe. Obsolete `/listen/engine`, asset and compatibility routes are removed. Plex remains the private library server and existing acquisition/indexing integrations are preserved.
 
-Approved members can browse songs/albums/artists/imported playlists, search, listen to liked songs and use persistent playback/seek/volume, queue, shuffle and repeat controls. Home leads with artwork and bounded recommendations; **Discover** holds charts and personal mixes, and **Library** opens bounded album browsing. Global search is always nearby. Desktop and mobile share Home, Discover and Library; mobile **You** opens the same Settings & management hub. Jobs, account linking, workers, devices/parties, analysis and administration remain reachable there. Catalog pages contain at most 100 entries. Play/Shuffle freeze every matching song into a server-owned ID-only snapshot and immediately return at most 100 hydrated queue entries; later windows load progressively, never all metadata upfront. Appending albums/artists to these queues also stays server-side. The snapshot's total is the complete selection, not the current browser page. Library additions cannot inflate or repeat a frozen queue. Snapshots expire after seven days; at most ten are retained per member. Right-click or use a song's options button for play now/next, add to queue, artist shuffle and album/artist navigation. Menus support arrow keys, Escape and keyboard invocation.
+Approved members can browse songs/albums/artists/imported playlists, search, listen to liked songs and use persistent playback/seek/volume, queue, shuffle and repeat controls. Home leads with artwork and bounded recommendations; **Search** combines queries, charts and personal discovery, and **Library** provides bounded songs/albums/artists. Your Library keeps playlists, likes, downloads and history nearby. The legacy Discover landing redirects to Search. Account controls open personal Settings; **Management** retains admin-only requests/jobs/workers/analysis, while Devices stays under Settings. Catalog pages contain at most 100 entries. Play/Shuffle freeze every matching song into a server-owned ID-only snapshot and immediately return at most 100 hydrated queue entries; later windows load progressively, never all metadata upfront. Appending albums/artists to these queues also stays server-side. The snapshot's total is the complete selection, not the current browser page. Library additions cannot inflate or repeat a frozen queue. Snapshots expire after seven days; at most ten are retained per member. Right-click or use a song's options button for play now/next, add to queue, artist shuffle and album/artist navigation. Menus support arrow keys, Escape and keyboard invocation.
 
-**Now playing:** click the bottom player's artwork or song title to open Mint's own artwork-led song view, not Plexamp's native player. Desktop places listening tools alongside the cover; phones keep seek, shuffle, repeat and transport pinned below the scrollable content. Up next, Lyrics and Sound share one keyboard-accessible tab set. Switching tools preserves sound drafts and loaded lyrics within the view, and sound changes confirm only after the engine acknowledges them. Queue actions operate on upcoming songs without interrupting the current one. Back or Escape returns to the page you opened it from; the engine, audio and queue stay mounted. Entrances respect reduced-motion preferences.
+**Now playing:** click the bottom player's artwork or song title to open Mint's own artwork-led song view, not Plexamp's native player. Desktop places listening tools alongside the cover; phones keep seek, shuffle, repeat and transport pinned below the scrollable content. Queue and Lyrics share one keyboard-accessible tab set; the phone dock also opens the queue directly. Switching tools preserves loaded lyrics within the view. Configure EQ, preamp, normalization, Smart Fades and audio compatibility in **Settings → Playback & sound**, also linked from Now Playing. Sound changes confirm only after the engine acknowledges them. Queue actions operate on upcoming songs without interrupting the current one. Back or Escape returns to the page you opened it from; the engine, audio and queue stay mounted. Entrances respect reduced-motion preferences.
 
-**Album artwork:** library tracks, album/artist cards, recommendations, player artwork and the public homepage use `/api/artwork/{trackId}`. The private pipeline worker fetches the album cover from Plex first (512px), then tries the saved public cover, Cover Art Archive release-group cover and YouTube thumbnail as available. Plex URLs/tokens never reach browsers; covers are public, but audio remains membership-protected. Concurrent album-cover requests coalesce, and a bounded 32 MB worker cache plus browser/CDN caching reduces intermittent provider failures; cached covers can survive a temporary source outage. Public fallbacks are cached briefly so Plex is retried. Missing images are not cached by browsers/CDNs; Mint shows its existing placeholder if all sources fail. Existing library entries work without waiting for public-cover enrichment or re-indexing. Restart/update the pipeline worker before web; chart discovery requires migration 0012, but no new Plex claim or library re-index is needed. The web service uses the same `PLAYBACK_WORKER_URL` connection as native audio.
+**Artwork:** library tracks, albums, and player surfaces use `/api/artwork/{trackId}`. The private pipeline worker fetches Plex album/parent thumbs first (512px), then tries saved public artwork, Cover Art Archive release-group covers, and YouTube thumbnails as available. Artist avatars and heroes use `/api/artwork/{trackId}?variant=artist`, which proxies only Plex `grandparentThumb` metadata; if Plex has no artist thumbnail, Mint shows the shared neutral tile rather than substituting album art. Plex URLs/tokens never reach browsers. Artwork is public, but audio remains membership-protected. Concurrent requests coalesce, and the bounded worker cache plus browser/CDN caching reduces intermittent provider failures; cached covers can survive a temporary source outage. Public album-art fallbacks are cached briefly so Plex is retried. Missing images are not cached by browsers/CDNs. Existing library entries work without waiting for public-cover enrichment or re-indexing. Restart/update the pipeline worker before web; chart discovery requires migration 0012, but no new Plex claim or library re-index is needed. The web service uses the same `PLAYBACK_WORKER_URL` connection as native audio.
 
 **Play and shuffle collections:** Music and Library have explicit Play/Shuffle actions. A filtered search plays all matching tracks, not just the loaded page; liked songs and imported playlists use member-private collections. Shuffle visits each queued item once before wrapping in repeat-all mode; previous follows the shuffled order. Queue entries have distinct identities even when a song is added twice. Upcoming songs can be moved earlier/later or removed, and clearing upcoming never stops the current song.
 
 **Tolerant search and requests:** indexed search accepts reordered title/artist/album words, prefixes, accents and conservative misspellings. An explicit **Find missing music** action looks up recording metadata on MusicBrainz; ordinary local searches do not leave Mint. A member can request a signed search result for the existing acquisition pipeline, optionally supplying an exact HTTPS YouTube video link. Metadata-only requests try configured Lidarr first; Cobalt fallback requires either that video link or the requesting member's linked Google/YouTube account and available Data API search quota. Verified artist/title/version/duration matching may decline a source rather than download the wrong recording. Missing setup or matches appears as a retriable failed job. Requests remain separate from imported YouTube likes and never download Spotify audio. No recommendation or Spotify sync starts a download automatically.
 
-**Audio settings:** the sliders button opens Mint's Web Audio EQ, preamp, presets, compression, loudness normalization and two-deck transitions. Choose Off, Fixed or **Smart Fades**, with a maximum overlap of 0–12 seconds. Smart Fades use measured silence and boundary waveform energy to choose overlap/intro position; unavailable analysis explicitly falls back to a short fixed fade. Normalization uses integrated LUFS and measured true peak, bounded gain and peak headroom; missing measurements apply no gain. EQ reserves boost headroom and enabled overlaps reserve another 3.1 dB. Compression is not a guaranteed brick-wall limiter. Album-safe mode preserves same-album boundaries when not shuffled; repeat-one never fades. Upcoming audio preloads even with fades off, but sample-accurate gapless output depends on browser/container/device and is not guaranteed. These are independent Mint implementations, **not Plexamp's proprietary Sweet Fades**.
+**Browser audio settings:** **Settings → Playback and sound** exposes Mint's Web Audio EQ/presets, preamp, compression, stereo controls, loudness contour, measured normalization and two-deck transitions. Choose Off, Fixed or **Smart Fades**. Versioned measurements allow structural/MixRamp/tempo/key-aware choices where available, retaining explicit older-analysis/fixed fallback; this is not DJ-grade tempo synchronization. Normalization uses measured LUFS/true peak and bounded headroom; a limiter does not promise unclipped original media. Album-safe mode preserves same-album boundaries when not shuffled; repeat-one never fades. Upcoming audio preloads even with fades off, but sample-accurate gapless output depends on browser/container/device and is not guaranteed. These are independent Mint implementations, **not Plexamp's proprietary Sweet Fades**. See [playback/analysis contracts](../agents/playback-and-library.md#dsp-analysis-and-lyrics); Expo does not advertise browser DSP/Smart Fades parity.
 
-**Mint analysis:** Admin → Analysis shows coverage, pending/running/failed work, leases and worker connectivity. Backfills resume across restarts; pause, UTC scheduling, bounded concurrency (one by default), duration/time budgets, retry and cancellation keep NAS work controlled. FFmpeg and Mint DSP measure SHA-256 source fingerprints, integrated LUFS/true peak, silence, waveform, tempo/key estimates and audio-descriptor similarity with provenance/confidence. No API key, GPU, pretrained model, Spotify analysis API or Plex entitlement is required. Tempo/key are estimates, not DJ beat grids; similarity compares measured audio descriptors, not neural embeddings. Plex remains the indexed metadata/library server and its optional sonic flags are not passed off as Mint measurements. Sound displays a seekable waveform and recording details. Browsers without Web Audio keep standard playback.
+**Mint analysis:** **Management → Analysis** shows versioned coverage, pending/running/failed work, leases and worker connectivity. Backfills resume across restarts; pause, UTC scheduling, bounded concurrency, duration/time budgets, retry and cancellation keep NAS work controlled. FFmpeg and Mint DSP measure source fingerprints, EBU R128 loudness/peaks, silence, waveform, tempo/key/beat stability and audio-descriptor similarity, with provenance/confidence. Version 2 adds structural fade cues, MixRamp contours and classification labels; legacy measurements remain readable until explicitly upgraded. No API key, GPU, mandatory pretrained model, Spotify analysis API or Plex entitlement is required. Tempo/key remain estimates; descriptor similarity is not a neural model. Plex's optional sonic flags are not passed off as Mint measurements. See [analysis offloading and upgrades](#optional-separate-analysis-machine). Browsers without Web Audio keep standard playback.
 
-**Playlists and discovery:** **Mint playlists & likes** contains editable playlists with duplicates, order, artwork, per-user folders/pins, smart rules, owner/editor invitations and revision-safe changes. Copying an imported YouTube playlist creates a separate editable Mint copy; no upstream writes occur. Mint likes do not overwrite source-managed YouTube likes. Artist/album/codec/year filters apply to both visible results and full Play/Shuffle queues. Right-click a song to like it, save it to a playlist, start radio, exclude it from recommendations or download it. **Discover** offers song/artist/album radios, multi-seed mixes, personal/rediscovery/recent shelves and explanations using only existing playable library music. No recommendation silently downloads anything. **History** supports private sessions, per-entry/all deletion and taste controls; stale pre-privacy/deletion episodes cannot be submitted later.
+**Playlists and discovery:** **Your Library** includes editable playlists with duplicates, order, artwork, per-user folders/pins, smart rules, owner/editor invitations and revision-safe changes, alongside distinct source-managed imports. Copying an imported playlist creates a separate editable Mint copy; no upstream writes occur. Liked songs do not overwrite source-managed YouTube likes. Catalog filters apply to both visible results and full Play/Shuffle queues. Right-click a song to like it, save it to a playlist, start radio, exclude it from recommendations or download it. **Search** offers song/artist/album radios, multi-seed mixes, personal/rediscovery/recent shelves and explanations using existing playable library music. No recommendation silently downloads anything. **History** supports private sessions, per-entry/all deletion and taste controls; stale pre-privacy/deletion episodes cannot be submitted later.
 
 **Devices and parties:** **Devices** lists named, awake clients with acknowledged remote transport, seek, volume and queue editing. Explicit handoff transfers the full logical queue, track/position/shuffle/repeat; progressive queues transfer a context reference and a bounded destination window, not every song. Legacy explicit queues and parties retain a stated 50,000-entry limit. The source pauses only after successful destination playback acknowledgment. Browser autoplay can reject a move. Opt-in parties have revocable invitations, guest queue permissions, revision conflict handling, host controls and one fixed output device, not synchronized multi-device audio. See [device and party behavior](devices.md). A closed/suspended browser cannot be awakened remotely.
 
-**Lyrics:** the microphone button looks up the current track on [LRCLIB](https://lrclib.net), without an API key. Synced lines highlight with playback and seek when tapped; plain lyrics, instrumental, no-match and retry states are distinct. Scrolling pauses automatic following. **Wrong lyrics or timing?** searches alternate matches and saves a personal match/timing offset, or resets to automatic matching. Only opening Lyrics requests a lookup; no library-wide scan runs. The provider receives title, artist, album, duration and explicit search text, never audio, credentials or filesystem paths. Lookups are cached/deduplicated/rate-limited in Redis.
+**Lyrics:** opening Lyrics compares [LRCLIB](https://lrclib.net) and [Lyrics.ovh](https://lyrics.ovh), without API keys. Mint prefers real enhanced-LRC word timestamps, then synced lines, then plain text. Word timing is only displayed when returned by a source, never estimated; Lyrics.ovh supplies plain text. The selected source and timing capability are labeled, and a source chooser appears when both return lyrics. Synced lines seek when tapped; scrolling pauses automatic following. Plain lyrics, instrumental, no-match, partial provider failure and retry states are distinct. **Wrong lyrics or timing?** searches LRCLIB alternate matches and saves a personal match/timing offset, or resets to automatic matching. Personal matches override automatic source ranking. Only opening Lyrics requests a lookup; no library-wide scan runs. LRCLIB receives title, artist, album, duration and explicit search text; Lyrics.ovh receives title and artist. Neither receives audio, credentials or filesystem paths. Lookups have bounded bytes/time and are cached/deduplicated/rate-limited in Redis; partial failures cache for five minutes instead of a day. LRCLIB cooldown still allows the independent plain-text fallback. Provider coverage and availability vary.
+
+**Browse and music actions:** artist names open artist pages; album names open albums, separately from Play. Artwork-led artist/album overviews retain their identity while searching or paging, and Play/Shuffle selects the full collection. Use right-click, a touch/pen hold, the options button, or Context Menu/Shift+F10 on local songs and collection sleeves for the same music menu. Moving your finger cancels the hold so ordinary scrolling remains available. Releasing a hold does not also play or navigate. Public pages and editing fields retain native context actions.
+
+**Artist information:** the built-in worker discovers artists from the library and queues bounded metadata lookups. Exact MusicBrainz matches provide artist type and relationships; Wikidata links to English Wikipedia lead summaries (shown with attribution and a source link); ListenBrainz provides community listen/listener counts and similar artists where available. These counts describe ListenBrainz, not total/global popularity. Ambiguous name matches are left unresolved, and unavailable providers are retried. This metadata queue is independent of audio analysis and does not read media files. It needs outbound HTTPS from the worker to MusicBrainz, Wikidata, Wikipedia and ListenBrainz, but no new API key.
 
 **Android Chrome and offline music:** serve Mint over HTTPS, then choose **Install Mint** or Chrome → **Install app / Add to Home screen**. Use **Download** on a song/album/playlist, review the selection in **Downloads**, and explicitly save original audio or an MP3 compatibility copy. Downloads are sequential with progress/cancellation/retry, 512 MB per file and a configurable 256 MB–20 GB device budget (2 GB by default). Keep Mint open until finished. Complete files/metadata live in account-scoped IndexedDB; the service worker caches only the account-free `/offline.html` player shell, never private HTML/API/lyrics responses. Offline navigation opens downloaded-only search/play/shuffle/repeat/seek and supported media controls. Access renews online and expires after seven disconnected days. Account changes/revocation on reconnect clear device downloads; sign-out clears them immediately. Already-downloaded audio cannot be remotely revoked while disconnected. Android may suspend execution or evict browser storage; this is not a native background download service. Physical Android installation/background behavior still needs device verification.
 
-Queues, position and sound preferences are saved in member-namespaced local browser storage. Reloading restores the queue **paused**, never autoplaying. Storage failures are reported without stopping ordinary playback. This is local restoration, not cross-device synchronization. Client-side member navigation preserves the same audio elements. Refreshing, closing the tab or signing out stops audio. Public pages never mount the engine, and all pages prohibit framing. The optional **Open Plexamp** Settings link launches a separate installed app, not an embedded dependency.
+Queues, position and sound preferences are saved in member-namespaced local browser storage. Reloading restores the queue **paused**, never autoplaying. Storage failures are reported without stopping ordinary playback. This is local restoration, not cross-device synchronization. Client-side member navigation preserves the same audio elements. Refreshing, closing the tab or signing out stops audio. Public pages never mount the engine, and all pages prohibit framing. An optional external Plex client requires its own Plex invitation; it is not an embedded Mint dependency.
 
 The web service has no music mount or media-network access. It proxies `/api/player/audio/...` to `PLAYBACK_WORKER_URL=http://worker:8080` over the private data network, using a short-lived, session/track-bound signed claim. The worker rechecks approval and session expiry, confines reads to its configured library folders and supports HTTP byte ranges. Access is checked during streaming and every 15 seconds in the player, including when audio is already buffered. Native catalog/session/media responses are private and non-cacheable. **Do not publish worker port 8080**, and never put a Plex administrator token in browser settings.
 
@@ -244,7 +478,7 @@ Check the command succeeds and the dump is nonempty. Use a new filename for each
 
 **V3.1** was published as `v3.1.0` and requires no migration. **V3.5** requires matching rebuilt web and worker images and adds migrations `0005`–`0010` for analysis, native music, devices, lyric corrections, progressive queues/search/request ownership and Spotify sources. Back up PostgreSQL and preserve secrets/media/config folders first. Migration `0009` installs PostgreSQL's trusted `pg_trgm` extension in `public` and builds search indexes; the migration role needs database CREATE permission, the extension must be available, and a massive library may take extra time/disk during indexing. Recreate the worker first and wait for successful migrations/health, then recreate the web service. Do not run V3.5 web against an unmigrated database. No new Plex claim or mandatory provider key is needed; Spotify is optional and needs its own credentials as documented below. Analysis backfills locally by default; adjust its resource controls in Admin. Keep Redis for lyrics/rate limits. Hard-refresh Mint and reopen installed PWAs after upgrading. Never CDN-cache `/app`, `/api`, `/listen` or `/sw.js`. Offline shells contain no private content.
 
-**Listening-room/chart redesign:** migration `0012_charts` adds indexed recording matching and private account-to-chart recording links. Index creation can take time on a massive library. Update worker, wait for migrations/health, then web with matching images; keep existing queues, secrets, database and all original mounts. No Plex rescan, new claim, library reset or analysis reprocessing is required. This redesign does **not** establish a fix for a desktop processor logging `Analysis result not accepted fetch failed`; that result-upload/connectivity cause remains a separate unresolved operational investigation.
+**Listening-room/chart redesign:** migration `0012_charts` adds indexed recording matching and private account-to-chart recording links; migration `0014_artist_metadata` adds cached artist profiles and queue status. Index creation can take time on a massive library. Update worker, wait for migrations/health, then web with matching images; keep existing queues, secrets, database and all original mounts. No Plex rescan, new claim, library reset or analysis reprocessing is required. This redesign does **not** establish a fix for a desktop processor logging `Analysis result not accepted fetch failed`; that result-upload/connectivity cause remains a separate unresolved operational investigation.
 
 ### Optional separate analysis machine
 
@@ -282,7 +516,7 @@ This offloads **Mint's measured audio analysis** (`mint-dsp-v2`), not Plex's own
 
 **Updating this analysis change:** pipeline worker startup applies migrations `0011_analysis_backfill` and `0013_analysis_v2`. Back up PostgreSQL and update/restart the pipeline worker before the web image. Also update `mint-analysis` on the desktop to use configurable parallel slots and `mint-dsp-v2` (with bounded exponential-backoff result submission). Existing `v1` measurements remain valid and playable until upgraded to `v2`. These changes do not require a Plex rescan or a new Plex claim.
 
-Preserve your own read-only music mount, Plex token, music section ID and path mapping during updates; do not copy someone else's NAS path or library ID. After recreating services, sign in, open **Music**, and play an indexed track. Open Jobs or Settings and confirm playback continues. Missing tracks still need successful indexing; an update does not repair mismatched mounts. Logged-out `/app/music` redirects to login; native catalog/session/media requests require approved membership.
+Preserve your own read-only music mount, Plex token, music section ID and path mapping during updates; do not copy someone else's NAS path or library ID. After recreating services, sign in, open **Library**, and play an indexed track. Navigate to Settings (or Management for an admin) and confirm playback continues. Missing tracks still need successful indexing; an update does not repair mismatched mounts. Private catalog/session/media requests require approved membership. Verify native sign-in and device playback separately after installing or updating the Expo client.
 
 Everything runs from one compose file on your server. Volunteer workers are optional extra machines. The NAS template adds `cloudflared → Caddy` as the public entry path, with no published Caddy ports. The diagram below shows the direct-hosting command-line stack; both use the same application and media boundaries.
 
@@ -499,10 +733,17 @@ MINT_URL=http://localhost:3000 MINT_WORKER_TOKEN=mint_wk_... COBALT_URL=http://l
 
 Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
+Use `npm run agents -- context "<request>" [paths…]` for bounded guidance,
+contract edges and suggested validation, and `npm run agents -- affected` after
+editing. The tooling works with Node alone before `npm ci`; see
+[working at scale](../agents/working-at-scale.md#portable-context-packets).
+Native development/build prerequisites are in [mobile setup](mobile.md).
+
 ## CI/CD
 
-- **`ci.yml`** runs on every push and PR: typecheck, lint, test and build.
-- **`release.yml`** runs on `main` and `v*` tags. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent,analysis}` for amd64 and arm64, with provenance and an SBOM.
+- **`ci.yml`** runs on every `main` push and PR, including mobile-only changes: typecheck, lint, test and build.
+- **`release.yml`** runs on `main`, `v*` tags and manual dispatch. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent,analysis,chart-source}` for amd64 and arm64, with provenance and an SBOM. A `main` push changing **only** `apps/mobile/**`, `deploy/mobile/**`, `docs/mobile.md`, `docs/mobile-design.md`, `docs/mobile-playback.md`, `docs/android-builds.md` or `.github/workflows/android-apk.yml` skips Docker publication and optional server deployment. Any other changed path, including shared `packages/client/**`, `packages/core/**`, native server APIs, root manifests/lockfile, Docker configuration or a mixed mobile/backend change, still triggers Release. Tag pushes and manual releases bypass this path filter; mobile-only commits do not update the server's `latest` images.
+- **`android-apk.yml`** coordinates EAS Build/Update on the default branch: a finished matching native APK baseline gates compatible production JavaScript updates. Stable signing and APK/runtime validation are mandatory. See [Android distribution](android-builds.md); this does not deploy the backend or prove physical-device behavior.
 - **Auto‑deploy (optional).** Set the repository variable `DEPLOY_ENABLED=true` (and optionally `DEPLOY_PATH`), plus these secrets:
   - `DEPLOY_HOST`
   - `DEPLOY_USER`
@@ -514,7 +755,7 @@ Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
 ## Notes
 
-- **No public audio.** Public pages remain browse-only. Approved members can listen through Mint's authenticated browser gateway or a separately shared Plex library. The legacy pipeline sonic lane reflects optional Plex analysis; Mint's measured audio coverage is shown separately in Admin. Smart Fades and discovery use Mint's own implementation, not proprietary Plexamp DSP.
+- **No public audio.** Public pages remain browse-only. Approved members can listen through Mint's authenticated browser/native gateways or a separately shared Plex library. The legacy pipeline sonic lane reflects optional Plex analysis; Mint's measured audio coverage is shown separately in Management. Smart Fades and discovery use Mint's own implementation, not proprietary Plexamp DSP.
 - **Upgrading from a version with previews.** Migration `0002_drop_previews` moves any track stuck in the old `previewing` stage to `scanning` and drops the preview columns. The `previews` Docker volume is no longer used; remove it with `docker volume rm mint_previews`.
 - **Unverified integrations.** Some assumptions about external APIs are untested against live instances: Lidarr's `?mbId=` and `?foreignAlbumId=` lookups, and Plex's `musicAnalysisVersion` as the "sonic done" marker. Check the worker logs on first run.
 - **Upgrading from the split Vercel setup.** `deploy/Caddyfile` and the `CADDYFILE`, `selfhost-web` and `local-db` options are gone; Caddy's config now lives inside the Compose files. Set `COMPOSE_FILE=docker-compose.yml:docker-compose.vercel.yml` and your own `MINT_DOMAIN` in the existing `.env`. Preserve `ENCRYPTION_KEY`, `MINT_SIGNING_SECRET`, `DATABASE_URL` and `REDIS_URL`. Review the [current Vercel limitations](#optional-the-website-on-vercel) before upgrading.

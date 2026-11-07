@@ -40,6 +40,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci --no-audit --no-fund
+      - run: npm run agents:check
+      - run: npm run test:agents
       - run: npm run typecheck
       - run: npm run lint
       - name: Install audio integration test tools
@@ -65,10 +67,12 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose -f docker-compose.nas.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml config --quiet
+          docker compose -f docker-compose.nas.yml -f docker-compose.musicbrainz.yml config --quiet
           docker compose -f docker-compose.nas-migrate.yml config --quiet
           ANALYSIS_SERVER_URL=http://worker:8080 ANALYSIS_WORKER_TOKEN=fixture-only-analysis-token-not-production docker compose -f docker-compose.analysis.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet
-          node --test deploy/docker/compose.test.mjs
+          node --test deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs
           docker create --name mint-caddy-test-binary caddy:2
           docker cp mint-caddy-test-binary:/usr/bin/caddy /tmp/mint-caddy
           docker rm mint-caddy-test-binary

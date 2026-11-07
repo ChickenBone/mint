@@ -5,6 +5,7 @@ import { ArrowDown, ArrowUp, Check, MonitorSpeaker, Pause, Play, SkipBack, SkipF
 import type { DeviceCommand } from "@mint/core/devices";
 import type { DeviceStore } from "@/lib/devices-store";
 import { getLocalDeviceId, handoffToDevice } from "@/lib/device-client";
+import { ArtistLink } from "./music-links";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 
 type Devices = Awaited<ReturnType<DeviceStore["list"]>>;
@@ -71,7 +72,7 @@ function TrackPicker({ disabled, add }: { disabled: boolean; add: (track: Track)
         <ul className="mt-2 max-h-64 overflow-auto divide-y divide-line rounded-lg bg-elevated">
           {tracks.map((track) => (
             <li key={track.id} className="flex items-center gap-3 p-3">
-              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{track.title}</span><span className="block truncate text-sm text-muted">{track.artist}</span></span>
+              <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{track.title}</span><span className="block truncate text-sm text-muted"><ArtistLink item={track} /></span></span>
               <button className={button} disabled={disabled || busy} onClick={async () => {
                 setBusy(true);
                 try { await add(track); setQuery(""); setTracks([]); setError(""); }
@@ -132,7 +133,7 @@ function QueueEditor({ queue, labels, disabled, update, currentIndex, progressiv
               <span className="w-10 shrink-0 text-right text-xs text-faint tabular">{(progressive?.offset ?? 0) + index + 1}</span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-semibold">{track?.title ?? (index === currentIndex ? "Current track" : `Track ${index + 1}`)}</span>
-                <span className="block truncate text-xs text-muted">{track?.artist ?? (index === currentIndex ? "Playing on this device" : "Available in Mint")}</span>
+                <span className="block truncate text-xs text-muted">{track?.artist ? <ArtistLink item={track} /> : index === currentIndex ? "Playing on this device" : "Available in Mint"}</span>
               </span>
               <button className="rounded-full p-2 text-muted hover:bg-hover hover:text-fg disabled:opacity-30" aria-label={`Move track ${index + 1} up`} disabled={disabled || index === 0 || Boolean(progressive && index <= (currentIndex ?? 0) + 1)} onClick={() => {
                 if (progressive) { void progressive.edit({ action: "move", entryId: progressive.entryIds[index]!, before: progressive.entryIds[index - 1]! }); return; }

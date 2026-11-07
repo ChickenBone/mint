@@ -31,6 +31,7 @@ import { PageHeader } from "./page-header";
 import { AudioPanel } from "./player-panels";
 import { usePlayer } from "./player";
 import { PlaylistToggle } from "./playlist-toggle";
+import { ReportIssueButton } from "./report-issue";
 import { SignOut } from "./sign-out";
 import { SpotifyAccountControls, SpotifyImportForm, SpotifyPlaylistToggle } from "./spotify-controls";
 import { SyncPanel } from "./sync-panel";
@@ -106,31 +107,31 @@ const SECTIONS: Array<{
   {
     id: "account",
     label: "Account",
-    description: "Identity, session, app install and external client note",
+    description: "Your profile and the app on this device",
     icon: User,
   },
   {
     id: "services",
-    label: "Connected services",
-    description: "YouTube Music and Spotify status, sync rules and playlists",
+    label: "Music imports",
+    description: "Optional playlists from YouTube Music and Spotify",
     icon: Link2,
   },
   {
     id: "playback",
-    label: "Playback and sound",
-    description: "Audio compatibility, 10-band equalizer and Smart Fades",
+    label: "Playback & sound",
+    description: "Equalizer, volume balance and song transitions",
     icon: SlidersHorizontal,
   },
   {
     id: "devices",
-    label: "Devices",
-    description: "Named devices, remote handoff and shared listening parties",
+    label: "Devices & parties",
+    description: "Move your music or listen together on one device",
     icon: MonitorSpeaker,
   },
   {
     id: "storage",
-    label: "Offline storage",
-    description: "Saved songs, device storage limit and offline player",
+    label: "Downloads & storage",
+    description: "Music saved for listening without a connection",
     icon: HardDrive,
   },
 ];
@@ -180,10 +181,10 @@ export function SettingsView({
   const spError = searchParams.get("spotify_error");
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="settings-frame mx-auto max-w-6xl">
       <PageHeader
         title="Settings"
-        sub="Manage your account, connected music services, playback sound, devices and offline storage."
+        sub="Make Mint feel like yours. Your account, your sound, your devices."
       />
 
       <div className="grid gap-8 md:grid-cols-[17rem_minmax(0,1fr)] lg:grid-cols-[19rem_minmax(0,1fr)]">
@@ -204,7 +205,7 @@ export function SettingsView({
                   isSelected ? "bg-elevated text-fg ring-1 ring-line" : "text-muted hover:bg-elevated/60 hover:text-fg",
                 )}
               >
-                <Icon className="mt-0.5 size-5 shrink-0 text-mint" aria-hidden />
+                <Icon className="mt-0.5 size-5 shrink-0 text-muted" aria-hidden />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-fg">{label}</span>
                   <span className="mt-0.5 block text-xs leading-relaxed text-muted">{description}</span>
@@ -213,6 +214,19 @@ export function SettingsView({
             );
           })}
 
+          <div className="mt-4 border-t border-line pt-4">
+            <Link href="/app/collection?tab=history" className="flex min-h-11 items-center rounded-surface px-4 text-sm text-muted hover:bg-elevated hover:text-fg">
+              Listening history
+            </Link>
+            <Link href="/app/collection?tab=requests" className="flex min-h-11 items-center rounded-surface px-4 text-sm text-muted hover:bg-elevated hover:text-fg">
+              Your music requests
+            </Link>
+            <ReportIssueButton
+              icon={false}
+              className="w-full rounded-surface px-4 text-muted hover:bg-elevated hover:text-fg"
+            />
+          </div>
+
           {user.role === "admin" && (
             <div className="mt-4 border-t border-line pt-4">
               <Link
@@ -220,14 +234,14 @@ export function SettingsView({
                 className="flex min-h-14 w-full items-start justify-between gap-3 rounded-surface p-3.5 text-left text-muted transition-colors hover:bg-elevated/60 hover:text-fg"
               >
                 <span className="flex items-start gap-3">
-                  <ShieldCheck className="mt-0.5 size-5 shrink-0 text-mint" aria-hidden />
+                  <ShieldCheck className="mt-0.5 size-5 shrink-0 text-muted" aria-hidden />
                   <span>
                     <span className="flex items-center gap-2 text-sm font-semibold text-fg">
-                      Management
+                      Admin portal
                       {pendingManagementCount > 0 && <Badge tone="warning">{pendingManagementCount}</Badge>}
                     </span>
                     <span className="mt-0.5 block text-xs leading-relaxed text-muted">
-                      Requests, jobs and queue, workers and audio analysis
+                      Membership, services and library operations
                     </span>
                   </span>
                 </span>
@@ -279,12 +293,12 @@ export function SettingsView({
                 <InstallApp />
               </div>
 
-              <div className="border-t border-line pt-6">
-                <h3 className="text-sm font-semibold text-muted">External library clients</h3>
-                <p className="mt-2 max-w-prose text-xs leading-relaxed text-muted">
+              <details className="border-t border-line pt-6">
+                <summary className="min-h-11 cursor-pointer text-sm font-semibold text-muted">Using an external library client</summary>
+                <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">
                   Browsing, playback, queues, lyrics and sound controls belong directly to Mint. If you also use an optional external Plex client such as Plexamp, it needs its own separate Plex library invitation from the server admin.
                 </p>
-              </div>
+              </details>
             </section>
           )}
 
@@ -292,10 +306,10 @@ export function SettingsView({
             <section aria-labelledby="settings-services-heading" className="space-y-10">
               <div>
                 <h2 id="settings-services-heading" className="text-2xl font-bold tracking-tight">
-                  Connected services
+                  Music imports
                 </h2>
                 <p className="mt-1 max-w-prose text-sm text-muted">
-                  Connect YouTube Music to bring in your liked songs and playlists, or connect Spotify for read-only playlist metadata matched against your local library.
+                  Bring familiar playlists into Mint, if you want to. You can listen and create your own playlists without connecting anything.
                 </p>
               </div>
 
@@ -331,21 +345,20 @@ export function SettingsView({
                       </Badge>
                     </div>
                     <p className="mt-1 max-w-prose text-sm text-muted">
-                      Read-only sync of your liked songs and selected playlists.
+                      Import your liked songs and selected playlists. Your YouTube account stays read-only.
                     </p>
                   </div>
                 </div>
 
                 {youtubeAccount ? (
                   <>
-                    <SyncPanel initial={youtubeAccount.syncState} />
                     <div className="flex flex-wrap items-center justify-between gap-4 border-t border-line pt-4">
                       <div>
                         <p className="font-semibold">{youtubeAccount.channelTitle ?? youtubeAccount.email ?? "Google account"}</p>
                         <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted">
                           <CheckCircle2 className="size-3.5 text-mint" aria-hidden />
                           <span>
-                            {youtubeAccount.email} · Last synced {timeAgo(youtubeAccount.lastSyncedAt ? new Date(youtubeAccount.lastSyncedAt) : null)}
+                            Last updated {timeAgo(youtubeAccount.lastSyncedAt ? new Date(youtubeAccount.lastSyncedAt) : null)}
                           </span>
                         </p>
                       </div>
@@ -367,9 +380,10 @@ export function SettingsView({
                       </div>
                     </div>
 
-                    <div className="border-t border-line pt-5">
-                      <h4 className="font-semibold">What to sync</h4>
-                      <p className="mt-1 max-w-prose text-xs text-muted">Changes apply from the next sync.</p>
+                    <details className="border-t border-line pt-5">
+                      <summary className="min-h-11 cursor-pointer font-semibold">Import preferences &amp; status</summary>
+                      <div className="mt-4"><SyncPanel initial={youtubeAccount.syncState} /></div>
+                      <p className="mt-4 max-w-prose text-sm text-muted">Changes apply from the next import.</p>
                       <form action={updateSyncSettings} className="mt-4 flex flex-col gap-4">
                         <label className="flex items-start gap-3">
                           <input
@@ -393,7 +407,7 @@ export function SettingsView({
                             className="mt-1 size-4 accent-mint"
                           />
                           <span>
-                            <span className="block text-sm font-semibold">Sync automatically</span>
+                            <span className="block text-sm font-semibold">Keep imports up to date</span>
                             <span className="block max-w-prose text-xs text-muted">
                               Check for new likes every 30 minutes. Turn off to sync only when you press Sync now.
                             </span>
@@ -403,19 +417,19 @@ export function SettingsView({
                           type="submit"
                           className="mt-1 min-h-11 self-start rounded-full bg-fg px-5 text-sm font-bold text-bg hover:bg-fg/90"
                         >
-                          Save sync settings
+                          Save import preferences
                         </button>
                       </form>
-                    </div>
+                    </details>
 
                     <div className="border-t border-line pt-5">
                       <h4 className="font-semibold">YouTube Music playlists</h4>
                       <p className="mt-1 max-w-prose text-xs text-muted">
-                        Liked songs always sync. Turn on any playlist to bring its songs into Mint.
+                        Liked songs are included. Select any playlist to bring its songs into Mint.
                       </p>
                       {youtubePlaylists.length === 0 ? (
                         <p className="mt-3 text-sm text-muted">
-                          No playlists found on your account yet. They appear here after the next sync.
+                          No playlists found on your account yet. They appear here after the next import.
                         </p>
                       ) : (
                         <ul className="mt-3 divide-y divide-line">
@@ -429,12 +443,12 @@ export function SettingsView({
                                   {p.syncEnabled ? (
                                     <>
                                       <CheckCircle2 className="size-3.5 text-mint" aria-hidden />
-                                      <span>Sync on · {p.itemCount} songs</span>
+                                      <span>Selected · {p.itemCount} songs</span>
                                     </>
                                   ) : (
                                     <>
                                       <PauseCircle className="size-3.5 text-muted" aria-hidden />
-                                      <span>Sync off · {p.itemCount} songs</span>
+                                      <span>Not selected · {p.itemCount} songs</span>
                                     </>
                                   )}
                                 </p>
@@ -495,6 +509,8 @@ export function SettingsView({
                           Retry after {new Date(spotifyAccount.nextSyncAt).toLocaleString("en-US", { timeZone: "UTC" })} UTC.
                         </p>
                       )}
+                      <details className="mt-4 border-t border-line pt-4">
+                      <summary className="min-h-11 cursor-pointer font-semibold">Import preferences &amp; status</summary>
                       <div className="mt-4">
                         <SpotifyAccountControls />
                       </div>
@@ -520,6 +536,7 @@ export function SettingsView({
                           Save schedule
                         </button>
                       </form>
+                      </details>
                     </div>
 
                     <div className="border-t border-line pt-5">
@@ -570,10 +587,14 @@ export function SettingsView({
                   </div>
                 ) : (
                   <div className="max-w-prose text-sm text-muted">
-                    <p className="font-semibold text-fg">Server setup required</p>
+                    <p className="font-semibold text-fg">Spotify imports are not available on this server</p>
                     <p className="mt-1">
-                      The operator must configure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET on the web app and worker, plus the shared encryption key.
+                      You can still enjoy the library and make Mint playlists. Ask your administrator if you would like Spotify imports enabled.
                     </p>
+                    {user.role === "admin" && <details className="mt-4">
+                      <summary className="min-h-11 cursor-pointer font-semibold">Server configuration</summary>
+                      <p>Configure SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET on the web app and worker, plus the shared encryption key.</p>
+                    </details>}
                   </div>
                 )}
 
@@ -596,7 +617,7 @@ export function SettingsView({
                   Configure audio compatibility, 10-band equalization, transitions, Smart Fades and loudness normalization for this device.
                 </p>
               </div>
-              {player ? (
+              {player?.ready ? (
                 <div className="max-w-2xl rounded-surface border border-line bg-elevated/40 p-5">
                   <AudioPanel state={player.state} command={player.command} showPlayback />
                 </div>

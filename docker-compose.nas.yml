@@ -4,6 +4,9 @@
 # Do not publish your filled-in copy: it contains your personal integration keys.
 x-settings:
   MINT_DOMAIN: &domain "mint.example.com"
+  # Optional Expo web origins, comma-separated (scheme + hostname + port; no paths).
+  # Native iOS/Android do not need this. Example: https://app.example.com
+  NATIVE_WEB_ORIGINS: &native-web-origins ""
   # Required: connector token from a remotely managed Cloudflare Tunnel.
   # Route MINT_DOMAIN to http://caddy:80 in the Cloudflare dashboard.
   # This is a tunnel token (eyJ...), NOT a Cloudflare API token.
@@ -24,6 +27,14 @@ x-settings:
   SPOTIFY_API_MODE: &spotify-mode "development"
   # Optional: without TorBox, Mint uses Cobalt for every download.
   TORBOX_API_KEY: &torbox-key ""
+  # Optional fully imported/indexed private MusicBrainz server, e.g. http://musicbrainz-mirror:5000/ws/2.
+  # Blank uses public MusicBrainz. A full mirror is a separate, manually provisioned stack;
+  # see docs/self-hosting.md for disk/RAM, networking and licensing requirements.
+  MUSICBRAINZ_MIRROR_URL: &musicbrainz-mirror-url ""
+  # Optional separately packaged chart metadata API. Leave blank to keep in-process charts.
+  # Enable the chart-source Compose profile before setting http://chart-source:3090.
+  MINT_CHART_SOURCE_URL: &chart-source-url ""
+  MINT_CHARTS_ENABLED: &charts-enabled "true"
   # Mint-owned folders: relative to the UGOS Compose Project storage path.
   SECRETS_FOLDER: &secrets-folder "./data/secrets"
   MUSIC_FOLDER: &music-folder "./data/music"
@@ -176,7 +187,9 @@ services:
     environment:
       MINT_DOMAIN: *domain
       PLAYBACK_WORKER_URL: http://worker:8080
-      MINT_CHARTS_ENABLED: "true" # Set false to disable external chart requests.
+      NATIVE_WEB_ORIGINS: *native-web-origins
+      MINT_CHARTS_ENABLED: *charts-enabled
+      MINT_CHART_SOURCE_URL: *chart-source-url
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
       SPOTIFY_CLIENT_ID: *spotify-id
@@ -189,6 +202,22 @@ services:
         read_only: true
     networks: [edge, data]
     depends_on: *needs-data
+
+  chart-source:
+    <<: *app
+    profiles: [chart-source]
+    image: ghcr.io/chickenbone/mint-chart-source:latest
+    environment:
+      REDIS_URL: redis://redis:6379
+      PORT: "3090"
+      MINT_CHARTS_ENABLED: *charts-enabled
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [data]
+    depends_on:
+      redis:
+        condition: service_healthy
 
   realtime:
     <<: *app
@@ -251,6 +280,7 @@ services:
       BLACKHOLE_DOWNLOAD_DIR: /blackhole/downloads
       BLACKHOLE_NZB_DOWNLOAD_DIR: /blackhole/usenet-downloads
       LIDARR_URL: http://lidarr:8686
+      MUSICBRAINZ_MIRROR_URL: *musicbrainz-mirror-url
       LIDARR_CONFIG_DIR: /lidarr-config
       PROWLARR_URL: http://prowlarr:9696
       PROWLARR_CONFIG_DIR: /prowlarr-config

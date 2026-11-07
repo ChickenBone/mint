@@ -28,6 +28,7 @@ import { startAnalysisScheduler } from "./analysis-jobs";
 import { serveAnalysisWorker } from "./analysis-http";
 import { startSpotifyScheduler } from "./spotify-jobs";
 import { serveArtwork } from "./artwork-http";
+import { processArtistMetadata } from "./jobs/artist-metadata";
 
 async function seedAdmin() {
   const email = process.env.ADMIN_EMAIL || "admin@mint.local";
@@ -60,11 +61,13 @@ async function main() {
   const acquireWorker = new Worker(QUEUE.acquire, processAcquire as Processor, { connection, concurrency: config.concurrency.acquire });
   const finalizeWorker = new Worker(QUEUE.finalize, processFinalize, { connection, concurrency: config.concurrency.finalize });
   const sonicWorker = new Worker(QUEUE.sonic, processSonic as Processor, { connection, concurrency: 10 });
+  const artistMetadataWorker = new Worker(QUEUE.artistMetadata, processArtistMetadata, { connection, concurrency: 1 });
   const workers: Worker[] = [
     new Worker(QUEUE.sync, processSync, { connection, concurrency: 2 }),
     acquireWorker,
     finalizeWorker,
     sonicWorker,
+    artistMetadataWorker,
     new Worker(QUEUE.torbox, processTorboxDownload, { connection, concurrency: config.concurrency.torbox }),
     new Worker(QUEUE.maintenance, processMaintenance, { connection, concurrency: 4 }),
   ];
@@ -87,6 +90,7 @@ async function main() {
   await m.add("health", { kind: "health" });
   await m.add("artwork", { kind: "artwork" });
   await m.upsertJobScheduler("artwork", { every: 30_000 }, { name: "artwork", data: { kind: "artwork" } });
+  await m.upsertJobScheduler("artist-metadata", { every: 30_000 }, { name: "artist-metadata", data: { kind: "artist-metadata" } });
   await m.upsertJobScheduler("stats", { every: 5_000 }, { name: "stats", data: { kind: "stats" } });
   await m.upsertJobScheduler("leases", { every: 30_000 }, { name: "leases", data: { kind: "leases" } });
   await m.upsertJobScheduler("listening-queues", { every: 3_600_000 }, { name: "listening-queues", data: { kind: "listening-queues" } });
@@ -99,9 +103,12 @@ async function main() {
   }
 
   const server = http.createServer(async (req, res) => {
-    const artwork = /^\/artwork\/([0-9a-f-]{36})$/i.exec(req.url ?? "");
+    const requestUrl = new URL(req.url ?? "/", "http://worker");
+    const artwork = /^\/artwork\/([0-9a-f-]{36})$/i.exec(requestUrl.pathname);
     if (artwork && (req.method === "GET" || req.method === "HEAD")) {
-      try { await serveArtwork(req, res, artwork[1]!); }
+      const variant = requestUrl.searchParams.get("variant");
+      if (variant !== null && variant !== "artist") return void res.writeHead(400, { "cache-control": "no-store" }).end();
+      try { await serveArtwork(req, res, artwork[1]!, variant === "artist" ? "artist" : "album"); }
       catch (err) {
         log.error({ err }, "artwork request failed");
         if (!res.headersSent) res.writeHead(503, { "cache-control": "no-store" }).end();

@@ -45,6 +45,7 @@ x-public-env: &public-env
   SPOTIFY_CLIENT_ID: ""
   SPOTIFY_CLIENT_SECRET: ""
   SPOTIFY_API_MODE: ""
+  MUSICBRAINZ_MIRROR_URL: ""
 
 services:
   init:
@@ -90,7 +91,9 @@ services:
     environment:
       <<: *public-env
       PLAYBACK_WORKER_URL: http://worker:8080
+      NATIVE_WEB_ORIGINS: ${NATIVE_WEB_ORIGINS:-}
       MINT_CHARTS_ENABLED: ${MINT_CHARTS_ENABLED:-true}
+      MINT_CHART_SOURCE_URL: ${MINT_CHART_SOURCE_URL:-}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       SPOTIFY_API_MODE: ${SPOTIFY_API_MODE:-development}
@@ -100,6 +103,25 @@ services:
       init: { condition: service_completed_successfully }
       postgres: { condition: service_healthy, required: false }
       redis: { condition: service_healthy, required: false }
+
+  # Opt-in metadata-only API. No secrets volume, shared env-file or media access.
+  chart-source:
+    profiles: [chart-source]
+    image: ghcr.io/${GHCR_OWNER:-chickenbone}/mint-chart-source:${MINT_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      PORT: "3090"
+      MINT_CHARTS_ENABLED: ${MINT_CHARTS_ENABLED:-true}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [data]
+    depends_on:
+      redis: { condition: service_healthy, required: false }
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
   realtime:
     <<: *app
@@ -150,6 +172,8 @@ services:
       COBALT_URL: ${LOCAL_COBALT_URL-http://cobalt:9000}
       PLEX_URL: http://plex:32400
       PLEX_CONFIG_DIR: /plex-config
+      # Optional independently operated MusicBrainz stack; blank uses the public API.
+      MUSICBRAINZ_MIRROR_URL: ${MUSICBRAINZ_MIRROR_URL:-}
     volumes:
       - secrets:/secrets:ro
       - ${MUSIC_PATH:-./data/music}:/music

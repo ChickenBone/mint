@@ -7,8 +7,10 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { playbackQueues, playbackQueueEntries } from "@mint/core/playback-queues-db";
+import { musicLikes } from "@mint/core/music-db";
 import { openQueue, queuePage, editQueue } from "../src/lib/playback-queue-store";
 import { catalogItems } from "../src/lib/player-catalog";
+import { collectionFromParams, loadCollection } from "../src/lib/browser-catalog";
 import { searchTerms } from "../src/lib/catalog-search";
 import config from "../next.config";
 
@@ -20,6 +22,55 @@ test("native media is allowed on the initial document before client-side sign-in
 });
 
 const url = process.env.MUSIC_TEST_DATABASE_URL;
+test("native liked catalog is member-scoped, playable, paginated and distinct from YouTube likes", { skip: !url && "Set MUSIC_TEST_DATABASE_URL for PostgreSQL integration tests" }, async () => {
+  const namespace = `likes_${randomUUID().replaceAll("-", "")}`, admin = new pg.Pool({ connectionString: url, max: 1 });
+  await admin.query(`create schema "${namespace}"`);
+  const pool = new pg.Pool({ connectionString: url, max: 3, options: `-c search_path=${namespace},public` }), db = drizzle(pool, { schema });
+  const globalDb = globalThis as unknown as { __mintDb?: { db: typeof db; pool: pg.Pool } }, previous = globalDb.__mintDb;
+  globalDb.__mintDb = { db, pool };
+  try {
+    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale"]) {
+      const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
+      for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
+    }
+    const [owner, stranger] = await db.insert(schema.users).values(["owner", "stranger"].map((name) => ({
+      email: `${name}@likes.test`, name, status: "active" as const, passwordHash: "fixture",
+    }))).returning();
+    const songs = await db.insert(schema.tracks).values([
+      { title: "Native one", artist: "Fixture", stage: "ready", filePath: "/fixture/one.flac" },
+      { title: "Native two", artist: "Fixture", stage: "ready", filePath: "/fixture/two.flac" },
+      { title: "Unavailable", artist: "Fixture", stage: "queued" },
+      { title: "Other account", artist: "Fixture", stage: "ready", filePath: "/fixture/other.flac" },
+      { title: "YouTube", artist: "Fixture", stage: "ready", filePath: "/fixture/youtube.flac" },
+    ]).returning();
+    await db.insert(musicLikes).values([
+      ...songs.slice(0, 3).map((song) => ({ userId: owner!.id, trackId: song.id })),
+      { userId: stranger!.id, trackId: songs[3]!.id },
+    ]);
+    await db.insert(schema.userTracks).values({ userId: owner!.id, trackId: songs[4]!.id, origin: "youtube" });
+    const collection = { kind: "native-liked" as const, id: "" };
+    const first = await catalogItems({ userId: owner!.id, collection, size: 1 });
+    const second = await catalogItems({ userId: owner!.id, collection, start: 1, size: 1 });
+    assert.equal(first.total, 2); assert.equal(second.total, 2);
+    assert.deepEqual(new Set([...first.items, ...second.items].map((item) => item.id)), new Set(songs.slice(0, 2).map((song) => song.id)));
+    assert.deepEqual((await catalogItems({ userId: owner!.id, collection: { kind: "native-liked", id: songs[1]!.id } })).items.map((item) => item.id), [songs[1]!.id]);
+    assert.equal((await catalogItems({ userId: owner!.id, collection: { kind: "native-liked", id: songs[3]!.id } })).total, 0);
+    assert.equal((await catalogItems({ userId: stranger!.id, collection: { kind: "native-liked", id: songs[1]!.id } })).total, 0);
+    assert.deepEqual((await catalogItems({ userId: owner!.id, collection: { kind: "liked" } })).items.map((item) => item.id), [songs[4]!.id]);
+    const fetcher: typeof fetch = async (input) => {
+      const params = new URL(String(input), "http://localhost").searchParams;
+      const parsed = collectionFromParams(params);
+      assert.ok(parsed.success);
+      return Response.json(await catalogItems({ userId: owner!.id, collection: parsed.data, start: Number(params.get("start")), size: 1 }));
+    };
+    assert.deepEqual(new Set((await loadCollection(collection, new AbortController().signal, fetcher)).map((item) => item.id)),
+      new Set(songs.slice(0, 2).map((song) => song.id)));
+    assert.deepEqual((await loadCollection({ kind: "native-liked", id: songs[1]!.id }, new AbortController().signal, fetcher)).map((item) => item.id), [songs[1]!.id]);
+    const queue = await openQueue(owner!.id, { collection, shuffle: false });
+    assert.deepEqual(new Set(queue.items.map((item) => item.id)), new Set(songs.slice(0, 2).map((song) => song.id)));
+  } finally { globalDb.__mintDb = previous; await pool.end(); await admin.query(`drop schema "${namespace}" cascade`); await admin.end(); }
+});
+
 test("100,123-track snapshots hydrate only a bounded window, preserve exact membership and reject conflicting edits", { skip: !url && "Set MUSIC_TEST_DATABASE_URL for PostgreSQL scale tests" }, async (suite) => {
   const namespace = `scale_${randomUUID().replaceAll("-", "")}`, admin = new pg.Pool({ connectionString: url, max: 1 });
   await admin.query(`create schema "${namespace}"`);

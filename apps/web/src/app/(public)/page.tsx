@@ -1,46 +1,172 @@
-import { ArrowRight } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
+import { ArrowDownRight, ArrowRight } from "lucide-react";
 import { Artwork } from "@/components/artwork";
-import { FreshShelf } from "@/components/fresh-shelf";
+import { MintMark } from "@/components/logo";
 import { getLibraryArtwork, getRecentlyReady } from "@/lib/data";
 import { getUser } from "@/lib/auth";
 
+export const metadata: Metadata = {
+  title: "Your music, with room to wander",
+  description:
+    "Explore a shared music library, build personal playlists, and listen in Mint’s own player. Browse the public catalog or request access.",
+};
+
 export const dynamic = "force-dynamic";
+
 export default async function Home() {
-  const [fresh, wall, user] = await Promise.all([getRecentlyReady(12), getLibraryArtwork(), getUser()]);
-  return <>
-    <section className="mx-auto grid min-h-[min(44rem,85svh)] max-w-7xl items-center gap-12 px-5 py-16 sm:px-8 lg:grid-cols-[1.1fr_1fr] lg:gap-20 lg:py-24">
-      <div>
-        <h1 className="max-w-2xl text-[clamp(3.25rem,7vw,6rem)] font-bold leading-[1.02] tracking-[-0.04em]">A home for<br />your music.</h1>
-        <p className="mt-7 max-w-lg text-lg leading-relaxed text-muted">The songs you love. The ones you haven’t found yet. Your own library, with room for both.</p>
-        <div className="mt-9 flex flex-wrap items-center gap-3">
-          <Link href={user ? "/app" : "/request-access"} className="inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">{user ? "Open your music" : "Request access"}<ArrowRight className="size-4" /></Link>
-          <Link href="/browse" className="inline-flex min-h-12 items-center rounded-full px-5 font-semibold text-muted ring-1 ring-line hover:text-fg">Look around</Link>
+  const [user, recentResult, artworkResult] = await Promise.all([
+    getUser(),
+    getRecentlyReady(4).then(
+      (tracks) => ({ status: "fulfilled" as const, tracks }),
+      () => ({ status: "rejected" as const }),
+    ),
+    getLibraryArtwork().then(
+      (artwork) => ({ status: "fulfilled" as const, artwork }),
+      () => ({ status: "rejected" as const }),
+    ),
+  ]);
+  const recent = recentResult.status === "fulfilled" ? recentResult.tracks : [];
+  const artwork = artworkResult.status === "fulfilled" ? artworkResult.artwork.slice(0, 4) : [];
+  const directionContract = `<!--
+THESIS: An intimate listening room for a shared library and personal collections, not a feature-grid pitch.
+OWN-WORLD: Charcoal, Figtree, mint action, square real-library sleeves, and a restrained teal-blue atmosphere.
+STORY: Find music in the shared library, make it yours with playlists, then request access or sign in.
+FIRST VIEWPORT: Browse navigation above a left-aligned promise and actions; a responsive public-artwork gallery balances the right.
+FORM: Third of seven grounded structures: an artwork-led editorial page, compact recent arrivals, and a shared-library/personal-collection split that comes together in Mint. Seed bfe43ff0; parallel-streams staging.
+-->`;
+
+  return (
+    <>
+      <noscript
+        dangerouslySetInnerHTML={{
+          __html: directionContract,
+        }}
+      />
+      <section className="marketing-hero" aria-labelledby="marketing-title">
+        <div className="marketing-hero-copy">
+          <h1 id="marketing-title">
+            Your music,
+            <br className="hidden sm:block" /> with room to wander.
+          </h1>
+          <p>
+            Explore a shared library, build playlists around what you love, and listen in Mint’s
+            own player.
+          </p>
+          <div className="marketing-actions">
+            <Link
+              href={user ? "/app" : "/request-access"}
+              className="marketing-primary"
+            >
+              {user ? "Open your music" : "Request access"}
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+            {!user && (
+              <Link href="/login" className="marketing-signin">
+                Sign in
+                <ArrowDownRight aria-hidden="true" className="size-4" />
+              </Link>
+            )}
+          </div>
         </div>
-        <p className="mt-7 text-xs leading-relaxed text-muted">Private listening for approved members.<br />Everyone’s welcome to browse. No public audio.</p>
-      </div>
-      {wall.length > 0 && <div aria-label="Artwork from the Mint library" className="grid grid-cols-2 gap-4 lg:gap-5">
-        {wall.slice(0, 4).map((track) => <Artwork key={track.artworkUrl} track={track} eager className="w-full rounded-xl" />)}
-      </div>}
-    </section>
-    <section className="mx-auto max-w-7xl px-5 py-12 sm:px-8 sm:py-20">
-      <div className="mb-8 flex items-end justify-between gap-5"><div><h2 className="text-3xl font-bold tracking-tight sm:text-4xl">New to the collection.</h2><p className="mt-3 text-sm text-muted">Fresh arrivals, ready for their next listen.</p></div><Link href="/browse" className="inline-flex min-h-11 shrink-0 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">View library<ArrowRight className="size-4" /></Link></div>
-      <FreshShelf initial={fresh} feature={false} />
-    </section>
-    <section className="mx-auto grid max-w-7xl gap-10 border-y border-line px-5 py-14 sm:px-8 lg:grid-cols-2 lg:gap-20">
-      <h2 className="max-w-xl text-3xl font-bold leading-tight tracking-tight sm:text-5xl">A wider world.<br />A personal collection.</h2>
-      <div><p className="max-w-lg text-base leading-relaxed text-muted">Explore country Top 50s, worldwide listening communities and independent music. See what’s already here and find something worth bringing home.</p><Link href="/charts" className="mt-5 inline-flex min-h-12 items-center gap-3 font-semibold">Explore the charts<ArrowRight className="size-4" /></Link></div>
-    </section>
-    <section id="how" className="mx-auto max-w-7xl px-5 py-20 sm:px-8">
-      <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Your music. Without the noise.</h2>
-      <div className="mt-9 grid gap-8 md:grid-cols-3">
-        {[
-          ["Bring your favorites", "Connect YouTube Music likes and playlists, import Spotify playlist metadata, or listen to music already in your Plex library."],
-          ["Make it your own", "Build playlists, follow a mix somewhere new, take a few albums offline, and pick up the queue on another device."],
-          ["Stay with the song", "Listen in Mint’s own player, with lyrics and sound controls close by. The files stay on your server; originals stay protected."],
-        ].map(([title, description]) => <div key={title}><h3 className="text-lg font-semibold">{title}</h3><p className="mt-3 max-w-lg text-sm leading-relaxed text-muted">{description}</p></div>)}
-      </div>
-      <Link href={user ? "/app" : "/request-access"} className="mt-10 inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 font-semibold text-mint-ink">{user ? "Back to your music" : "Make yourself at home"}<ArrowRight className="size-4" /></Link>
-    </section>
-  </>;
+
+        <div
+          className="marketing-artwork"
+          aria-hidden="true"
+          data-artwork={artwork.length ? "present" : "empty"}
+        >
+          <div className="marketing-art-glow" />
+          {artwork.length ? (
+            artwork.map((cover, index) => (
+              <div
+                className={`marketing-cover marketing-cover-${index + 1}`}
+                key={`${cover.artworkUrl}-${index}`}
+              >
+                <Artwork track={cover} eager />
+              </div>
+            ))
+          ) : (
+            <div className="marketing-empty-art">
+              <div className="marketing-record">
+                <div className="marketing-record-label">
+                  <MintMark className="size-10" />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="marketing-story" aria-labelledby="marketing-story-title">
+        <div className="marketing-story-lead">
+          <h2 id="marketing-story-title">
+            A shared library.
+            <br />A listening life of your own.
+          </h2>
+          <p>
+            Find something familiar, follow a new thread, and keep the music you love close.
+          </p>
+        </div>
+        <div className="marketing-story-pair">
+          <article>
+            <h3>Start with the shared library.</h3>
+            <p>
+              Browse albums, artists, and songs, then explore more of what’s in the collection.
+            </p>
+          </article>
+          <article>
+            <h3>Make it yours.</h3>
+            <p>
+              Like songs, build personal playlists, and listen in Mint’s own browser player.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="marketing-recent" aria-labelledby="marketing-recent-title">
+        {recentResult.status === "rejected" ? (
+          <div className="marketing-recent-unavailable" role="status">
+            <div>
+              <h2 id="marketing-recent-title">Recent additions</h2>
+              <p>They aren’t available right now. You can still browse the shared library.</p>
+            </div>
+            <Link href="/browse" className="marketing-text-link">
+              Browse library <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </div>
+        ) : recent.length > 0 ? (
+          <>
+            <div className="marketing-recent-heading">
+              <div>
+                <h2 id="marketing-recent-title">Recently added</h2>
+                <p>A small glimpse of what’s in the shared library.</p>
+              </div>
+              <Link href="/activity" className="marketing-text-link">
+                Library activity <ArrowRight aria-hidden="true" className="size-4" />
+              </Link>
+            </div>
+            <ul className="marketing-recent-list">
+              {recent.map((track) => (
+                <li className="marketing-recent-item" key={track.id}>
+                  <Artwork track={track} />
+                  <div className="marketing-recent-copy">
+                    <p>{track.title}</p>
+                    <span>{track.artist}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </section>
+
+      <section className="marketing-close" aria-labelledby="marketing-close-title">
+        <h2 id="marketing-close-title">There’s always more to discover.</h2>
+        <Link href={user ? "/app" : "/request-access"} className="marketing-close-link">
+          {user ? "Open Mint" : "Find your way in"}
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </Link>
+      </section>
+    </>
+  );
 }

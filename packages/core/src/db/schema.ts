@@ -168,6 +168,34 @@ export const tracks = pgTable(
   ],
 );
 
+export const artistMetadata = pgTable(
+  "artist_metadata",
+  {
+    artistName: text("artist_name").primaryKey(),
+    musicBrainzArtistId: text("musicbrainz_artist_id"),
+    status: text("status").$type<"queued" | "fetching" | "ready" | "not_found" | "ambiguous" | "failed">().notNull().default("queued"),
+    profile: jsonb("profile").$type<{
+      artistType: string | null;
+      area: string | null;
+      biography: string | null;
+      biographyUrl: string | null;
+      relatedArtists: Array<{ name: string; musicBrainzArtistId: string; source: "listenbrainz" | "musicbrainz" }>;
+      listenCount: number | null;
+      listenerCount: number | null;
+      unavailableSources: string[];
+    } | null>(),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }),
+    fetchedAt: timestamp("fetched_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    index("artist_metadata_status_idx").on(t.status, t.nextAttemptAt),
+    index("artist_metadata_mbid_idx").on(t.musicBrainzArtistId),
+  ],
+);
+
 export const chartEntryLinks = pgTable("chart_entry_links", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   provider: text("provider").notNull(),
@@ -244,8 +272,32 @@ export const trackEvents = pgTable(
   (t) => [index("track_events_track_idx").on(t.trackId, t.createdAt)],
 );
 
+/** Member-submitted problem reports, reviewed by admins in the admin portal. */
+export const issueReports = pgTable(
+  "issue_reports",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    category: text("category").$type<"playback" | "lyrics" | "music-info" | "app" | "other">().notNull(),
+    message: text("message").notNull(),
+    /** Optional human-readable context the member saw and chose to send, e.g. "Song — Artist". */
+    context: text("context"),
+    status: text("status").$type<"open" | "resolved">().notNull().default("open"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+    ...timestamps,
+  },
+  (t) => [
+    index("issue_reports_status_idx").on(t.status, t.createdAt),
+    index("issue_reports_user_idx").on(t.userId, t.createdAt),
+  ],
+);
+
 export type User = typeof users.$inferSelect;
 export type Track = typeof tracks.$inferSelect;
 export type Playlist = typeof playlists.$inferSelect;
 export type YoutubeAccount = typeof youtubeAccounts.$inferSelect;
 export type Worker = typeof workers.$inferSelect;
+export type IssueReport = typeof issueReports.$inferSelect;

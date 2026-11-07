@@ -6,10 +6,12 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { boundedJson, publicUrl } from "@/lib/request";
 import { rateLimit } from "@/lib/rate-limit";
-import { fetchLyricsById, searchLyrics } from "@/lib/lyrics-provider";
+import { fetchLyricsById, LyricsBusyError, searchLyrics } from "@/lib/lyrics-provider";
 
 type Context = { params: Promise<{ id: string }> };
-const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
+const json = (body: unknown, status = 200, retry?: number) => Response.json(body, { status, headers: {
+  "cache-control": "private, no-store", ...(retry ? { "retry-after": String(retry) } : {}),
+} });
 async function access(context: Context) {
   const user = await getUser(), { id } = await context.params;
   if (!user) return { error: json({ error: "Approved membership required" }, 401) };
@@ -25,7 +27,11 @@ export async function GET(request: Request, context: Context) {
   if (!query.success) return json({ error: "Enter a title and artist (2–150 characters)" }, 400);
   if (!await rateLimit(`lyrics-match:${actor.user.id}`, 10, 60) || !await rateLimit("lyrics:provider", 60, 60)) return json({ error: "Too many searches. Wait one minute." }, 429);
   try { return json({ matches: await searchLyrics(query.data) }); }
-  catch (error) { console.error("Lyric match search failed", error); return json({ error: "LRCLIB search is unavailable. Try again later." }, 503); }
+  catch (error) {
+    if (error instanceof LyricsBusyError) return json({ error: error.message }, 429, error.retryAfter);
+    console.error("Lyric match search failed", error instanceof Error ? error.name : "Unknown failure");
+    return json({ error: "LRCLIB search is unavailable. Try again later." }, 503);
+  }
 }
 export async function POST(request: Request, context: Context) {
   const actor = await access(context);
@@ -44,5 +50,9 @@ export async function POST(request: Request, context: Context) {
     await getDb().insert(lyricMatches).values({ userId: actor.user.id, trackId: actor.id, lyrics, offsetMs: input.data.offsetMs })
       .onConflictDoUpdate({ target: [lyricMatches.userId, lyricMatches.trackId], set: { ...(lyrics ? { lyrics } : {}), offsetMs: input.data.offsetMs, updatedAt: new Date() } });
     return json({ saved: true });
-  } catch (error) { console.error("Lyric correction failed", error); return json({ error: "Lyrics could not be saved. Check the connection and retry." }, 503); }
+  } catch (error) {
+    if (error instanceof LyricsBusyError) return json({ error: error.message }, 429, error.retryAfter);
+    console.error("Lyric correction failed", error instanceof Error ? error.name : "Unknown failure");
+    return json({ error: "Lyrics could not be saved. Check the connection and retry." }, 503);
+  }
 }

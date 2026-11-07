@@ -11,16 +11,22 @@ const libraryTabs: Record<string, string> = {
   playlists: "playlist",
 };
 
-export type CollectionTab = "playlists" | "likes" | "downloads" | "history";
+export type CollectionTab = "playlists" | "likes" | "requests" | "downloads" | "history";
 export type PlaylistSourceFilter = "all" | "mint" | "youtube" | "spotify" | "smart";
 export type SettingsSectionId = "account" | "services" | "playback" | "devices" | "storage";
-export type ManageTab = "requests" | "jobs" | "workers" | "analysis";
+export type ManageTab = "requests" | "reports" | "jobs" | "workers" | "analysis";
 export type ManageTabId = ManageTab;
 
-const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "downloads", "history"]);
+export const listeningDestinations = [
+  { href: "/app", label: "Home" },
+  { href: "/app/search", label: "Search" },
+  { href: "/app/collection", label: "Your Library" },
+] as const;
+
+const validCollectionTabs = new Set<CollectionTab>(["playlists", "likes", "requests", "downloads", "history"]);
 const validPlaylistSources = new Set<PlaylistSourceFilter>(["all", "mint", "youtube", "spotify", "smart"]);
 const validSettingsSections = new Set<SettingsSectionId>(["account", "services", "playback", "devices", "storage"]);
-const validManageTabs = new Set<ManageTab>(["requests", "jobs", "workers", "analysis"]);
+const validManageTabs = new Set<ManageTab>(["requests", "reports", "jobs", "workers", "analysis"]);
 
 function withQuery(path: string, params: URLSearchParams) {
   const query = params.toString();
@@ -109,14 +115,17 @@ export function legacyDiscoverHref(params: URLSearchParams) {
   }
   const tab = next.get("tab");
   if (tab === "charts") {
-    next.delete("tab");
-    return withQuery("/app/discover/charts", next);
+    return "/app/search#charts";
   }
   if (tab === "mixes" || next.has("mode") || next.has("seed")) {
     next.delete("tab");
     return withQuery("/app/discover/mixes", next);
   }
   return null;
+}
+
+export function legacyDiscoverDestination(params: URLSearchParams) {
+  return legacyDiscoverHref(params) ?? "/app/search";
 }
 
 export function legacyCollectionsHref(params: URLSearchParams = new URLSearchParams()) {
@@ -184,10 +193,12 @@ export function legacyManageHref(
 }
 
 export function isAppDestinationActive(pathname: string, href: string) {
+  if (href === "/app/search" && pathname.startsWith("/app/discover/charts/")) return true;
   if (href === "/app/collection" || href === "/app/collections") {
     return [
       "/app/collection",
       "/app/collections",
+      "/app/library",
       "/app/liked",
       "/app/spotify",
       "/app/downloads",
@@ -205,4 +216,8 @@ export function isAppDestinationActive(pathname: string, href: string) {
   }
   if (href === "/app") return pathname === href;
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+export function isAdminWorkspace(pathname: string, isAdmin: boolean) {
+  return isAdmin && isAppDestinationActive(pathname, "/app/manage");
 }

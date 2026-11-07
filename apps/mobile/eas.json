@@ -1,0 +1,19 @@
+{
+  "cli": { "version": "27.5.0", "appVersionSource": "remote" },
+  "build": {
+    "development": { "developmentClient": true, "distribution": "internal" },
+    "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
+    "production": {
+      "autoIncrement": true,
+      "distribution": "internal",
+      "channel": "production",
+      "environment": "production",
+      "credentialsSource": "local",
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease -PreactNativeArchitectures=arm64-v8a",
+        "image": "ubuntu-26.04-jdk-17-ndk-r27b-sdk-58"
+      }
+    }
+  }
+}

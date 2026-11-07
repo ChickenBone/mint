@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Skip only native-client-only pushes; mixed/shared changes still publish.
+    # GitHub does not apply path filters to tags or workflow_dispatch.
+    paths-ignore:
+      - "apps/mobile/**"
+      - "deploy/mobile/**"
+      - "docs/mobile.md"
+      - "docs/mobile-design.md"
+      - "docs/mobile-playback.md"
+      - "docs/android-builds.md"
+      - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
 concurrency:
@@ -21,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [web, worker, realtime, agent, analysis]
+        target: [web, worker, realtime, agent, analysis, chart-source]
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
@@ -67,6 +77,7 @@ jobs:
             docker-compose.vercel.yml
             docker-compose.nas.yml
             docker-compose.nas-migrate.yml
+            docker-compose.musicbrainz.yml
           sparse-checkout-cone-mode: false
       - name: Install SSH key
         run: |
@@ -80,5 +91,5 @@ jobs:
           USER: ${{ secrets.DEPLOY_USER }}
           DIR: ${{ vars.DEPLOY_PATH || '/srv/mint' }}
         run: |
-          scp docker-compose.yml docker-compose.vercel.yml docker-compose.nas.yml docker-compose.nas-migrate.yml "$USER@$HOST:$DIR/"
+          scp docker-compose.yml docker-compose.vercel.yml docker-compose.nas.yml docker-compose.nas-migrate.yml docker-compose.musicbrainz.yml "$USER@$HOST:$DIR/"
           ssh "$USER@$HOST" "cd '$DIR' && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"

@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 
@@ -16,6 +15,109 @@ const resolve = (yaml, env = {}) =>
       env: { ...process.env, ...env },
     }),
   );
+
+test("Docker release ignores only mobile-only branch pushes, preserving shared and mixed changes", () => {
+  const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
+  const triggers = release.match(/^on:\n([\s\S]*?)^\S/m)?.[1];
+  assert.ok(triggers);
+  assert.match(triggers, /^  push:\n    branches: \[main\]\n    tags: \["v\*"\]/m);
+  assert.match(triggers, /^  workflow_dispatch:\s*$/m);
+  assert.doesNotMatch(triggers, /^  workflow_run:|^    paths:/m);
+  const ignored = [...triggers.matchAll(/^      - "([^"]+)"$/gm)].map(match => match[1]);
+  assert.deepEqual(ignored, [
+    "apps/mobile/**",
+    "deploy/mobile/**",
+    "docs/mobile.md",
+    "docs/mobile-design.md",
+    "docs/mobile-playback.md",
+    "docs/android-builds.md",
+    ".github/workflows/android-apk.yml",
+  ]);
+  // This allowlist uses only literal files and directory prefixes, not ordered negations.
+  const mobileOnly = paths => paths.length > 0 && paths.every(file => ignored.some(pattern =>
+    pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : file === pattern));
+  const mobile = [
+    "apps/mobile/src/playback/engine.ts",
+    "apps/mobile/src/screens/settings.tsx",
+    "apps/mobile/plugins/with-android-audio.js",
+    "apps/mobile/package.json",
+    "deploy/mobile/eas-distribution.mjs",
+    "docs/mobile.md",
+    "docs/mobile-design.md",
+    "docs/mobile-playback.md",
+    "docs/android-builds.md",
+    ".github/workflows/android-apk.yml",
+  ];
+  assert.equal(mobileOnly(mobile), true);
+  for (const file of [
+    "packages/client/src/index.ts",
+    "packages/client/package.json",
+    "packages/core/src/playback.ts",
+    "packages/core/migrations/0020_example.sql",
+    "apps/web/src/app/api/native/route.ts",
+    "apps/web/src/components/app/player.tsx",
+    "apps/worker/src/index.ts",
+    "apps/realtime/src/index.ts",
+    "apps/agent/src/index.ts",
+    "services/chart-source/main.mts",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.base.json",
+    ".npmrc",
+    "patches/shared.patch",
+    "Dockerfile",
+    ".dockerignore",
+    "docker-compose.yml",
+    "deploy/docker/entrypoint.sh",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "docs/self-hosting.md",
+    "docs/mobile-api.md",
+    "apps/mobile-other/index.ts",
+  ]) {
+    assert.equal(mobileOnly([file]), false, file);
+    assert.equal(mobileOnly([...mobile, file]), false, `mixed change: ${file}`);
+  }
+  // GitHub compares changed paths, including deleted files and both sides of renames.
+  assert.equal(mobileOnly(["apps/mobile/src/deleted.ts"]), true);
+  assert.equal(mobileOnly(["apps/web/src/deleted.ts"]), false);
+  assert.equal(mobileOnly(["apps/mobile/src/moved.ts", "packages/client/src/moved.ts"]), false);
+
+  const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const ciTriggers = ci.match(/^on:\n([\s\S]*?)^\S/m)?.[1];
+  assert.ok(ciTriggers);
+  assert.match(ciTriggers, /^  pull_request:\s*$/m);
+  assert.match(ciTriggers, /^  push:\n    branches: \[main\]/m);
+  assert.doesNotMatch(ciTriggers, /paths(?:-ignore)?:/);
+  for (const command of ["npm run agents:check", "npm run typecheck", "npm run lint", "npm test", "npm run build"]) {
+    assert.ok(ci.includes(`- run: ${command}\n`), command);
+  }
+});
+
+test("Expo web exact-origin allowlist reaches CLI and self-contained NAS web services", () => {
+  const origin = "https://app.example.com,http://localhost:8081";
+  const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
+  assert.equal(resolve(cli, { NATIVE_WEB_ORIGINS: origin }).services.web.environment.NATIVE_WEB_ORIGINS, origin);
+  assert.equal(resolve(source).services.web.environment.NATIVE_WEB_ORIGINS, "");
+  const nas = resolve(source.replace('&native-web-origins ""', `&native-web-origins "${origin}"`));
+  assert.equal(nas.services.web.environment.NATIVE_WEB_ORIGINS, origin);
+  assert.equal(nas.services.worker.environment.NATIVE_WEB_ORIGINS, undefined);
+  assert.equal(nas.services.hub.environment.NATIVE_WEB_ORIGINS, undefined);
+});
+
+test("EAS updates need no self-hosted OTA endpoints or Compose storage", () => {
+  for (const file of ["../../docker-compose.yml", "../../docker-compose.nas.yml"]) {
+    const { services } = resolve(readFileSync(new URL(file, import.meta.url), "utf8"));
+    assert.equal(services["ota-storage-init"], undefined);
+    assert.ok(Object.keys(services.web.environment).every(key => !key.startsWith("OTA_")));
+    assert.ok((services.web.volumes || []).every(mount => mount.target !== "/var/lib/mint/updates"));
+  }
+  for (const file of [
+    "../../docker-compose.updates.yml",
+    "../../apps/web/src/app/api/updates/route.ts",
+    "../../apps/web/src/lib/ota-updates.ts",
+  ]) assert.equal(existsSync(new URL(file, import.meta.url)), false);
+});
 
 test("separate analysis machines have configurable resources without media-server credentials or open ports", () => {
   const analysis = readFileSync(new URL("../../docker-compose.analysis.yml", import.meta.url), "utf8");
@@ -42,6 +144,40 @@ test("NAS template is self-contained and uses project-relative bind folders", ()
       assert.ok(mount.source);
     }
   }
+});
+
+test("chart metadata service is opt-in and isolated from secrets, media and public ports", () => {
+  for (const file of ["../../docker-compose.yml", "../../docker-compose.nas.yml"]) {
+    const yaml = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.equal(resolve(yaml).services["chart-source"], undefined);
+    const { services } = resolve(yaml, { COMPOSE_PROFILES: "chart-source" });
+    const chart = services["chart-source"];
+    assert.deepEqual(chart.profiles, ["chart-source"]);
+    assert.equal(chart.image.includes("mint-chart-source"), true);
+    assert.equal(chart.environment.PORT, "3090");
+    assert.equal(chart.environment.REDIS_URL, "redis://redis:6379");
+    assert.equal(chart.environment.MINT_CHARTS_ENABLED, "true");
+    assert.deepEqual(Object.keys(chart.environment).sort(), ["MINT_CHARTS_ENABLED", "PORT", "REDIS_URL"]);
+    assert.equal(chart.volumes, undefined);
+    assert.equal(chart.env_file, undefined);
+    assert.equal(chart.ports, undefined);
+    assert.equal(chart.read_only, true);
+    assert.deepEqual(Object.keys(chart.networks), ["data"]);
+    assert.equal(services.web.environment.MINT_CHART_SOURCE_URL, "");
+    assert.equal(services.web.depends_on["chart-source"], undefined);
+  }
+  const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
+  const configured = resolve(cli, {
+    COMPOSE_PROFILES: "chart-source", MINT_CHART_SOURCE_URL: "http://chart-source:3090", MINT_CHARTS_ENABLED: "false",
+  });
+  assert.equal(configured.services.web.environment.MINT_CHART_SOURCE_URL, "http://chart-source:3090");
+  assert.equal(configured.services.web.environment.MINT_CHARTS_ENABLED, "false");
+  assert.equal(configured.services["chart-source"].environment.MINT_CHARTS_ENABLED, "false");
+  const nas = resolve(source.replace('&chart-source-url ""', '&chart-source-url "http://chart-source:3090"')
+    .replace('&charts-enabled "true"', '&charts-enabled "false"'), { COMPOSE_PROFILES: "chart-source" });
+  assert.equal(nas.services.web.environment.MINT_CHART_SOURCE_URL, "http://chart-source:3090");
+  assert.equal(nas.services.web.environment.MINT_CHARTS_ENABLED, "false");
+  assert.equal(nas.services["chart-source"].environment.MINT_CHARTS_ENABLED, "false");
 });
 
 test("local pipeline is enabled and existing music is mounted read-only", () => {
@@ -126,17 +262,17 @@ test("Prowlarr auto-setup is private, persistent and configurable", () => {
 });
 
 test("CLI stack does not leak media credentials from shared env-file into public services", () => {
-  const root = mkdtempSync(path.join(os.tmpdir(), "mint-compose-test-"));
+  const root = mkdtempSync(path.join(process.cwd(), ".mint-compose-test-"));
   try {
     const file = path.join(root, "fixture.env");
     const composePath = docker.endsWith(".exe") && process.platform !== "win32"
       ? execFileSync("wslpath", ["-w", file], { encoding: "utf8" }).trim()
       : file;
-    const keys = ["TORBOX_API_KEY", "PLEX_TOKEN", "PLEX_CLAIM", "LIDARR_API_KEY", "PROWLARR_API_KEY", "USENET_INDEXER_API_KEY", "ANALYSIS_WORKER_TOKEN"];
+    const keys = ["TORBOX_API_KEY", "PLEX_TOKEN", "PLEX_CLAIM", "LIDARR_API_KEY", "PROWLARR_API_KEY", "USENET_INDEXER_API_KEY", "ANALYSIS_WORKER_TOKEN", "MUSICBRAINZ_MIRROR_URL"];
     const spotifyKeys = ["SPOTIFY_CLIENT_ID", "SPOTIFY_CLIENT_SECRET"];
     writeFileSync(file, [...keys, ...spotifyKeys].map((key) => `${key}=fixture-only`).join("\n"));
     const yaml = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8").replace("path: .env", `path: ${JSON.stringify(composePath)}`);
-    const { services } = resolve(yaml, Object.fromEntries(spotifyKeys.map((key) => [key, "fixture-only"])));
+    const { services } = resolve(yaml, Object.fromEntries([...spotifyKeys, "MUSICBRAINZ_MIRROR_URL"].map((key) => [key, "fixture-only"])));
     for (const key of keys) {
       assert.equal(services.worker.environment[key], "fixture-only");
       for (const name of ["web", "hub", "realtime"]) assert.equal(services[name].environment[key], "");
@@ -151,6 +287,33 @@ test("CLI stack does not leak media credentials from shared env-file into public
     assert.equal(services.prowlarr.ports[0].host_ip, "127.0.0.1");
   } finally {
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("NAS MusicBrainz mirror is optional and reaches only the private pipeline worker", () => {
+  assert.equal(resolve(source).services.worker.environment.MUSICBRAINZ_MIRROR_URL, "");
+  const mirrorUrl = "http://musicbrainz-mirror:5000/ws/2";
+  const { services } = resolve(source.replace('&musicbrainz-mirror-url ""', `&musicbrainz-mirror-url "${mirrorUrl}"`));
+  for (const [name, service] of Object.entries(services)) {
+    assert.equal(service.environment?.MUSICBRAINZ_MIRROR_URL, name === "worker" ? mirrorUrl : undefined);
+  }
+  assert.equal(services.worker.depends_on.musicbrainz, undefined);
+  assert.equal(services.musicbrainz, undefined);
+});
+
+test("checked MusicBrainz connection overlay leaves default stacks and public service boundaries intact", () => {
+  const overlay = readFileSync(new URL("../../docker-compose.musicbrainz.yml", import.meta.url), "utf8");
+  const config = JSON.parse(execFileSync(docker, [
+    "compose", "--project-name", "mint-test", "-f", new URL("../../docker-compose.yml", import.meta.url).pathname,
+    "-f", "-", "config", "--format", "json",
+  ], { input: overlay, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }));
+  assert.equal(config.services.worker.environment.MUSICBRAINZ_MIRROR_URL, "http://musicbrainz-mirror:5000/ws/2");
+  assert.deepEqual(Object.keys(config.services.worker.networks).sort(), ["data", "media", "mint_metadata"]);
+  assert.equal(config.networks.mint_metadata.external, true);
+  assert.equal(config.networks.mint_metadata.name, "mint_metadata");
+  assert.equal(config.services.worker.ports, undefined);
+  for (const name of ["web", "hub", "realtime", "caddy", "postgres", "redis"]) {
+    assert.equal(config.services[name].networks.mint_metadata, undefined);
   }
 });
 

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { WORKER_ONLINE_MS, jobId, type AcquireJob } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
@@ -9,7 +10,7 @@ import { reusePendingTrack } from "../existing-track";
 import { libraryIndexEnabled } from "../library-index";
 import { getRedis } from "@mint/core/redis";
 import { codecQuality } from "../library-policy";
-import { probe } from "../media";
+import { probe, probePlayableAudio } from "../media";
 import { downloadToFile } from "../files";
 import { log } from "../log";
 import { queues } from "../queues";
@@ -174,6 +175,15 @@ export async function processAcquire(job: Job<AcquireJob>, token?: string) {
   await downloadToFile(url, dest, (frac) => {
     if (frac !== null) void progress(track.id, frac, "YouTube via Cobalt");
   });
+  try {
+    await probePlayableAudio(dest);
+  } catch (error) {
+    await fs.unlink(dest).catch((cleanupError: NodeJS.ErrnoException) => {
+      if (cleanupError.code !== "ENOENT") throw cleanupError;
+    });
+    const reason = error instanceof Error ? error.message.replaceAll(dest, "downloaded file") : "ffprobe failed";
+    throw new Error(`Cobalt returned invalid or incomplete media: ${reason}`, { cause: error });
+  }
   await queues.finalize.add("finalize", { trackId: track.id, sourcePath: dest, source: "cobalt", inLibrary: false }, { jobId: jobId.finalize(track.id) });
   return { source: "cobalt" };
 }
