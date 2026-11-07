@@ -5,7 +5,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { modifyConfigAsync } from "@expo/config";
-import { compatibleBuild, parseManifestTree, resolvedAppConfig, runtimeFromResolution, selectBuild, validateLink, validateUpdateRuntime, verifyArm64Elf, verifyManifest } from "./eas-distribution.mjs";
+import { compatibleBuild, parseManifestTree, resolvedAppConfig, runtimeFromResolution, selectBuild, validateLink, validateUpdateRuntime, verifyApkNativeAudio, verifyArm64Elf, verifyManifest, verifyNativeAudio } from "./eas-distribution.mjs";
 
 const hash = "a".repeat(40);
 const build = {
@@ -13,6 +13,125 @@ const build = {
   updateChannel: { name: "production" }, appIdentifier: "org.mintmusic.mobile",
   runtime: { version: hash }, fingerprint: { hash }, artifacts: { buildUrl: "https://expo.dev/apk" },
 };
+
+const playlistClass = "Lexpo/modules/audio/AudioPlaylist;";
+const versionField = `${playlistClass}.a:Ljava/lang/String;`;
+const dexMethod = (name, type, instructions) => `    #0 : (in ${playlistClass})
+      name          : '${name}'
+      type          : '${type}'
+      access        : 0x0001 (PUBLIC)
+      code          -
+${instructions.map((instruction, index) => `001000: 1a00 0100 |${index.toString(16).padStart(4, "0")}: ${instruction}`).join("\n")}
+`;
+const dexClass = (owner, methods) => `Class #1 -
+  Class descriptor  : '${owner}'
+  Direct methods    -
+${methods.join("\n")}`;
+const keys = ["codeName", "responseCode", "mintAudioPatchVersion"]
+  .map(key => `const-string v0, "${key}" // string@0001`);
+const wiring = [
+  `invoke-direct {v0}, ${playlistClass}.<init>:()V // method@0001`,
+  'const-string/jumbo v1, "mint:uri-headers-recovery-v1" // string@0002',
+  `iput-object v1, v0, ${versionField} // field@0001`,
+];
+const reporter = [...keys, `iget-object v0, v1, ${versionField} // field@9999`];
+
+test("compiled audio proof links constructor provenance to playlist error bytecode, even after obfuscation", () => {
+  const module = dexClass("La;", [dexMethod("a", "()V", wiring)]);
+  const playlist = dexClass(playlistClass, [dexMethod("b", "()V", reporter)]);
+  assert.doesNotThrow(() => verifyNativeAudio([module, playlist]));
+  for (const key of ["codeName", "responseCode", "mintAudioPatchVersion", "mint:uri-headers-recovery-v1"]) {
+    assert.throws(() => verifyNativeAudio([module.replaceAll(key, "absent"), playlist.replaceAll(key, "absent")]), /buildFromSource/);
+  }
+  for (const bad of [
+    module.replace("invoke-direct", "invoke-static"),
+    module.replace(versionField, `${playlistClass}.other:Ljava/lang/String;`),
+    module.replace("iput-object", "iget-object"),
+    dexClass("La;", [dexMethod("a", "()V", wiring.slice(0, 1)), dexMethod("b", "()V", wiring.slice(1))]),
+  ]) assert.throws(() => verifyNativeAudio([bad, playlist]), /compiled Mint audio/);
+  assert.throws(() => verifyNativeAudio([module, playlist.replaceAll(playlistClass, "Lunrelated;")]), /compiled Mint audio/);
+  assert.throws(() => verifyNativeAudio([module, playlist.replaceAll("const-string", "debug-string")]), /compiled Mint audio/);
+  assert.throws(() => verifyNativeAudio([module, dexClass(playlistClass,
+    keys.map((instruction, index) => dexMethod(`m${index}`, "()V", [instruction, reporter.at(-1)])))]), /compiled Mint audio/);
+  assert.throws(() => verifyNativeAudio([keys.join("\n"), wiring.join("\n")]), /compiled Mint audio/);
+});
+
+test("compiled audio proof follows uninlined accessors and actual String field identity across DEX files", () => {
+  const setter = `${playlistClass}.a:(Ljava/lang/String;)V`;
+  const getter = `${playlistClass}.b:()Ljava/lang/String;`;
+  const module = dexClass("La;", [dexMethod("a", "()V", [
+    ...wiring.slice(0, 2), `invoke-virtual {v0, v1}, ${setter} // method@0001`,
+  ])]);
+  const playlist = dexClass(playlistClass, [
+    dexMethod("a", "(Ljava/lang/String;)V", [wiring.at(-1)]),
+    dexMethod("b", "()Ljava/lang/String;", [reporter.at(-1)]),
+    dexMethod("c", "()V", [...keys, `invoke-virtual {v0}, ${getter} // method@0002`]),
+  ]);
+  assert.doesNotThrow(() => verifyNativeAudio([module, playlist]));
+  assert.throws(() => verifyNativeAudio([module, playlist.replace("iput-object", "iget-object")]), /compiled Mint audio/);
+});
+
+const buildTool = name => process.env[name.toUpperCase()] ??
+  (process.env.AAPT2 ? join(dirname(process.env.AAPT2), name) : undefined);
+test("supported D8/R8 compiles native audio proof, including obfuscation; stock and unrelated markers are rejected", {
+  skip: !buildTool("dexdump") || !buildTool("d8") || !process.env.JAVA_HOME,
+}, () => {
+  const directory = mkdtempSync(join(dirname(fileURLToPath(import.meta.url)), ".eas-audio-test-"));
+  try {
+    const source = join(directory, "expo/modules/audio");
+    mkdirSync(source, { recursive: true });
+    writeFileSync(join(source, "AudioPlaylist.java"), `package expo.modules.audio;
+      public class AudioPlaylist {
+        private String version;
+        public void setVersion(String value) { version = value; }
+        public String getVersion() { return version; }
+        public java.util.Map<String, Object> error() {
+          java.util.Map<String, Object> result = new java.util.HashMap<>();
+          result.put("codeName", "HTTP_ERROR"); result.put("responseCode", 401);
+          result.put("mintAudioPatchVersion", getVersion()); return result;
+        }
+      }`);
+    const module = `package expo.modules.audio; public class AudioModule {
+      public AudioPlaylist create() { AudioPlaylist playlist = new AudioPlaylist();
+      playlist.setVersion("mint:uri-headers-recovery-v1"); return playlist; }
+    }`;
+    const rules = join(directory, "rules.pro");
+    writeFileSync(rules, `-keep,allowobfuscation class expo.modules.audio.AudioModule { public expo.modules.audio.AudioPlaylist create(); }
+      -keepnames class expo.modules.audio.AudioPlaylist
+      -keepclassmembers,allowoptimization,allowobfuscation class expo.modules.audio.AudioPlaylist { public java.util.Map error(); }
+      -dontwarn **`);
+    for (const [name, input, accepted] of [
+      ["patched", module, true],
+      ["stock", module.replace('playlist.setVersion("mint:uri-headers-recovery-v1");', ""), false],
+      ["unrelated", module.replace('playlist.setVersion("mint:uri-headers-recovery-v1");',
+        'System.out.println("mint:uri-headers-recovery-v1");'), false],
+    ]) {
+      writeFileSync(join(source, "AudioModule.java"), input);
+      execFileSync(join(process.env.JAVA_HOME, "bin/javac"), ["--release", "8",
+        join(source, "AudioPlaylist.java"), join(source, "AudioModule.java")], { stdio: "pipe" });
+      for (const compiler of ["D8", "R8"]) {
+        const output = join(directory, `${name}-${compiler}`);
+        mkdirSync(output);
+        execFileSync(join(process.env.JAVA_HOME, "bin/java"), ["-cp", join(dirname(buildTool("d8")), "lib/d8.jar"),
+          `com.android.tools.r8.${compiler}`, "--min-api", "26", "--output", output,
+          ...(compiler === "R8" ? ["--release", "--pg-conf", rules, "--lib", process.env.JAVA_HOME] : []),
+          join(source, "AudioPlaylist.class"), join(source, "AudioModule.class")], { stdio: "pipe" });
+        const dump = execFileSync(buildTool("dexdump"), ["-d", join(output, "classes.dex")], { encoding: "utf8" });
+        if (compiler === "R8") assert.doesNotMatch(dump, /Class descriptor\s+: 'Lexpo\/modules\/audio\/AudioModule;'/);
+        if (accepted) assert.doesNotThrow(() => verifyNativeAudio([dump]), `${name}-${compiler}`);
+        else assert.throws(() => verifyNativeAudio([dump]), /compiled Mint audio/);
+      }
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("known failing APK cannot qualify as a native audio baseline", {
+  skip: !process.env.MINT_AUDIO_BAD_APK || !buildTool("dexdump"),
+}, () => {
+  assert.throws(() => verifyApkNativeAudio(process.env.MINT_AUDIO_BAD_APK, buildTool("dexdump")), /compiled Mint audio/);
+});
 
 test("arm64 native libraries retain Pixel 16-KiB ELF page alignment", () => {
   const elf = Buffer.alloc(120);

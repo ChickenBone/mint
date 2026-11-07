@@ -11,6 +11,7 @@
 - One engine remains mounted through navigation; restore paused, keep occurrence identities and never restart the current song when editing upcoming items.
 - Account/server scope controls every snapshot/download. Auth logout and revocation call `revokePlaybackAccount` after stopping the presentation immediately.
 - Stream/download only through authenticated public Mint proxies with header credentials, bounded file/metadata budgets and explicit cancellation/errors.
+- The SDK 58 Android header/recovery patch must be compiled, not bypassed by Expo's stock Maven publication: keep `expo.autolinking.android.buildFromSource: ["expo-audio"]` in the mobile package. Real autolinking checks establish source selection; checksummed Kotlin/source tests alone do not establish APK contents. Distribution must verify the compiled patch before shipping; new native patches require a new APK/runtime.
 - Native background play extends only through successfully loaded native queue horizons. Do not promise entire-library suspended playback or physical-device behavior from a web build.
 - Cover palettes derive from actual proxied artwork using bounded processing/caches; failures retain an explicit neutral visual fallback without exposing secrets.
 - Lockscreen artwork resolves against the selected public Mint origin, never a relative browser path, private worker host or bearer-bearing URL. Do not claim device display from a unit test; preserve the audited native audio plugin and its compatibility gate.

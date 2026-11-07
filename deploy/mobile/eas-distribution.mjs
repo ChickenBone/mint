@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -191,6 +191,71 @@ export function verifyArm64Elf(elf) {
   if (!loads) throw new Error("ELF contains no loadable segments.");
 }
 
+export function verifyNativeAudio(dumps) {
+  const playlist = "Lexpo/modules/audio/AudioPlaylist;";
+  const methods = [];
+  for (const dump of dumps) {
+    for (const section of dump.split(/(?=^Class #\d+\s+-)/m)) {
+      const owner = section.match(/^  Class descriptor\s+: '([^']+)'$/m)?.[1];
+      if (!owner) continue;
+      const code = section.split(/^  Direct methods\s+-$/m)[1];
+      if (!code) continue;
+      for (const method of code.split(/(?=^    #\d+\s+: \(in )/m)) {
+        if (!/^      code\s+-$/m.test(method)) continue;
+        // Read instructions only: never accept matching DEX strings, fields or debug metadata.
+        const instructions = [...method.matchAll(/^[a-fA-F0-9]+:\s+(?:[a-fA-F0-9]{4}\s+)+\|[a-fA-F0-9]+: (.+)$/gm)]
+          .map(match => match[1]);
+        const strings = new Set(instructions.flatMap(instruction =>
+          instruction.match(/^const-string(?:\/jumbo)? \S+, "([^"]*)" \/\/ string@[a-fA-F0-9]+$/)?.[1] ?? []));
+        const name = method.match(/^      name\s+: '([^']+)'$/m)?.[1];
+        const type = method.match(/^      type\s+: '([^']+)'$/m)?.[1];
+        methods.push({ owner, reference: `${owner}.${name}:${type}`, instructions, strings });
+      }
+    }
+  }
+  const reporters = methods.filter(method => method.owner === playlist &&
+    ["codeName", "responseCode", "mintAudioPatchVersion"].every(key => method.strings.has(key)));
+  const reference = instruction => instruction.match(/(L[^ ]+;\.[^ ]+:[^ ]+)/)?.[1];
+  const fields = (method, opcode, accessorType) => method.instructions.flatMap(instruction => {
+    if (instruction.startsWith(`${opcode} `) && reference(instruction)?.startsWith(`${playlist}.`) &&
+        reference(instruction)?.endsWith(":Ljava/lang/String;")) return [reference(instruction)];
+    if (/^invoke-virtual(?:\/range)? /.test(instruction) &&
+        reference(instruction)?.endsWith(accessorType)) {
+      const accessor = methods.find(candidate => candidate.owner === playlist &&
+        candidate.reference === reference(instruction));
+      return accessor?.instructions.filter(line => line.startsWith(`${opcode} `))
+        .map(reference).filter(field => field?.startsWith(`${playlist}.`) &&
+          field.endsWith(":Ljava/lang/String;")) ?? [];
+    }
+    return [];
+  });
+  const reportedFields = new Set(reporters.flatMap(method => fields(method, "iget-object", ":()Ljava/lang/String;")));
+  const wired = methods.some(method => method.strings.has("mint:uri-headers-recovery-v1") &&
+    method.instructions.some(instruction => /^invoke-direct(?:\/range)? /.test(instruction) &&
+      instruction.includes(`${playlist}.<init>:`)) &&
+    fields(method, "iput-object", ":(Ljava/lang/String;)V").some(field => reportedFields.has(field)));
+  if (!wired) {
+    throw new Error('APK lacks the compiled Mint audio headers/recovery patch. Set expo.autolinking.android.buildFromSource to ["expo-audio"], retain the guarded audio plugin, and rebuild a signed APK; refusing APK/OTA distribution.');
+  }
+}
+
+export function verifyApkNativeAudio(apk, dexdump) {
+  const files = execFileSync("zipinfo", ["-1", apk], { encoding: "utf8" }).trim().split("\n");
+  const dexFiles = files.filter(file => /^classes(?:[2-9]|[1-9]\d+)?\.dex$/.test(file));
+  if (!dexFiles.length || new Set(dexFiles).size !== dexFiles.length) throw new Error("APK has missing or duplicate DEX entries.");
+  const directory = mkdtempSync(resolve(".android-ci/native-audio-"));
+  try {
+    const dumps = dexFiles.map(file => {
+      const local = resolve(directory, file);
+      writeFileSync(local, execFileSync("unzip", ["-p", apk, file], { maxBuffer: 256 * 1024 * 1024 }));
+      return execFileSync(dexdump, ["-d", local], { encoding: "utf8", maxBuffer: 512 * 1024 * 1024 });
+    });
+    verifyNativeAudio(dumps);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 function verifyApk(env) {
   if (!env.ANDROID_HOME) throw new Error("Missing ANDROID_HOME for APK verification.");
   const tool = name => resolve(env.ANDROID_HOME, "build-tools/36.0.0", name);
@@ -215,6 +280,7 @@ function verifyApk(env) {
   }
   const files = execFileSync("zipinfo", ["-1", ".android-ci/mint.apk"], { encoding: "utf8" }).split("\n");
   if (!files.includes("assets/app.manifest")) throw new Error("APK is missing its embedded recovery manifest.");
+  verifyApkNativeAudio(".android-ci/mint.apk", tool("dexdump"));
   const libraries = files.filter(file => /^lib\/.*\.so$/.test(file));
   if (!libraries.length || libraries.some(file => !file.startsWith("lib/arm64-v8a/"))) {
     throw new Error("APK must include native libraries for arm64-v8a only.");

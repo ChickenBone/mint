@@ -10,6 +10,7 @@
 ## Invariants
 
 - SDK versions come from the official Expo template and `expo install`. Only one dependency/lockfile writer works at a time.
+- Android must build `expo-audio` from source through the package's `expo.autolinking.android.buildFromSource` opt-out while the playback domain's authenticated playlist patch is required. SDK 58's stock precompiled Maven artifact ignores patched Kotlin; do not remove the opt-out based on passing source tests. Verify actual APK patch contents as well as signer/runtime, and rebuild for native changes.
 - Never import `@mint/core`, Next.js, database/Redis, worker secrets or Node modules into native runtime files. `@mint/client` contains only public DTOs, runtime validation and HTTP transport.
 - Native bearer credentials are revocable, expiring account/installation-bound sessions. Installation IDs are public metadata, not authorization. Store credentials in platform SecureStore, never AsyncStorage; Expo web keeps them in memory only.
 - Native requests enter a request-local, consumer-only server adapter. Cookie web authentication and Origin/CSRF protections stay unchanged. Never forge Origin or expose admin handlers through the facade.

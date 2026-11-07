@@ -4,6 +4,7 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { runInNewContext } from "node:vm";
+import { execFileSync } from "node:child_process";
 
 const load = createRequire(import.meta.url);
 type NativeSources = { version: string; moduleSource: string; playlistSource: string };
@@ -16,6 +17,16 @@ const source: NativeSources = {
   playlistSource: readFileSync(join(native, "AudioPlaylist.kt"), "utf8"),
 };
 
+test("Android autolinking builds patched expo-audio from source instead of its stock precompiled Maven publication", () => {
+  const command = load.resolve("expo-modules-autolinking/bin/expo-modules-autolinking");
+  const resolved = JSON.parse(execFileSync(process.execPath,
+    [command, "resolve", "--platform", "android", "--project-root", process.cwd(), "--json"],
+    { encoding: "utf8" }));
+  assert.ok(resolved.configuration?.buildFromSource?.includes("expo-audio"),
+    "Gradle must opt the patched audio module out of its prebuilt publication");
+  assert.ok(resolved.modules.some((module: { packageName: string }) => module.packageName === "expo-audio"));
+});
+
 test("native SDK58 patch is deterministic and idempotent on the exact audited release", () => {
   const patched = patchNativeSources(source);
   assert.deepEqual(patchNativeSources({ ...patched, version: source.version }), patched);
@@ -25,6 +36,8 @@ test("native SDK58 patch is deterministic and idempotent on the exact audited re
 test("the exact previous header-only patch upgrades in place while altered legacy sources are rejected", () => {
   const patched = patchNativeSources(source);
   const legacy = patched.playlistSource
+    .replace("\n  var mintAudioPatchVersion: String? = null", "")
+    .replace('          "mintAudioPatchVersion" to mintAudioPatchVersion,\n', "")
     .replace("\nimport androidx.media3.datasource.HttpDataSource", "")
     .replace('          "code" to error.errorCode,\n          "codeName" to error.errorCodeName,\n          "responseCode" to (error.cause as? HttpDataSource.InvalidResponseCodeException)?.responseCode',
       '          "code" to error.errorCode')
@@ -33,6 +46,26 @@ test("the exact previous header-only patch upgrades in place while altered legac
   assert.deepEqual(patchNativeSources({ ...patched, version: source.version, playlistSource: legacy }), patched);
   assert.throws(() => patchNativeSources({ ...patched, version: source.version,
     playlistSource: `${legacy}\n// unaudited legacy change` }), /checksum|shape/);
+});
+
+test("compiled provenance is assigned by the patched authenticated constructor and emitted only from its native error report", () => {
+  const patched = patchNativeSources(source);
+  assert.match(patched.moduleSource,
+    /ResolvingDataSource\.Factory\([\s\S]*?playlist\.mintAudioPatchVersion = "mint:uri-headers-recovery-v1"\s+playlist\.onSourcesCleared/);
+  assert.match(patched.playlistSource, /var mintAudioPatchVersion: String\? = null/);
+  const report = patched.playlistSource.slice(patched.playlistSource.indexOf("override fun onPlayerError"),
+    patched.playlistSource.indexOf("  fun next()"));
+  assert.match(report, /"mintAudioPatchVersion" to mintAudioPatchVersion/);
+  assert.equal((patched.moduleSource.match(/mint:uri-headers-recovery-v1/g) ?? []).length, 1);
+  assert.doesNotMatch(patched.playlistSource, /mint:uri-headers-recovery-v1/);
+  const previous = {
+    version: source.version,
+    moduleSource: patched.moduleSource.replace('          playlist.mintAudioPatchVersion = "mint:uri-headers-recovery-v1"\n', ""),
+    playlistSource: patched.playlistSource
+      .replace("\n  var mintAudioPatchVersion: String? = null", "")
+      .replace('          "mintAudioPatchVersion" to mintAudioPatchVersion,\n', ""),
+  };
+  assert.deepEqual(patchNativeSources(previous), patched, "exact audited recovery patch upgrades to provenance patch");
 });
 
 test("native SDK version or source drift fails the build loudly", () => {

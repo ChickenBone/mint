@@ -58,6 +58,22 @@ invalid XML from otherwise valid JSON-valued Expo channel metadata. Package,
 release debug state, production channel, exact fingerprint asset and its
 runtime resource reference, launch/recovery settings, signer and arm64
 16-KiB ZIP/ELF alignment are all checked before distribution or publication.
+APK verification also disassembles every `classes*.dex` with Build Tools 36
+`dexdump`. It requires the playlist's compiled error method to emit
+`codeName`, `responseCode` and native patch provenance, linked by the same
+String field (including uninlined accessors) to the patched playlist constructor
+wiring. Obfuscated class/member names are supported; unrelated strings in the
+APK are not proof. The versioned provenance assignment is maintained only in
+the checksum-guarded URI-header resolver patch, whose source tests separately
+verify header isolation and redirect blocking; this gate is packaging evidence,
+not a device/network test.
+
+Keep `expo.autolinking.android.buildFromSource: ["expo-audio"]` in the mobile
+package configuration. Otherwise Expo can use its stock precompiled Maven
+binary and silently bypass the Kotlin patch despite a successful source patch
+or fingerprint calculation. Missing compiled proof rejects both new APKs and
+downloaded OTA baselines before distribution. Rebuild a signed APK with the
+guarded plugin and source-build configuration; do not bypass verification.
 
 For a new fork without an existing signing key, generate one using JDK
 `keytool` on an operator-controlled machine:

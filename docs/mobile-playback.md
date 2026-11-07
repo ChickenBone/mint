@@ -76,6 +76,21 @@ including empty headers; unknown URIs get none. Clear and destroy erase the map.
 constructs ordinary range requests. The HTTP client disables redirects rather
 than forwarding bearer credentials to another host.
 
+SDK 58 publishes a stock precompiled Android Maven artifact for `expo-audio`.
+The app package's `expo.autolinking.android.buildFromSource: ["expo-audio"]`
+is required: without it Gradle can link that artifact instead of the patched
+Kotlin, dropping authenticated playlist headers even when prebuild/source tests
+pass. A playback regression resolves the real Android autolinking configuration
+and checks this opt-out. Removing it requires auditing an upstream replacement.
+The distributed APK must also be checked for compiled patch evidence: real
+autolinking/source checks prove intended build inputs, not the native code shipped
+inside a finished APK. An installed runtime match establishes artifact identity,
+not that Kotlin source modifications reached that artifact.
+The patched constructor assigns a non-secret native provenance value to its
+playlist; native error reports expose that value beside Media3/HTTP diagnostics.
+The compiled-artifact guard can tie constructor assignment and error reporting
+together without relying on class/method names that release R8 may obfuscate.
+
 The plugin also repairs recovery after an Android source error: Media3 enters
 `STATE_IDLE`, and adding media items alone does not prepare an idle player.
 Adding/inserting a source prepares only that idle state, leaving ready/buffering
