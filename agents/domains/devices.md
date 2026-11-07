@@ -26,7 +26,7 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 
 - **Scope:** Device registry, handoff, remote control and single-output listening parties.
 - **Read before editing:** [agents/playback-and-library.md](../playback-and-library.md), [docs/devices.md](../../docs/devices.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Imported by:** [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map devices` (exports, line counts, cross-domain import edges).
 

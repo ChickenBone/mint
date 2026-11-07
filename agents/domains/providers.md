@@ -35,14 +35,14 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map providers` (exports, line counts, cross-domain import edges).
 
-### Owned files (41)
+### Owned files (42)
 
 - `apps/web/src/app/(public)/` `charts/page.tsx`
 - `apps/web/src/app/actions/` `spotify.ts`
 - `apps/web/src/app/api/` `charts/request/route.ts`, `charts/route.ts`, `oauth/google/callback/route.ts`, `oauth/google/start/route.ts`, `oauth/spotify/callback/route.ts`, `oauth/spotify/start/route.ts`
 - `apps/web/src/app/app/` `discover/charts/[chart]/page.tsx`, `discover/charts/page.tsx`, `spotify/[id]/page.tsx`, `spotify/page.tsx`
 - `apps/web/src/components/app/` `chart-browser.tsx`, `link-youtube.tsx`, `spotify-controls.tsx`, `sync-panel.tsx`
-- `apps/web/src/lib/` `chart-cache.ts`, `chart-providers.ts`, `chart-service.ts`, `chart-source.ts`, `charts.ts`, `spotify-queue.ts`
+- `apps/web/src/lib/` `chart-cache.ts`, `chart-match-queue.ts`, `chart-providers.ts`, `chart-service.ts`, `chart-source.ts`, `charts.ts`, `spotify-queue.ts`
 - `apps/web/tests/` `charts-db.test.ts`, `charts-source.test.ts`, `charts.test.ts`
 - `apps/worker/src/` `chart-acquisition.test.ts`, `spotify-jobs.ts`, `spotify.integration.test.ts`, `spotify.test.ts`
 - `apps/worker/src/jobs/` `sync.ts`
