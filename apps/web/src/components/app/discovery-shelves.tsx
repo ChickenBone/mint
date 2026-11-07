@@ -76,12 +76,14 @@ export function DiscoveryShelves({ seeds }: { seeds: TrackView[] }) {
   };
   return <div className="discovery-shelves">
     <header className="mb-8 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3">
-      <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Discover</h1>
-      <nav aria-label="Discover views" className="flex items-center gap-3">
+      <div>
+        <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Explore</h2>
+        <p className="mt-2 text-sm text-muted">Mixes, radio and charts for what to play next.</p>
+      </div>
+      <nav aria-label="Explore more" className="flex flex-wrap items-center justify-end gap-x-3">
         <Link href="/app/discover/mixes" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">Your mixes<ArrowUpRight className="size-4" /></Link>
         <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">All charts</Link>
       </nav>
-      <p className="col-span-2 text-sm text-muted">Something familiar. Something you didn’t know you needed.</p>
     </header>
     {error && <p role="alert" className="mb-5 text-sm text-danger">{error}</p>}
     <p role="status" className={notice ? "mb-5 text-sm text-mint" : "sr-only"}>{notice}</p>

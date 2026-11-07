@@ -15,14 +15,14 @@ The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-firs
 | Destination | Purpose |
 | --- | --- |
 | Home | Personal recommendations, recent listens and new music |
-| Discover | Virtual playlist shelves, radios, mixes, charts and genre discovery |
+| Search | Local/external music search plus personalized shelves, radios, mixes, charts and genre discovery |
 | Library | Bounded album/artist/song browsing, search, filters and full-collection playback |
 | Your Library | Personal playlists and liked songs, with optional imports retaining their distinct ownership |
 | Player / Now Playing | Transport, queue and lyrics; never a separate embedded application |
 | Settings & management | Provider linking, devices/parties, activity/requests, workers and administration |
 | Public pages | Browse-only discovery and requests for access; public activity remains separately reachable |
 
-Desktop and mobile lead with Home, Search and Your Library. Discover and the shared catalog remain reachable from listening surfaces; Settings is available from the account control. Existing route links must remain usable during navigation changes.
+Desktop and mobile lead with Home, Search and Your Library. Search is the single discovery entry; chart and mix detail routes remain reachable from its shelves. The legacy Discover landing redirects to Search, preserving legacy chart/mix query routes. Settings is available from the account control.
 
 Move machinery out of the listening foreground; do not remove it. Sync status, acquisition failures and necessary user actions still need contextual visibility.
 
@@ -38,7 +38,7 @@ Artist names and album titles navigate independently of playback. Album detail h
 
 ## Discovery and charts
 
-Discover should feel like shelves of playable collections, not a provider configuration form. Generated playlist artwork is acceptable for actual virtual collections; fabricated tracks, popularity claims and human-curation claims are not.
+Search starts with a working, controlled query field; its empty-query state also offers playable playlist shelves, mixes, radio and charts. Generated playlist artwork is acceptable for actual virtual collections; fabricated tracks, popularity claims and human-curation claims are not. Chart and mix detail pages remain dedicated drill-ins, not competing discovery destinations.
 
 Within a chart, distinguish available, missing, ambiguous, requested, processing and failed states in text as well as color. Missing rows are gray/muted but readable; **Add to library** means acquisition, not playback-queue insertion.
 

@@ -32,6 +32,12 @@ export async function probe(file: string): Promise<Probe> {
   return { durationSec: Number.isFinite(d) ? Math.round(d) : null, codec: json.streams?.[0]?.codec_name ?? null };
 }
 
+export async function probePlayableAudio(file: string): Promise<Probe> {
+  const info = await probe(file);
+  if (!info.codec) throw new Error("No audio stream found");
+  return info;
+}
+
 const CONTAINER: Record<string, { ext: string; embedsArt: boolean }> = {
   opus: { ext: "opus", embedsArt: false },
   vorbis: { ext: "ogg", embedsArt: false },

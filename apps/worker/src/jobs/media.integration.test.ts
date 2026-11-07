@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmod, mkdtemp, readFile, rm } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 import { isLosslessUpgrade } from "../library-policy";
-import { probe, tagInto } from "../media";
+import { probe, probePlayableAudio, tagInto } from "../media";
 
 test("real audio probing and tagging preserve lossless quality and untouched originals", {
   skip: process.env.MINT_AUDIO_TEST !== "true",
@@ -32,6 +32,10 @@ test("real audio probing and tagging preserve lossless quality and untouched ori
   const info = await probe(original);
   assert.equal(info.codec, "mp3");
   assert.equal(info.durationSec, 10);
+  assert.equal((await probePlayableAudio(original)).codec, "mp3");
+  const invalid = path.join(root, "invalid.m4a");
+  await writeFile(invalid, "not an audio stream");
+  await assert.rejects(() => probePlayableAudio(invalid), /ffprobe exited 1/);
   assert.equal(isLosslessUpgrade(info.codec, (await probe(path.join(root, "inferior.m4a"))).codec), false);
   for (const candidate of ["candidate.flac", "candidate.wav"]) {
     const src = path.join(root, candidate);

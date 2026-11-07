@@ -7,6 +7,7 @@ import {
   legacyCollectionDetailHref,
   legacyCollectionsHref,
   legacyDevicesHref,
+  legacyDiscoverDestination,
   legacyDiscoverHref,
   legacyDownloadsHref,
   legacyHistoryHref,
@@ -39,6 +40,9 @@ test("legacy discover tabs map to real subroutes", () => {
   assert.equal(legacyDiscoverHref(new URLSearchParams("tab=charts")), "/app/discover/charts");
   assert.equal(legacyDiscoverHref(new URLSearchParams("tab=mixes&mode=recent")), "/app/discover/mixes?mode=recent");
   assert.equal(legacyDiscoverHref(new URLSearchParams()), null);
+  assert.equal(legacyDiscoverDestination(new URLSearchParams()), "/app/search");
+  assert.equal(legacyDiscoverDestination(new URLSearchParams("chart=apple-us")), "/app/discover/charts/apple-us");
+  assert.equal(legacyDiscoverDestination(new URLSearchParams("tab=mixes&mode=recent")), "/app/discover/mixes?mode=recent");
 });
 
 test("legacy Your music routes redirect to /app/collection and preserve query state", () => {

@@ -24,7 +24,7 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
   const collection = DISCOVERY_MIXES.find((collection) => collection.mode === mode) ?? {
     id: mode, title: labels[mode], cover: mode === "sonic" ? "Measured\nmix" : "Library\nradio", color: 3,
     description: mode === "sonic" ? "Connections found in your music’s measured sound." : "Follow a few favorites into another corner of your library.",
-    href: "/app/discover", caption: "Mint mix",
+    href: "/app/search", caption: "Mint mix",
   };
   const run = async (fn: () => Promise<void>) => { setBusy(true); setError(""); setNotice(""); try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
   const load = async (next: DiscoveryMode) => {
@@ -32,8 +32,8 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
     const result = await musicRequest<Shelf>(`discover?${query}`); setShelf(result); setMode(next);
   };
   return <section className="mx-auto max-w-6xl">
-    <nav aria-label="Discover views" className="mb-6 flex flex-wrap gap-4 text-sm font-semibold">
-      <Link href="/app/discover" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Discover</Link>
+    <nav aria-label="Mix navigation" className="mb-6 flex flex-wrap gap-4 text-sm font-semibold">
+      <Link href="/app/search" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Search</Link>
       <Link href="/app/discover/mixes" aria-current="page" className="inline-flex min-h-11 items-center text-fg">Your mixes</Link>
       <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Charts</Link>
     </nav>

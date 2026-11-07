@@ -71,7 +71,7 @@ export function SetupNudge({ memberId }: SetupNudgeProps) {
           Find your first song <ArrowRight className="size-4" aria-hidden />
         </Link>
         <Link
-          href="/app/discover"
+          href="/app/search"
           className="inline-flex min-h-11 items-center gap-2 rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover"
         >
           <Compass className="size-4" aria-hidden />

@@ -2,12 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { ArrowDownToLine, Disc3, ListMusic, Loader2, MicVocal, Play, Search, TrendingUp } from "lucide-react";
+import type { TrackView } from "@mint/core/events";
 import { Artwork } from "@/components/artwork";
 import { ReportIssueButton } from "@/components/app/report-issue";
 import { fetchCatalog } from "@/lib/browser-catalog";
-import { CHARTS } from "@/lib/charts";
 import { formatDuration } from "@/lib/format";
 import type { RecordingSearchItem } from "@/lib/music-requests";
 import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
@@ -16,6 +15,7 @@ import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
+import { DiscoveryShelves } from "./discovery-shelves";
 
 const recentKey = "mint:recent-searches";
 const browseTiles = [
@@ -56,10 +56,8 @@ function subscribeRecent(listener: () => void) {
   };
 }
 
-export function GlobalSearch() {
-  const params = useSearchParams();
-  const urlQuery = params.get("q") ?? "";
-  const query = urlQuery.slice(0, 100);
+export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: string; discoverySeeds: TrackView[] }) {
+  const [query, setQuery] = useState(initialQuery.slice(0, 100));
   const [local, setLocal] = useState<LocalResult | null>(null);
   const [external, setExternal] = useState<ExternalResult | null>(null);
   const [retry, setRetry] = useState(0);
@@ -111,6 +109,15 @@ export function GlobalSearch() {
     const focusSearch = () => input.current?.focus({ preventScroll: true });
     window.addEventListener("mint:focus-search", focusSearch);
     return () => window.removeEventListener("mint:focus-search", focusSearch);
+  }, []);
+
+  useEffect(() => {
+    const syncQuery = () => {
+      requestGeneration.current++;
+      setQuery(new URL(window.location.href).searchParams.get("q")?.slice(0, 100) ?? "");
+    };
+    window.addEventListener("popstate", syncQuery);
+    return () => window.removeEventListener("popstate", syncQuery);
   }, []);
 
   useEffect(() => {
@@ -225,10 +232,12 @@ export function GlobalSearch() {
     if (event.key === "Enter" && event.target === input.current) remember(query);
   };
   const updateQuery = (value: string) => {
+    const nextQuery = value.slice(0, 100);
     requestGeneration.current++;
     const next = new URL(window.location.href);
-    if (value) next.searchParams.set("q", value.slice(0, 100)); else next.searchParams.delete("q");
+    if (nextQuery) next.searchParams.set("q", nextQuery); else next.searchParams.delete("q");
     window.history.replaceState(window.history.state, "", `${next.pathname}${next.search}${next.hash}`);
+    setQuery(nextQuery);
   };
   const retrySearch = () => {
     setLocal({ query: normalized, groups: [], errors: 0, loading: true });
@@ -268,19 +277,7 @@ export function GlobalSearch() {
           </Link>
         </li>)}</ul>
       </nav>
-      <section className="mt-8" aria-labelledby="search-charts-heading">
-        <h2 id="search-charts-heading" className="mb-3 text-xl font-bold">Charts</h2>
-        <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {CHARTS.map((chart) => <li key={chart.id}>
-            <Link href={`/app/discover/charts/${encodeURIComponent(chart.id)}`}
-              className="flex min-h-16 items-center justify-between gap-4 rounded-control px-4 py-3 hover:bg-elevated focus-visible:outline-action">
-              <span className="min-w-0"><span className="block truncate font-semibold">{chart.title}</span>
-                <span className="block truncate text-sm text-muted">{chart.territory} · {chart.providerName}</span></span>
-              <span aria-hidden className="text-muted">→</span>
-            </Link>
-          </li>)}
-        </ul>
-      </section>
+      <div className="mt-12"><DiscoveryShelves seeds={discoverySeeds} /></div>
     </>}
 
     {normalized.length === 1 && <p className="mt-6 text-sm text-muted">Type at least two characters to search.</p>}
@@ -315,7 +312,7 @@ function ExternalRecording({ item, request, playable, busy, playDisabled, onPlay
   const failed = current?.stage === "failed" || !!current?.error;
   const processing = !!current && !failed && !playable;
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  return <li className="flex min-h-20 items-center gap-3 py-3">
+  return <li className="flex min-h-20 flex-wrap items-center gap-3 py-3">
     <Artwork track={{ artworkUrl: playable?.thumb ?? "" }} className="size-12 shrink-0 rounded" />
     <div className="min-w-0 flex-1">
       <p className="truncate font-semibold">{item.title}</p>

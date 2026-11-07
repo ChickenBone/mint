@@ -125,6 +125,10 @@ export function legacyDiscoverHref(params: URLSearchParams) {
   return null;
 }
 
+export function legacyDiscoverDestination(params: URLSearchParams) {
+  return legacyDiscoverHref(params) ?? "/app/search";
+}
+
 export function legacyCollectionsHref(params: URLSearchParams = new URLSearchParams()) {
   const next = new URLSearchParams(params);
   return withQuery("/app/collection", next);

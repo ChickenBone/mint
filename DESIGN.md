@@ -6,11 +6,11 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 
 **Thesis:** music and personal collections lead; the machinery stays available without competing for attention.
 **World:** cool charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus. A restrained blue/teal wash establishes listening atmosphere; lavender identifies the Liked songs sleeve. Administrative surfaces stay opaque and neutral.
-**Path:** Home, Search and Your Library lead. Discover and the shared catalog remain accessible from listening surfaces. Settings holds personal preferences and optional imports; the admin portal holds server operations.
+**Path:** Home, Search and Your Library lead. Search combines query-based lookup with personalized discovery shelves; charts and mixes remain dedicated drill-in routes. The old Discover landing redirects to Search. Settings holds personal preferences and optional imports; the admin portal holds server operations.
 **First viewport:** navigation, familiar music shelves and an anchored transport. Phones retain the same primary destinations and persistent playback.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
 
-**Discover:** Spotify-style playlist shelves, not a chart administration form. Original generated covers carry oversized typography, a confident color palette and small Mint/source credits. Daily blend, Fresh finds, rediscovery and artist radio open real library mixes; chart and genre covers open their actual ranked collections. Horizontal shelves remain swipeable on phones. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
+**Search & Explore:** Search is the single entry for finding music and starting discovery. The focused query searches local and external recordings; the empty-query view includes browse shortcuts, personalized playlist shelves, artist radio, genres and charts. Dedicated mix and chart routes retain their detailed flows, with back links returning to Search. Generated covers carry oversized typography, a confident color palette and small Mint/source credits. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
 
 ## System
 
@@ -31,8 +31,9 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 | Capability | Home in the redesigned app |
 | --- | --- |
 | Recommendations, recent likes, new arrivals | Home |
-| Provider charts, territory Top 50, weekly community/trending collections | Discover → playlist cards / All charts |
-| Personal discovery, radio, multi-seed/sonic mixes, rediscovery, saved mixes | Discover → Your mixes |
+| Query-based local and external music search, personalized shelves and discovery entry | Search |
+| Provider charts, territory Top 50, weekly community/trending collections | Search → Explore → playlist cards / All charts |
+| Personal discovery, radio, multi-seed/sonic mixes, rediscovery, saved mixes | Search → Explore → Your mixes |
 | Native albums/artists/songs, search, metadata filters, full-collection queues/shuffle | Library |
 | Native/editable/smart/collaborative playlists, folders/pins and liked songs | Your Library |
 | YouTube imports and existing sync controls | Optional import / Settings → Music imports |

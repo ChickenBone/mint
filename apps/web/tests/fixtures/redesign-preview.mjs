@@ -165,6 +165,8 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal((await publicContext.request.get(`${base}/api/player/audio/${tracks[0].id}`)).status(), 401);
     await publicContext.close();
     await page.goto(`${base}/app/discover`);
+    await page.waitForURL((url) => url.pathname === "/app/search");
+    await page.getByRole("heading", { name: "Explore", exact: true }).waitFor();
     const sidebarPlaylists = page.getByRole("list", { name: "Mint playlists" });
     await sidebarPlaylists.getByRole("link", { name: "Evening drives", exact: true }).waitFor();
     try { await page.waitForFunction(() => document.querySelector('[data-player-mounted="ready"]'), { timeout: 10000 }); }
@@ -180,14 +182,15 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("link", { name: "Open Daily blend", exact: true }).click();
     await page.getByRole("heading", { name: "Daily blend", exact: true }).waitFor();
     await shot("discover-mix");
-    await page.getByRole("navigation", { name: "Discover views" }).getByRole("link", { name: "Discover", exact: true }).click();
+    await page.getByRole("navigation", { name: "Mix navigation" }).getByRole("link", { name: "Search", exact: true }).click();
     await page.getByRole("link", { name: "Open United States Top 50", exact: true }).click();
     await page.getByRole("button", { name: `Play ${tracks[0].title}`, exact: true }).click();
     await page.waitForFunction(() => Array.from(document.querySelectorAll("audio")).some((audio) => !audio.paused && audio.currentTime > .1));
     const playing = await page.evaluate(() => { const audio = Array.from(document.querySelectorAll("audio")).find((element) => !element.paused); audio.dataset.previewIdentity = "persistent"; return audio.currentTime; });
     await page.getByRole("link", { name: "Home", exact: true }).first().click(); await page.waitForURL("**/app");
     await page.waitForFunction((previous) => document.querySelector("audio[data-preview-identity]")?.currentTime > previous, playing);
-    await shot("home"); await page.getByRole("link", { name: "Discover", exact: true }).first().click(); await page.waitForURL("**/app/discover");
+    await shot("home"); await page.getByRole("link", { name: "Search", exact: true }).first().click(); await page.waitForURL("**/app/search");
+    await page.getByRole("heading", { name: "Explore", exact: true }).waitFor();
     await page.getByRole("link", { name: "Open United States Top 50", exact: true }).click();
     await page.getByRole("button", { name: "Play", exact: true }).click();
     await page.getByRole("status").filter({ hasText: "1 not in your library yet" }).waitFor();
@@ -228,7 +231,10 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).waitFor();
     await page.getByRole("button", { name: `Play ${missing.title}`, exact: true }).click();
     await page.getByRole("link", { name: "Search", exact: true }).first().click();
-    await page.getByRole("searchbox", { name: "Search songs, artists or albums" }).fill(searchRecording.title);
+    const searchbox = page.getByRole("searchbox", { name: "Search songs, artists or albums" });
+    await searchbox.fill(searchRecording.title);
+    assert.equal(await searchbox.inputValue(), searchRecording.title, "Search input state reflects typed text");
+    assert.equal(new URL(page.url()).searchParams.get("q"), searchRecording.title, "Typed search is reflected in the URL");
     await page.getByText(searchRecording.title, { exact: true }).waitFor();
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 0, "Searching must not request a song");
     await shot("search-missing");
@@ -246,8 +252,8 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
     await page.keyboard.press("/");
     await page.waitForURL((url) => url.pathname === "/app/search");
-    const searchbox = page.getByRole("searchbox", { name: "Search songs, artists or albums" });
     await searchbox.fill("Quiet Orbit");
+    assert.equal(await searchbox.inputValue(), "Quiet Orbit", "Search remains editable after navigation");
     const searchPlayButton = page.getByRole("button", { name: "Play Quiet Orbit", exact: true });
     await searchPlayButton.waitFor();
     await searchPlayButton.click();
@@ -264,8 +270,9 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
       if (active) active.dataset.previewIdentity = "persistent";
     });
 
-    const rowMenuButton = page.locator('button[aria-label^="More options for"]').first();
-    const rowTitle = (await rowMenuButton.getAttribute("aria-label")).replace("More options for ", "");
+    const rowTitle = "Quiet Orbit";
+    const rowMenuButton = page.getByRole("region", { name: "Songs", exact: true })
+      .getByRole("button", { name: `More options for ${rowTitle}`, exact: true });
     await rowMenuButton.click();
     await page.waitForTimeout(100);
     await page.getByRole("menu", { name: `Actions for ${rowTitle}` }).waitFor();
@@ -349,7 +356,7 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await shot("mobile-library", "/app/library");
     await shot("mobile-now-playing", "/app/now-playing");
     await page.setViewportSize({ width: 360, height: 800 }); await shot("narrow-library", "/app/library");
-    await page.setViewportSize({ width: 768, height: 1024 }); await shot("tablet-discover", "/app/discover");
+    await page.setViewportSize({ width: 768, height: 1024 });     await shot("tablet-discover", "/app/search");
     await page.setViewportSize({ width: 1440, height: 1000 });
     await shot("liked", "/app/collection?tab=likes");
     await page.getByText("8 songs", { exact: true }).waitFor();
@@ -375,10 +382,10 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await shot("workers", "/app/manage?tab=workers");
     await page.setViewportSize({ width: 390, height: 844 });
     await shot("mobile-player", "/app/now-playing");
-    await shot("mobile-discover", "/app/discover");
+    await shot("mobile-discover", "/app/search");
     await shot("mobile-charts", "/app/discover/charts/apple-us");
     await page.setViewportSize({ width: 320, height: 740 });
-    await shot("mobile-small-discover", "/app/discover");
+    await shot("mobile-small-discover", "/app/search");
     await shot("mobile-small-charts", "/app/discover/charts/apple-us");
     await page.keyboard.press("Tab");
     assert.ok(await page.evaluate(() => document.activeElement?.tagName !== "BODY"), "Keyboard navigation has a focusable destination");

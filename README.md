@@ -17,7 +17,7 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and one route-based Search for your library and more recordings. No embedded Plexamp required. |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
 | **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
-| **Discover music** | Explore daily mixes, artist radio and real charts alongside your own library. |
+| **Search and discover** | Search your library and more recordings, then browse personalized mixes, artist radio, genres and real charts without changing destinations. |
 | **Shape your listening** | Equalizer, loudness normalization, waveform, Mint Smart Fades, lyrics and personal lyric corrections. Mint's own analysis does not require Plex Pass. |
 | **Bring existing playlists** | YouTube Music linking and Spotify playlist metadata are optional integrations. Spotify imports play local matches only; they do not stream Spotify audio or automatically download missing songs. [Provider requirements](docs/spotify.md). |
 | **Explore real charts** | Keyless Apple Music country Top 50s, ListenBrainz community rankings and Audius trending/genre collections. Play local matches or explicitly request missing recordings; never automatic downloads. [Coverage, providers and setup](docs/charts.md). |
@@ -92,7 +92,7 @@ The [complete guide](docs/self-hosting.md#command-line-setup) explains provider 
 ### Your first session
 
 1. **Open the Admin portal.** Confirm the worker and Plex are reachable. If using existing music, wait for indexing and correct any path-mapping errors before syncing.
-2. **Browse or search.** Explore indexed albums, songs and charts. Linking a provider is not required to listen to existing music; keyless charts need no extra account.
+2. **Search and explore.** Search indexed albums, songs and external recordings, or browse personalized mixes and charts from the same destination. Linking a provider is not required to listen to existing music; keyless charts need no extra account.
 3. **Make it yours.** Like songs, create a playlist and explore your library. Connections such as [YouTube Music](docs/self-hosting.md#google-youtube-music-linking), [Spotify playlists](docs/spotify.md), or [Lidarr + TorBox](docs/self-hosting.md#lidarr--torbox) are optional.
 4. **Invite your household.** People request an account on your own hostname; approve them in Admin. A separate Plex library invitation is needed only for external Plex clients.
 
@@ -111,12 +111,8 @@ Current desktop and mobile views, captured from a local demo instance. All names
 | ![Unified Search with a fictional external recording and an explicit Add to library action](docs/screenshots/search-missing.png) | ![A fictional chart song after an explicit request](docs/screenshots/chart-requested.png) |
 | **Search:** browse local matches and add a missing recording only when you choose. | **Requests:** follow a chart song as it becomes available; the demo simulates completion. |
 
-![Discover's generated playlist covers, daily mixes, artist radio and chart collections](docs/screenshots/discover.png)
-
 <p align="center">
   <img src="docs/screenshots/mobile-home.png" alt="Mint recommendations and persistent player on a phone" width="260">
-  &nbsp;
-  <img src="docs/screenshots/mobile-discover.png" alt="Swipeable Discover shelves with generated playlist covers, titles and descriptions" width="260">
   &nbsp;
   <img src="docs/screenshots/mobile-player.png" alt="Mint mobile Now playing screen with album cover and pinned playback controls" width="260">
 </p>

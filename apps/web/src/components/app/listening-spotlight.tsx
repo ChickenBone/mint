@@ -19,7 +19,7 @@ export function ListeningSpotlight({ track, reason }: { track: TrackView | null;
         {track ? <><button disabled={!player?.ready || player.busy} onClick={() => player?.command({ action: "play", item: trackPlayerItem(track) })}
           className="inline-flex min-h-12 items-center gap-3 rounded-full bg-mint px-6 text-sm font-bold text-mint-ink hover:bg-mint-strong disabled:opacity-40"><Play className="size-4" fill="currentColor" />Listen now</button><TrackMenuButton item={trackPlayerItem(track)} /></>
           : <Link href="/app/library" className="inline-flex min-h-12 items-center rounded-full bg-mint px-6 text-sm font-bold text-mint-ink">Open your library</Link>}
-        <Link href="/app/discover" className="inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-muted hover:text-fg">Find something new<ArrowUpRight className="size-4" /></Link>
+        <Link href="/app/search" className="inline-flex min-h-12 items-center gap-2 rounded-full px-4 text-sm font-semibold text-muted hover:text-fg">Find something new<ArrowUpRight className="size-4" /></Link>
       </div>
     </div>
     {track && <MusicItem item={trackPlayerItem(track)} className="spotlight-sleeve mx-auto w-full max-w-sm">

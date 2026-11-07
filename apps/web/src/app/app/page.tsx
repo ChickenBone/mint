@@ -74,8 +74,8 @@ export default async function Home() {
         <Link href="/app/library" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
           Browse all music
         </Link>
-        <Link href="/app/discover" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
-          Discover
+        <Link href="/app/search" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
+          Search
         </Link>
         <Link href="/app/collection?tab=likes" className="inline-flex min-h-11 items-center rounded-full bg-elevated px-5 text-sm font-semibold hover:bg-hover">
           Liked songs
@@ -84,7 +84,7 @@ export default async function Home() {
       </header>
 
       <SongShelf title="Recently played" tracks={recentlyPlayed} href="/app/collection?tab=history" />
-      <SongShelf title="Recommended for you" tracks={recommended} href="/app/discover" linkLabel="Explore" />
+      <SongShelf title="Recommended for you" tracks={recommended} href="/app/search" linkLabel="Explore" />
       {newArrivals.length > 0 && (
         <section className="song-shelf">
           <div className="mb-4 flex items-center justify-between gap-4">
