@@ -14,7 +14,7 @@ const colors = [
   ["#c2ed78", "#183921"], ["#bdb0ed", "#291b4a"], ["#f1a793", "#471c2a"],
   ["#293575", "#fff1df"], ["#e8c35f", "#3b2816"], ["#9ec6e7", "#152c47"],
 ];
-type Collection = { id: string; title: string; cover: string; description: string; href: string; color: number;
+export type Collection = { id: string; title: string; cover: string; description: string; href: string; color: number;
   mode?: "for-you" | "recent" | "rediscover" | "radio"; seed?: string; artwork?: string; caption: string };
 const mix = (mode: string, seed?: string) => `/app/discover/mixes?${new URLSearchParams({ mode, ...(seed ? { seed } : {}) })}`;
 export const DISCOVERY_MIXES: Collection[] = [
@@ -22,7 +22,7 @@ export const DISCOVERY_MIXES: Collection[] = [
   { id: "fresh", title: "Fresh finds", cover: "Fresh\nfinds", description: "The latest additions to your own little music universe.", href: mix("recent"), mode: "recent", color: 1, caption: "Library picks" },
   { id: "again", title: "Play it again", cover: "Play it\nagain.", description: "The songs you left on the shelf. Time for another listen.", href: mix("rediscover"), mode: "rediscover", color: 2, caption: "Rediscover" },
 ];
-function chartCollection(chart: ChartDefinition, index: number): Collection {
+export function chartCollection(chart: ChartDefinition, index: number): Collection {
   const country = chart.country?.toUpperCase();
   return { id: chart.id, title: chart.title,
     cover: country ? `Top 50\n${country}` : chart.genre ? chart.genre.replace("Hip-Hop/Rap", "Hip-hop\nrotation").replace("Electronic", "Electro\npulse") : chart.provider === "listenbrainz" ? "World\nof listens\n50" : "Indie\nrotation",

@@ -5,12 +5,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TrackView } from "@mint/core/events";
 import { ArrowDown, ArrowUp, CheckCircle2, Heart, ListMusic, Plus, Sparkles, Trash2 } from "lucide-react";
-import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
+import { Artwork } from "@/components/artwork";
 import { Badge } from "@/components/ui/primitives";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { musicRequest, type CollectionDetail } from "@/lib/music-client";
 import { CollectionActions } from "./collection-actions";
-import { MusicTrackList } from "./music-track-list";
+import { MusicTrackList, PlaylistHeader } from "./music-track-list";
 
 const field = "ui-field mt-2 min-h-11 w-full rounded-control bg-elevated px-4 py-2 text-sm ring-1 ring-line focus:ring-mint";
 const button = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-elevated px-4 py-2 text-sm font-semibold hover:bg-hover disabled:opacity-40";
@@ -81,17 +81,18 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         ← Your Library
       </Link>
 
-      <header className="playlist-heading collection-hero music-atmosphere mb-6">
-        <ArtworkAtmosphere src={data.artworkUrl} />
-        {data.artworkUrl ? (
-          <Artwork track={{ artworkUrl: data.artworkUrl }} eager className="collection-hero-art" />
+      <PlaylistHeader
+        title={data.title}
+        artworkUrl={data.artworkUrl}
+        artwork={data.artworkUrl ? (
+          <Artwork track={{ artworkUrl: data.artworkUrl }} eager className="size-full rounded-none" />
         ) : (
-          <span className="collection-hero-art grid place-items-center bg-elevated text-faint">
+          <span className="grid size-full place-items-center bg-elevated text-faint">
             <ListMusic className="size-10" aria-hidden />
           </span>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
+        eyebrow={
+          <>
             <Badge tone="neutral">{data.rules ? "Smart playlist" : "Playlist"}</Badge>
             <span className="inline-flex items-center gap-1.5 text-xs text-muted">
               {data.rules ? (
@@ -106,17 +107,20 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
                 </>
               )}
             </span>
-          </div>
-          <h1 className="break-words text-3xl font-extrabold tracking-tight sm:text-5xl">{data.title}</h1>
-          <p className="mt-3 max-w-prose whitespace-pre-wrap text-sm text-muted">
+          </>
+        }
+        description={
+          <p className="whitespace-pre-wrap">
             {data.description || (data.rules ? "A living playlist, rebuilt from your library rules." : "Your order. Your repeats. Make this one yours.")}
           </p>
-          <p className="mt-2 text-xs text-faint tabular">
+        }
+        metadata={
+          <p className="text-xs text-faint tabular">
             {data.role === "owner" ? "Your playlist" : "Collaborating editor"} · {data.entries.length} songs
             {playableCount < data.entries.length ? ` · ${playableCount} playable` : ""}
           </p>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mb-7 flex flex-wrap items-center gap-3">
         <CollectionActions

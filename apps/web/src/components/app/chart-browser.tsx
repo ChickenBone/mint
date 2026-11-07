@@ -11,7 +11,8 @@ import { useRealtime } from "@/components/realtime";
 import { ReportIssueButton } from "@/components/app/report-issue";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
-import { MusicItem } from "./music-item";
+import { PlaylistCover, chartCollection } from "./discovery-shelves";
+import { PlaylistHeader, PlaylistTrackList, PlaylistTrackRow } from "./music-track-list";
 
 type RecordingResult = RequestRecording & { token: string; existing: { id: string; stage: string } | null };
 type Acquisition = { status: "available" | "requested" } | { status: "resolve"; message: string; query: string; results: RecordingResult[] };
@@ -117,15 +118,18 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
     finally { setBusy(false); }
   };
   return <section aria-label="Music charts" aria-busy={busy} className="chart-browser">
-    <header className="mb-5 grid gap-4 border-b border-line pb-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-      <div className="min-w-0">
-        <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{page.chart.title}</h1>
-        <p className="mt-1 text-xs text-faint">
+    <PlaylistHeader
+      title={page.chart.title}
+      artworkUrl={page.items[0]?.item?.thumb ?? page.items[0]?.artwork}
+      artwork={<PlaylistCover collection={chartCollection(page.chart, Math.max(0, CHARTS.findIndex((chart) => chart.id === page.chart.id)))} />}
+      metadata={
+        <p className="text-xs text-faint">
           {page.chart.territory}{page.period ? ` · ${page.period}` : ""}
           {" · "}<a href={page.chart.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 underline underline-offset-4 hover:text-fg">{page.chart.providerName}<ExternalLink className="size-3" aria-hidden /></a>
         </p>
-      </div>
-      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      }
+      actions={
+        <>
         <label className="sr-only" htmlFor="chart-select">Choose a chart</label>
         <select id="chart-select" value={page.chart.id} disabled={busy} onChange={(event) => void load(event.target.value)} className="min-h-11 max-w-full rounded-xl bg-elevated px-3 text-sm text-fg ring-1 ring-line">
           {(["apple", "listenbrainz", "audius"] as const).map((provider) => <optgroup key={provider} label={CHARTS.find((chart) => chart.provider === provider)!.providerName}>
@@ -135,45 +139,60 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
         {member ? <button className={`${action} bg-mint text-mint-ink ring-0 hover:bg-mint-strong`} disabled={busy || !player?.ready || player.busy || !page.total} onClick={() => void play()}><Play className="size-4" fill="currentColor" />Play</button>
           : <Link className={action} href="/login">Sign in to listen</Link>}
         <button className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg disabled:opacity-40" disabled={busy} aria-label="Refresh chart" onClick={() => void load(page.chart.id, page.offset)}><RefreshCw className="size-4" /></button>
-      </div>
-    </header>
+        </>
+      }
+    />
     {page.total > 0 && page.status === "error" && <p role="status" className="mb-5 text-sm text-muted">Couldn’t refresh this chart. <button className="min-h-11 underline" onClick={() => void load(page.chart.id)}>Try again</button></p>}
     {page.total > 0 && page.status === "stale" && <p role="status" className="mb-5 text-sm text-muted">This chart may be out of date. <button className="min-h-11 underline" onClick={() => void load(page.chart.id)}>Refresh</button></p>}
     {error && <p role="alert" className="mb-5 text-sm text-danger">{error} <button className="min-h-11 underline" onClick={() => void load(page.chart.id)}>Reload chart</button></p>}
     <p role="status" className="text-sm text-mint">{notice}</p>
     {page.status === "error" && !page.total ? <div className="py-12"><h3 className="text-xl font-semibold">This chart isn’t available right now.</h3><button className={`${action} mt-4`} onClick={() => void load(page.chart.id)}><RefreshCw className="size-4" />Try again</button></div>
       : !page.total ? <div className="py-12"><h3 className="text-xl font-semibold">Nothing on this chart yet.</h3><p className="mt-3 text-sm text-muted">Try another chart.</p></div>
-      : <ol start={page.offset + 1} className="chart-rows mt-3">{page.items.map((row) => <MusicItem as="li" item={member && row.availability === "available" ? row.item : null} key={`${page.chart.id}:${row.id}`} className="chart-row group" data-availability={row.availability}>
-        <span className="text-center text-sm text-faint tabular">{row.rank}</span>
-        <div className={`relative ${row.availability !== "available" ? "grayscale" : ""}`}>
-          <Artwork track={{ artworkUrl: row.item?.thumb ?? row.artwork ?? "" }} className="size-14 rounded-lg" />
-          {row.availability === "available" && member && <button aria-label={`Play ${row.title}`} disabled={!player?.ready || player.busy} onClick={() => player?.command({ action: "play", item: row.item! })}
-            className="absolute inset-0 grid place-items-center rounded-lg bg-bg/70 text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"><Play className="size-5" fill="currentColor" /></button>}
-        </div>
-        <div className="min-w-0">
-          <p className="truncate font-semibold">{row.title}</p><p className="truncate text-sm text-muted">{member && row.item ? <ArtistLink item={row.item} /> : row.artist}</p>
-          {row.availability !== "available" && row.availability !== "missing" && <p className="mt-1 text-xs text-faint">{statusNames[row.availability]}{row.availability === "processing" && row.progress !== null ? ` · ${Math.round(row.progress)}%` : ""}</p>}
-          {row.availability === "processing" && <progress aria-label={`Progress for ${row.title}`} value={row.progress ?? 0} max={100} className="mt-2 h-1 w-full max-w-40 accent-mint" />}
-        </div>
-        <p className="hidden text-sm text-faint tabular md:block">{row.durationSec ? formatDuration(row.durationSec) : "—"}</p>
-        <div className="chart-row-actions flex items-center justify-end gap-1">
+      : <PlaylistTrackList label="Ranked chart tracks" start={page.offset + 1} className="mt-3">{page.items.map((row) => <PlaylistTrackRow
+        key={`${page.chart.id}:${row.id}`}
+        item={member && row.availability === "available" ? row.item : null}
+        className="playlist-track-row-chart"
+        availability={row.availability}
+        rank={row.rank}
+        artworkUrl={row.item?.thumb ?? row.artwork}
+        artwork={
+          <div className={`relative size-full ${row.availability !== "available" ? "grayscale" : ""}`}>
+            <Artwork track={{ artworkUrl: row.item?.thumb ?? row.artwork ?? "" }} className="size-full rounded-lg" />
+            {row.availability === "available" && member && <button aria-label={`Play ${row.title}`} disabled={!player?.ready || player.busy} onClick={() => player?.command({ action: "play", item: row.item! })}
+              className="playlist-track-play absolute inset-0 grid place-items-center rounded-lg bg-bg/70 text-fg opacity-0 group-hover:opacity-100 focus-visible:opacity-100 disabled:opacity-40"><Play className="size-5" fill="currentColor" /></button>}
+          </div>
+        }
+        title={row.title}
+        subtitle={member && row.item ? <ArtistLink item={row.item} /> : row.artist}
+        details={
+          <>
+            {row.availability !== "available" && row.availability !== "missing" && <p className="text-xs text-faint">{statusNames[row.availability]}{row.availability === "processing" && row.progress !== null ? ` · ${Math.round(row.progress)}%` : ""}</p>}
+            {row.availability === "processing" && <progress aria-label={`Progress for ${row.title}`} value={row.progress ?? 0} max={100} className="mt-2 h-1 w-full max-w-40 accent-mint" />}
+          </>
+        }
+        duration={<span>{row.durationSec ? formatDuration(row.durationSec) : "—"}</span>}
+        actions={<div className="chart-row-actions flex items-center justify-end gap-1">
           {row.availability === "available" ? member ? <><Check className="size-4 text-muted" aria-label="In your library" /><TrackMenuButton item={row.item!} /></> : <span className="text-xs text-muted">In library</span>
             : ["requested", "processing"].includes(row.availability) ? <span className="inline-flex min-h-11 items-center gap-2 text-xs text-muted" role="status"><Loader2 className="size-4" />{statusNames[row.availability as "requested" | "processing"]}</span>
             : member ? <AddButton row={row} busy={busy} state={requesting?.view === view && requesting.id === row.id ? "checking" : waiting.some((job) => job.row.id === row.id) ? "waiting" : rowErrors[row.id] ? "error" : "idle"}
               open={resolution?.row.id === row.id} onClick={() => request({ row })} />
               : <Link className="inline-flex min-h-11 items-center text-xs text-muted underline" href="/request-access">Request access</Link>}
-        </div>
-        {member && rowErrors[row.id] ? <div className="chart-row-reason flex flex-wrap items-center gap-x-3 text-xs leading-relaxed text-danger" role="alert">
-          <span>Couldn’t add this song.</span>
-          <ReportIssueButton className="min-h-11 rounded-control px-2 text-xs text-muted hover:bg-hover hover:text-fg"
-            context={`${row.title} — ${row.artist}`} icon={false} />
-        </div> : row.availability === "ambiguous" && <p className="chart-row-reason text-xs leading-relaxed text-muted">Choose the version to add.</p>}
-        {member && resolution?.row.id === row.id && <div ref={resolutionRef} tabIndex={-1} role="group" aria-label={`Choose the recording for ${row.title}`}
-          onKeyDown={(event) => { if (event.key === "Escape") setResolution(null); }} style={{ gridColumn: "1 / -1" }} className="mt-1 rounded-2xl bg-elevated p-4 sm:p-5">
+        </div>}
+        footer={
+          <>
+            {member && rowErrors[row.id] ? <div className="chart-row-reason flex flex-wrap items-center gap-x-3 text-xs leading-relaxed text-danger" role="alert">
+              <span>Couldn’t add this song.</span>
+              <ReportIssueButton className="min-h-11 rounded-control px-2 text-xs text-muted hover:bg-hover hover:text-fg"
+                context={`${row.title} — ${row.artist}`} icon={false} />
+            </div> : row.availability === "ambiguous" && <p className="chart-row-reason text-xs leading-relaxed text-muted">Choose the version to add.</p>}
+            {member && resolution?.row.id === row.id && <div ref={resolutionRef} tabIndex={-1} role="group" aria-label={`Choose the recording for ${row.title}`}
+              onKeyDown={(event) => { if (event.key === "Escape") setResolution(null); }} className="mt-1 rounded-2xl bg-elevated p-4 sm:p-5">
           <ChartResolution row={row} results={resolution.results} disabled={requesting !== null || waiting.length > 0}
             onClose={() => setResolution(null)} onRequest={(token, youtubeUrl) => request({ row, token, youtubeUrl })} />
         </div>}
-      </MusicItem>)}</ol>}
+          </>
+        }
+      />)}</PlaylistTrackList>}
     {page.total > 25 && <nav aria-label="Chart pages" className="mt-6 flex items-center justify-between gap-3 border-t border-line pt-5">
       <p className="text-xs text-muted tabular">{page.offset + 1}–{Math.min(page.offset + 25, page.total)} of {page.total}</p><div className="flex gap-2">
         <button className={action} disabled={busy || page.offset === 0} onClick={() => void load(page.chart.id, Math.max(0, page.offset - 25), false, page.revision ?? undefined)}><ChevronLeft className="size-4" /><span className="sr-only sm:not-sr-only">Previous</span></button>
