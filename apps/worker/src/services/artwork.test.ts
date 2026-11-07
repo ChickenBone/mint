@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { findAlbumArtwork } from "./artwork";
+import { findAlbumArtwork as cachedAlbumArtwork } from "./artwork";
+const findAlbumArtwork: typeof cachedAlbumArtwork = (artist, album, id) => cachedAlbumArtwork(artist, album, id, null);
 import nextConfig from "../../../web/next.config";
 
 const groupId = "8e8a594f-2175-38c7-a871-abb68ec363e7";

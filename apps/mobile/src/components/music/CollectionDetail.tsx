@@ -1,5 +1,5 @@
 import type { CatalogPage, PlayerCollection, PlayerItem } from "@mint/client";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { router } from "expo-router";
 import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useApi } from "../../api";
@@ -11,6 +11,7 @@ import { usePlaybackAction } from "../../hooks/usePlaybackAction";
 import { colors } from "../../theme/tokens";
 import { screenStyles } from "./screen-styles";
 import { detailPageSize } from "./detail-model";
+import { useLikesRevision } from "../../hooks/useSongLike";
 
 type DetailResource = { data: { page: CatalogPage } | null; loading: boolean; error: string | null; reload(): void };
 type Props = {
@@ -25,6 +26,12 @@ export function CollectionDetail({ detail, selection, title, artwork, round, lik
   description, actions, beforeTracks, emptyTitle = "No songs yet",
   emptyMessage = "There are no playable songs in this selection.", start, onStart, children, removeSong, afterSong }: Props) {
   const api = useApi();
+  const likesRevision = useLikesRevision(api);
+  const previousLikesRevision = useRef(likesRevision);
+  useEffect(() => {
+    if (liked && previousLikesRevision.current !== likesRevision) detail.reload();
+    previousLikesRevision.current = likesRevision;
+  }, [liked, likesRevision, detail]);
   const player = usePlayer();
   const runPlayback = usePlaybackAction();
   const { width } = useWindowDimensions();

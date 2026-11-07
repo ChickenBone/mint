@@ -4,6 +4,13 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 
 ## Direction contract
 
+**Authority:** the native Expo app governs future consumer UX/UI. Independently
+implement familiar Spotify-inspired gestures and controls using Mint's own
+assets; do not claim commercial-service parity. Dynamic color comes from actual
+artwork with a readable neutral fallback. Browser consumer UX is frozen,
+maintenance-only: preserve existing routes/features and security/backend
+compatibility fixes. Next.js backend/API and admin tools continue.
+
 **Thesis:** music and personal collections lead; the machinery stays available without competing for attention.
 **World:** cool charcoal fields, square artwork, compact rounded controls, readable secondary text, and mint reserved for action/focus. A restrained blue/teal wash establishes listening atmosphere; lavender identifies the Liked songs sleeve. Administrative surfaces stay opaque and neutral.
 **Path:** Home, Search and Your Library lead. Search combines query-based lookup with personalized discovery shelves; charts and mixes remain dedicated drill-in routes. The old Discover landing redirects to Search. Settings holds personal preferences and optional imports; the admin portal holds server operations.
@@ -26,7 +33,26 @@ explicit Search request, never automatic acquisition. Native admin/provider setu
 stays on Next.js. See [mobile design](docs/mobile-design.md) and
 [native playback](docs/mobile-playback.md) for platform-specific controls and limits.
 
-## System
+## Native interaction and color
+
+Native primitives and tokens in `apps/mobile/src/theme/tokens.ts` are the
+implementation reference for future listener design; see
+[mobile design](docs/mobile-design.md). A persistent mini-player expands into
+the same Now Playing surface without resetting audio. Direct manipulation,
+interruptible settling, reduced motion and labeled button/keyboard alternatives
+matter more than imitation of proprietary animation. Artwork-derived gradients
+remain decorative, bounded and contrast-safe; missing images use neutral music
+tiles and backgrounds, not fabricated colors.
+
+Developer options and Stats for nerds are opt-in listener troubleshooting, not
+admin tools. Keep traces local-only and separate measured engine/analysis values
+from unavailable codec, throughput or DSP information. Do not invent a waveform
+or infer processing from metadata; ordinary playback stays uncluttered.
+
+## Existing browser system (maintenance reference)
+
+The following describes retained browser behavior, not a prescription to
+redesign the native app or expand browser UX.
 
 - Tokens live in `apps/web/src/app/globals.css`. Use background, surface, elevated and hover as four restrained levels, not nested panel decoration. `gradient-action` enriches mint primary controls, `gradient-atmosphere` belongs to music headers, and `gradient-liked` identifies personal favorites; never gradient text, glowing borders or rainbow chrome. `info` and `accent` are complementary roles, not a replacement for warning/error semantics.
 - Figtree is the only typeface. Titles use a compact 32–64px scale, section headings 24–32px, body 14–16px. Long explanations stay below 75 characters per line.
@@ -40,7 +66,7 @@ stays on Next.js. See [mobile design](docs/mobile-design.md) and
 - Failed artwork uses the shared neutral music tile. Never invent covers, counts, chart ranks or playback availability.
 - Album, playlist and Now Playing headers can reuse `ArtworkAtmosphere` with the existing artwork URL. Color comes directly from the image, without canvas sampling, another provider, or a parallel cache. The decorative layer is clipped to a bounded header, pointer-inert and hidden from assistive technology; a dark scrim keeps foreground contrast independent of artwork brightness. Missing/failed art leaves a neutral background. Do not use full-screen backdrop blur, continuous image animation or glass over forms, menus, queue rows or errors.
 
-## Navigation and capability map
+## Existing browser navigation and capability map
 
 | Capability | Home in the redesigned app |
 | --- | --- |

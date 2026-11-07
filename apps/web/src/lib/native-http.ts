@@ -25,6 +25,7 @@ export function nativeRouteAllowed(path: string[], method: string) {
   const key = path.join("/");
   if (/^player\/(catalog|session|offline)$/.test(key)) return method === "GET";
   if (/^player\/(audio|info|lyrics)\/[^/]+$/.test(key)) return method === "GET" || (path[1] === "audio" && method === "HEAD");
+  if (/^player\/analysis\/[^/]+$/.test(key)) return method === "GET";
   if (/^player\/queue(\/[^/]+)?$/.test(key)) return method === "GET" || method === "POST";
   if (key === "player/items") return method === "POST";
   if (key === "issue-reports") return method === "POST";

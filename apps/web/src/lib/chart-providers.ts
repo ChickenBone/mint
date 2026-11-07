@@ -24,6 +24,7 @@ export function validChartArtwork(provider: ChartDefinition["provider"], value: 
 
 export async function boundedProviderJson(response: Response): Promise<unknown> {
   if (!response.ok) {
+    await response.body?.cancel();
     const raw = response.headers.get("retry-after"), seconds = raw && /^\d+$/.test(raw) ? Number(raw) : raw ? (Date.parse(raw) - Date.now()) / 1000 : 300;
     throw new ChartProviderError(response.status === 429 ? "Provider rate limit reached. Mint will retry after the cooldown." :
       `Chart provider returned HTTP ${response.status}. Try again later.`, Math.max(60, Math.min(86400, Math.ceil(seconds) || 300)));

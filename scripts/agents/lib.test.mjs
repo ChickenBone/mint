@@ -370,8 +370,29 @@ test("live feature routing and ownership keep consumer context separate from set
     [route, id],
     [`apps/mobile/tests/${testFile}`, id],
   ]);
+  owned.push(
+    ["apps/mobile/src/playback/diagnostics.ts", "mobile-playback"],
+    ["apps/mobile/src/playback/diagnostics-preference.ts", "mobile-playback"],
+    ["apps/mobile/src/playback/analysis-request.ts", "mobile-playback"],
+    ["apps/mobile/tests/playback-diagnostics.test.ts", "mobile-playback"],
+    ["apps/mobile/src/features/player/StatsForNerds.tsx", "mobile-player"],
+    ["apps/mobile/src/features/player/useSeekPreview.ts", "mobile-player"],
+    ["apps/mobile/tests/player-gesture.test.ts", "mobile-player"],
+    ["apps/mobile/src/hooks/song-likes.ts", "mobile"],
+    ["apps/mobile/src/hooks/useSongLike.ts", "mobile"],
+    ["apps/mobile/tests/song-likes.test.ts", "mobile"],
+    ["apps/mobile/tests/settings-diagnostics.test.ts", "mobile-settings"],
+    ["packages/client/src/analysis.ts", "mobile-contracts"],
+    ["packages/client/tests/analysis.test.ts", "mobile-contracts"],
+    ["packages/core/src/public-cache.ts", "platform"],
+    ["packages/core/src/public-cache-fixture.ts", "platform"],
+    ["packages/core/src/public-cache.test.ts", "platform"],
+    ["apps/worker/src/services/public-metadata.ts", "library"],
+    ["apps/worker/src/services/public-metadata.test.ts", "library"],
+  );
   const owners = run("owner", ...owned.map(([file]) => file));
   for (const [file, id] of owned) assert.equal(owners[file], id, file);
+  assert.deepEqual(run("context", "shared cache plumbing", "packages/core/src/public-cache.ts").domains.map((d) => d.id), ["platform"]);
   for (const [id, , , , , query] of features) {
     const packet = run("context", query);
     assert.deepEqual(packet.domains.map((d) => d.id), [id], query);
@@ -391,6 +412,9 @@ test("live feature routing and ownership keep consumer context separate from set
     ["fix native playback engine", "mobile-playback"],
     ["fix mobile playback", "mobile-playback"],
     ["fix mobile offline", "mobile-playback"],
+    ["developer options", "mobile-settings"],
+    ["stats for nerds", "mobile-player"],
+    ["native playback diagnostics", "mobile-playback"],
   ]) assert.deepEqual(run("route", query).domains.map((d) => d.id), [expected], query);
   for (const query of ["improve browser search", "improve backend artist metadata", "improve web settings", "fix browser playback engine"]) {
     const result = run("route", query);

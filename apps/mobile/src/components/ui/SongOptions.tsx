@@ -6,11 +6,13 @@ import { useApi } from "../../api";
 import { usePlayer } from "../../playback/PlayerProvider";
 import { colors } from "../../theme/tokens";
 import { Button, Notice } from "./primitives";
+import { useSongLike } from "../../hooks/useSongLike";
 
 export function SongOptions({ item, remove }: { item: PlayerItem; remove?: () => Promise<void> }) {
   const api = useApi();
   const player = usePlayer();
   const [open, setOpen] = useState(false);
+  const like = useSongLike(api, item.id, open);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,8 +36,10 @@ export function SongOptions({ item, remove }: { item: PlayerItem; remove?: () =>
           <Button label="Close" quiet onPress={() => setOpen(false)} /></View>
         <ScrollView contentContainerStyle={s.actions}>
           <Button label="Add to queue" quiet busy={busy} onPress={() => void act(() => player.addToQueue(item), "Added to your queue.")} />
-          <Button label="Like song" quiet disabled={!api || busy} onPress={() => api && void act(() => api.setLike(item.id, true), "Added to Liked songs.")} />
-          <Button label="Remove like" quiet disabled={!api || busy} onPress={() => api && void act(() => api.setLike(item.id, false), "Removed from Liked songs.")} />
+          <Button label={like.liked ? "Remove like" : "Like song"} quiet busy={like.pending}
+            disabled={!like.available || busy || like.liked === null}
+            onPress={() => void act(() => like.set(!like.liked), like.liked ? "Removed from Liked songs." : "Added to Liked songs.")} />
+          {like.error ? <Notice title="Couldn't load or update like" message={like.error} retry={like.retry} /> : null}
           <Button label="Add to playlist" quiet disabled={!api || busy} onPress={() => void choosePlaylist()} />
           <Button label="Download" quiet disabled={!player.capabilities.offline || busy} onPress={() => void act(() => player.download(item), "Download requested. Check its status in Settings.")} />
           {!player.capabilities.offline ? <Text style={s.secondary}>Offline downloads are not supported on this platform.</Text> : null}

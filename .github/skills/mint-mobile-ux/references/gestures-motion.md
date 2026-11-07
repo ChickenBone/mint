@@ -1,15 +1,20 @@
 # Gesture and motion contracts
 
-Web parity is interaction meaning and spatial continuity, not a CSS translation.
+Native mobile is the design authority. Preserve existing action meaning and
+spatial continuity, not browser CSS or proprietary Spotify code/assets.
 Motion explains where content came from, what accepted a tap or what changed.
 Do not animate purely to make the screen “premium.”
 
 ## Current player baseline
 
-`PlayerSurface.tsx` uses `PanResponder`, native-driver `Animated` transforms/
-opacity, reduced-motion observation and `gesture.ts` velocity/settle helpers.
-Its mini track, header, artwork and metadata are drag surfaces; seeking,
-transport, lyrics and queue scrolling are separate interactions.
+`PlayerSurface.tsx` uses Gesture Handler/Reanimated shared values and worklets for
+direct tracking and velocity-aware, interruptible spring settling. The layout's
+`GestureHandlerRootView` contains the persistent player. One measured artwork
+instance moves in a shell-level overlay without a native Modal handoff; its geometry and
+scroll offset drive UI-thread transforms rather than per-frame React updates.
+Mini title/artwork support vertical expansion and directional horizontal
+previous/next; expanded header/artwork/metadata support vertical collapse.
+Seeking, transport, options, lyrics and queue scrolling remain separate.
 Read actual helpers/tests for authoritative thresholds; do not copy constants
 from this document or change them globally to match an upstream recipe.
 Tap mini-player or `/player` opens the same presentation; closing preserves the
@@ -55,6 +60,8 @@ Reset on press-out/cancel/disabled/unmount; pending is distinct from success.
 Optional existing haptics: one subtle cue per meaningful commit/detent, never
 per frame or as sole feedback. Do not add `expo-haptics` just because a recipe
 imports it; current package availability is authoritative.
+The current player adds no haptics; spring/library choice is not device performance
+evidence. System reduced-motion changes apply while the sheet is open.
 
 Simple existing transform/opacity effects may keep native-driver `Animated`.
 A measured continuous gesture need may justify installed compatible Reanimated/

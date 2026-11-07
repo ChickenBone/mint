@@ -2,7 +2,7 @@
 
 **Your music library. Your server. Your player.**
 
-Mint is a self-hosted music service for listening, discovering and collecting music from your own library. The Expo Android/mobile app leads the consumer experience with Home, Search and Your Library; browser listening and Next.js admin tools remain supported. Your music files stay on your server; Plex remains the library server, not an embedded player.
+Mint is a self-hosted music service for listening, discovering and collecting music from your own library. The Expo Android/mobile app leads the consumer experience with Home, Search and Your Library, familiar Spotify-inspired interactions and artwork-derived color. Native mobile is the design authority for future listener work; browser listening is frozen, maintenance-only. The Next.js backend/API, existing browser routes and admin tools remain supported. Your music files stay on your server; Plex remains the library server, not an embedded player.
 
 Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are published to **GitHub Container Registry** for amd64 and arm64. You can connect an existing Plex library read-only or start with the bundled Plex server.
 
@@ -14,8 +14,9 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 
 | Feature | What it means for you |
 | --- | --- |
-| **Listen in your browser** | Persistent playback, full-collection shuffle, queues, album and artist views, and one route-based Search for your library and more recordings. No embedded Plexamp required. |
 | **Use the Android app** | Consumer-focused Expo app with persistent playback and account-scoped downloads. EAS Build creates installable APKs; EAS Update delivers compatible JavaScript updates. [Setup and downloads](docs/android-builds.md). |
+| **Inspect local playback** | Opt-in **Settings → Developer options → Stats for nerds** shows actual engine observations and existing measured analysis in the player, with no telemetry or trace uploads. [What is measured](docs/mobile-playback.md#local-stats-for-nerds). |
+| **Keep browser access** | Existing persistent playback, full-collection shuffle, queues, album/artist views and Search remain available, with security and backend-compatibility maintenance rather than new browser UX. No embedded Plexamp required. |
 | **Bring your own library** | Index existing Plex music with read-only access to the original files. Keep using Plexamp separately if you prefer. |
 | **Make it yours** | Save liked songs and playlists, create smart playlists, collaborate and revisit your private listening history. |
 | **Search and discover** | Search your library and more recordings. Native Browse all adds real recommendations, new arrivals, paged genres/moods/decades and read-only charts. Missing music requires an explicit request; browsing never downloads it. |
@@ -124,7 +125,9 @@ these fixtures do not describe production provider coverage.
 ### Next.js browser listening and management
 
 Browser desktop and responsive-phone views captured from a local demo instance,
-not current Expo APK/device screenshots. All names, accounts, songs, artwork and
+not current Expo APK/device screenshots or the design target for future listener
+work. Browser consumer UX is frozen; management remains supported.
+All names, accounts, songs, artwork and
 activity are fictional; no private library or credentials are shown.
 
 | Listening | Running your server |

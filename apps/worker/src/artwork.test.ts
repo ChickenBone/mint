@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { signToken } from "@mint/core/crypto";
 import { serveArtwork } from "./artwork-http";
-import { loadArtistArtwork, loadTrackArtwork, publicArtworkUrl } from "./artwork";
+import { loadArtistArtwork, loadTrackArtwork as cachedTrackArtwork, publicArtworkUrl } from "./artwork";
+const loadTrackArtwork: typeof cachedTrackArtwork = (track) => cachedTrackArtwork(track, null);
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a0u0AAAAASUVORK5CYII=", "base64");
 const track = (patch = {}) => ({ id: randomUUID(), plexRatingKey: "101", artworkUrl: "https://archive.org/download/fixture/cover.png",

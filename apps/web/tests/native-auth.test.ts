@@ -1,9 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { currentNativeContext, isNativeTransportRequest, runNativeRequest, validConsumerMutation } from "../src/lib/native-context";
 import { nativeHttp, nativeRouteAllowed, nativeWebOriginAllowed } from "../src/lib/native-http";
 
 const user = { id: "user", email: "listener@example.com", name: "Listener", role: "user" as const, status: "active" as const };
+test("native analysis incompatibility logs only a fixed redacted diagnostic before safe 503", () => {
+  const source = readFileSync(new URL("../src/app/api/native/[...path]/route.ts", import.meta.url), "utf8");
+  assert.match(source, /if \(!parsed\.success\) \{\s*console\.error\("\[native-api\] track analysis response validation failed"\);\s*return json\("Track analysis is unavailable\.", 503\);/);
+});
 test("native adapter context is request-local and never authorizes a different Request", async () => {
   const native = new Request("https://mint.example.com/api/native/music/likes/song", { method: "PUT" });
   const other = new Request(native.url, { method: "PUT" });
@@ -34,6 +39,12 @@ test("consumer allowlist excludes admin, workers, chart acquisition and path tra
   assert.equal(nativeRouteAllowed(["player", "offline"], "GET"), true);
   assert.equal(nativeRouteAllowed(["music", "collections"], "POST"), true);
   assert.equal(nativeRouteAllowed(["player", "audio", "track"], "POST"), false);
+  assert.equal(nativeRouteAllowed(["player", "analysis", "track"], "GET"), true);
+  assert.equal(nativeRouteAllowed(["player", "analysis"], "GET"), false);
+  assert.equal(nativeRouteAllowed(["player", "analysis", "track", "retry"], "GET"), false);
+  for (const method of ["HEAD", "POST", "PUT", "PATCH", "DELETE"]) {
+    assert.equal(nativeRouteAllowed(["player", "analysis", "track"], method), false);
+  }
   // Search browsing can read categories and charts, but never write through those routes.
   assert.equal(nativeRouteAllowed(["browse"], "GET"), true);
   assert.equal(nativeRouteAllowed(["charts"], "GET"), true);

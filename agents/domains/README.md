@@ -6,21 +6,21 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 
 | Domain | Scope | Files | Imports from |
 | --- | --- | ---: | --- |
-| [`mobile`](mobile.md) | Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle | 39 | `mobile-contracts` `mobile-playback` `mobile-player` |
-| [`mobile-contracts`](mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions | 17 | `collections` `library` `platform` `playback` `providers` `web-shell` |
-| [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, native adapters and account-scoped offline storage | 19 | `mobile` `mobile-contracts` |
+| [`mobile`](mobile.md) | Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle | 42 | `mobile-contracts` `mobile-playback` `mobile-player` |
+| [`mobile-contracts`](mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions | 19 | `analysis` `collections` `library` `platform` `playback` `providers` `web-shell` |
+| [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage | 23 | `mobile` `mobile-contracts` |
 | [`mobile-home`](mobile-home.md) | Listener Home recommendations, bounded album shelves and recent additions | 4 | `mobile` `mobile-contracts` |
 | [`mobile-artists`](mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation | 4 | `mobile` `mobile-contracts` |
 | [`mobile-albums`](mobile-albums.md) | Album detail navigation, album identity and full-selection playback actions | 4 | `mobile` `mobile-contracts` |
 | [`mobile-playlists`](mobile-playlists.md) | Playlist and liked-song details, occurrence-based editing and collection actions | 7 | `mobile` `mobile-contracts` |
 | [`mobile-search`](mobile-search.md) | Local and recording Search, Browse all discovery/categories and read-only chart destinations | 12 | `mobile` `mobile-contracts` `mobile-playback` |
 | [`mobile-your-music`](mobile-your-music.md) | Your Library overview, collection browsing, folders/pins and playlist invitations | 4 | `mobile` `mobile-contracts` |
-| [`mobile-settings`](mobile-settings.md) | Listener settings, privacy/history, local storage, app information and compatible update checks | 5 | `mobile` `mobile-playback` |
-| [`mobile-player`](mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures and artwork colors | 14 | `mobile` `mobile-home` `mobile-playback` |
+| [`mobile-settings`](mobile-settings.md) | Listener settings, privacy/history, local storage, developer options, app information and compatible update checks | 6 | `mobile` `mobile-playback` |
+| [`mobile-player`](mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds | 17 | `mobile` `mobile-contracts` `mobile-home` `mobile-playback` |
 | [`mobile-design`](mobile-design.md) | Compact Mint mobile UX skill and pinned official Expo native UI/animation references, loaded on demand | 19 | — |
-| [`platform`](platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing | 34 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
+| [`platform`](platform.md) | Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime | 37 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
 | [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `providers` `realtime` `web-shell` |
-| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 41 | `acquisition` `collections` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
+| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 43 | `acquisition` `collections` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`collections`](collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves | 29 | `acquisition` `analysis` `library` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`providers`](providers.md) | Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth | 41 | `acquisition` `collections` `library` `platform` `playback` `realtime` `web-shell` |
 | [`acquisition`](acquisition.md) | Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages | 32 | `collections` `library` `platform` `playback` `providers` `realtime` `web-shell` |

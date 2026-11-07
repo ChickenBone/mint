@@ -1,11 +1,13 @@
 import { musicBrainzJson } from "./musicbrainz";
+import { readPublicMetadata } from "./public-metadata";
+import type { PublicReadCache } from "@mint/core/public-cache";
+import { z } from "zod";
 
 const MB = "https://musicbrainz.org/ws/2";
 const WIKIDATA = "https://www.wikidata.org/w/api.php";
 const WIKIPEDIA = "https://en.wikipedia.org/api/rest_v1/page/summary";
 const LISTENBRAINZ = "https://api.listenbrainz.org/1";
 const LABS = "https://labs.api.listenbrainz.org/similar-artists";
-const USER_AGENT = "Mint/3.5 (https://github.com/ChickenBone/mint)";
 const UUID = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 
 export interface RelatedArtist {
@@ -56,46 +58,7 @@ function cleanText(value: unknown, maxLength: number) {
   return cleaned ? cleaned.slice(0, maxLength) : null;
 }
 
-async function providerJson<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  headers.set("accept", "application/json");
-  headers.set("user-agent", USER_AGENT);
-  const response = await fetch(url, {
-    ...init,
-    headers,
-    redirect: "error",
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok || !response.body) {
-    await response.body?.cancel();
-    throw new Error(`Metadata provider returned HTTP ${response.status}`);
-  }
-  const length = Number(response.headers.get("content-length"));
-  if (Number.isFinite(length) && length > 512_000) {
-    await response.body.cancel();
-    throw new Error("Metadata provider response exceeded its size limit");
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > 512_000) {
-        await reader.cancel();
-        throw new Error("Metadata provider response exceeded its size limit");
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as T;
-}
-
-async function findArtistId(name: string, knownIds: string[]): Promise<string | null | "ambiguous"> {
+async function findArtistId(name: string, knownIds: string[], cache?: PublicReadCache | null): Promise<string | null | "ambiguous"> {
   const ids = [...new Set(knownIds.filter((id) => UUID.test(id)))];
   if (ids.length > 1) return "ambiguous";
   if (ids.length === 1) return ids[0]!;
@@ -103,7 +66,7 @@ async function findArtistId(name: string, knownIds: string[]): Promise<string | 
   const found = await musicBrainzJson<{ artists?: Array<{ id: string; name: string; score?: number }> }>(
     `${MB}/artist`,
     { query, fmt: "json", limit: 25 },
-    { retries: 0 },
+    { retries: 0, cache },
   );
   const matches = [...new Set((found.artists ?? [])
     .filter((artist) => UUID.test(artist.id) && normalize(artist.name) === normalize(name))
@@ -111,16 +74,26 @@ async function findArtistId(name: string, knownIds: string[]): Promise<string | 
   return matches.length === 1 ? matches[0]! : matches.length ? "ambiguous" : null;
 }
 
-async function wikipediaSummary(qid: string) {
-  const entity = await providerJson<{ entities?: Record<string, { sitelinks?: { enwiki?: { title?: string } } }> }>(
+async function wikipediaSummary(qid: string, cache?: PublicReadCache | null) {
+  const entitySchema = z.object({ entities: z.record(z.string(), z.object({
+    sitelinks: z.object({ enwiki: z.object({ title: z.string().min(1).max(1000) }).optional() }).optional(),
+  })) });
+  const entity = await readPublicMetadata(
     `${WIKIDATA}?${new URLSearchParams({ action: "wbgetentities", ids: qid, props: "sitelinks", sitefilter: "enwiki", format: "json" })}`,
+    { provider: "Wikidata", cache, validate: (value) => entitySchema.parse(value),
+      negative: (value) => !value.entities[qid]?.sitelinks?.enwiki },
   );
   const title = entity.entities?.[qid]?.sitelinks?.enwiki?.title;
   if (!title) return null;
-  const summary = await providerJson<{
-    extract?: string;
-    content_urls?: { desktop?: { page?: string } };
-  }>(`${WIKIPEDIA}/${encodeURIComponent(title)}`);
+  const summarySchema = z.object({ extract: z.string().max(100_000), content_urls: z.object({
+    desktop: z.object({ page: z.url().max(2048).refine((value) => {
+      const url = new URL(value);
+      return url.protocol === "https:" && url.hostname === "en.wikipedia.org" && !url.port && !url.username && !url.password;
+    }) }),
+  }) });
+  const summary = await readPublicMetadata(`${WIKIPEDIA}/${encodeURIComponent(title)}`, {
+    provider: "Wikipedia", cache, validate: (value) => summarySchema.parse(value),
+  });
   const url = summary.content_urls?.desktop?.page;
   if (!url || new URL(url).protocol !== "https:" || new URL(url).hostname !== "en.wikipedia.org") return null;
   const biography = cleanText(summary.extract, 2000);
@@ -150,10 +123,13 @@ function musicBrainzRelated(artist: MusicBrainzArtist): RelatedArtist[] {
   return related;
 }
 
-async function listenBrainzPopularity(mbid: string) {
-  const rows = await providerJson<Array<{ artist_mbid?: string; total_listen_count?: number | null; total_user_count?: number | null }>>(
+async function listenBrainzPopularity(mbid: string, cache?: PublicReadCache | null) {
+  const rowsSchema = z.array(z.object({ artist_mbid: z.uuid(), total_listen_count: z.number().int().nonnegative().nullable(),
+    total_user_count: z.number().int().nonnegative().nullable() })).max(100);
+  const rows = await readPublicMetadata(
     `${LISTENBRAINZ}/popularity/artist`,
-    { method: "POST", body: JSON.stringify({ artist_mbids: [mbid] }), headers: { "content-type": "application/json" } },
+    { provider: "ListenBrainz-popularity", cache, validate: (value) => rowsSchema.parse(value), negative: (value) => !value.length,
+      init: { method: "POST", body: JSON.stringify({ artist_mbids: [mbid] }), headers: { "content-type": "application/json" } } },
   );
   const row = rows.find((item) => item.artist_mbid === mbid);
   return {
@@ -164,12 +140,14 @@ async function listenBrainzPopularity(mbid: string) {
   };
 }
 
-async function listenBrainzRelated(mbid: string): Promise<RelatedArtist[]> {
+async function listenBrainzRelated(mbid: string, cache?: PublicReadCache | null): Promise<RelatedArtist[]> {
   const url = new URL(LABS);
   url.searchParams.set("artist_mbid", mbid);
   url.searchParams.set("algorithm", "session_based_days_9000_session_300_contribution_5_threshold_15_limit_50");
-  const payload = await providerJson<unknown>(url.href);
-  const rows = Array.isArray(payload) ? payload : [];
+  const rowsSchema = z.array(z.object({ artist_mbid: z.uuid(), artist_name: z.string().min(1).max(1000).optional(),
+    name: z.string().min(1).max(1000).optional() }).refine((value) => !!(value.artist_name || value.name))).max(100);
+  const rows = await readPublicMetadata(url.href, { provider: "ListenBrainz-related", cache,
+    validate: (value) => rowsSchema.parse(value), negative: (value) => !value.length });
   const related: RelatedArtist[] = [];
   const seen = new Set<string>();
   for (const value of rows) {
@@ -185,17 +163,17 @@ async function listenBrainzRelated(mbid: string): Promise<RelatedArtist[]> {
   return related;
 }
 
-export async function fetchArtistMetadata(name: string, knownIds: string[] = []): Promise<ArtistMetadataResult> {
+export async function fetchArtistMetadata(name: string, knownIds: string[] = [], cache?: PublicReadCache | null): Promise<ArtistMetadataResult> {
   const normalizedName = cleanText(name, 1000);
   if (!normalizedName) return { status: "not_found", musicBrainzArtistId: null, profile: null };
-  const id = await findArtistId(normalizedName, knownIds);
+  const id = await findArtistId(normalizedName, knownIds, cache);
   if (id === "ambiguous") return { status: "ambiguous", musicBrainzArtistId: null, profile: null };
   if (!id) return { status: "not_found", musicBrainzArtistId: null, profile: null };
 
   const artist = await musicBrainzJson<MusicBrainzArtist>(
     `${MB}/artist/${id}`,
     { inc: "artist-rels+url-rels", fmt: "json" },
-    { retries: 0 },
+    { retries: 0, cache },
   );
   if (normalize(artist.name) !== normalize(normalizedName)) {
     return { status: "ambiguous", musicBrainzArtistId: null, profile: null };
@@ -204,9 +182,9 @@ export async function fetchArtistMetadata(name: string, knownIds: string[] = [])
   const unavailableSources: string[] = [];
   const qid = wikidataId(artist);
   const [wikiResult, popularityResult, relatedResult] = await Promise.allSettled([
-    qid ? wikipediaSummary(qid) : Promise.resolve(null),
-    listenBrainzPopularity(id),
-    listenBrainzRelated(id),
+    qid ? wikipediaSummary(qid, cache) : Promise.resolve(null),
+    listenBrainzPopularity(id, cache),
+    listenBrainzRelated(id, cache),
   ]);
   if (wikiResult.status === "rejected") unavailableSources.push("wikipedia");
   if (popularityResult.status === "rejected") unavailableSources.push("listenbrainz-popularity");

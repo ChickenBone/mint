@@ -46,8 +46,8 @@
       "id": "mobile-playback",
       "surface": "mobile",
       "title": "Native playback and offline",
-      "summary": "Expo audio engine, progressive queues, lyrics parsing, native adapters and account-scoped offline storage",
-      "keywords": ["expo audio", "native playback", "mobile playback", "native offline", "mobile offline", "native queue", "native audio", "android audio", "offline downloads", "playback engine"],
+      "summary": "Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage",
+      "keywords": ["expo audio", "native playback", "mobile playback", "native offline", "mobile offline", "native queue", "native audio", "android audio", "offline downloads", "playback engine", "playback diagnostics"],
       "guides": ["docs/mobile-playback.md"],
       "paths": [
         "apps/mobile/src/playback/**",
@@ -122,8 +122,8 @@
       "surface": "mobile",
       "consumer": true,
       "title": "Mobile Settings",
-      "summary": "Listener settings, privacy/history, local storage, app information and compatible update checks",
-      "keywords": ["settings", "app info", "manual update", "private session", "history deletion", "mp3 compatibility"],
+      "summary": "Listener settings, privacy/history, local storage, developer options, app information and compatible update checks",
+      "keywords": ["settings", "app info", "manual update", "private session", "history deletion", "mp3 compatibility", "developer options"],
       "guides": ["agents/mobile-features.md"],
       "paths": ["apps/mobile/src/features/settings/**", "apps/mobile/app/settings.tsx", "apps/mobile/tests/settings-*.test.ts"]
     },
@@ -132,10 +132,10 @@
       "surface": "mobile",
       "consumer": true,
       "title": "Mobile Player presentation",
-      "summary": "Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures and artwork colors",
-      "keywords": ["player", "player sheet", "mini player", "now playing", "player ui", "album colors", "player gestures", "lyrics panel"],
+      "summary": "Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds",
+      "keywords": ["player", "player sheet", "mini player", "now playing", "player ui", "album colors", "player gestures", "lyrics panel", "stats for nerds"],
       "guides": ["agents/mobile-features.md"],
-      "paths": ["apps/mobile/src/features/player/**", "apps/mobile/app/player.tsx", "apps/mobile/tests/player-presentation.test.ts"]
+      "paths": ["apps/mobile/src/features/player/**", "apps/mobile/app/player.tsx", "apps/mobile/tests/player-presentation.test.ts", "apps/mobile/tests/player-gesture.test.ts"]
     },
     {
       "id": "mobile-design",
@@ -149,7 +149,7 @@
     {
       "id": "platform",
       "title": "Platform core",
-      "summary": "Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing",
+      "summary": "Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime",
       "keywords": [
         "schema",
         "migration",
@@ -166,7 +166,10 @@
         "monorepo",
         "typescript",
         "workspace",
-        "worker startup"
+        "worker startup",
+        "read cache",
+        "public read cache",
+        "public-cache"
       ],
       "guides": [
         "agents/architecture.md"
@@ -319,6 +322,7 @@
         "apps/worker/src/jobs/artist-metadata.ts",
         "apps/worker/src/services/artwork*.ts",
         "apps/worker/src/services/artist-metadata*.ts",
+        "apps/worker/src/services/public-metadata*.ts",
         "apps/worker/src/services/plex.ts",
         "packages/core/src/artwork.ts",
         "packages/core/migrations/0003_track_artwork_url.sql",

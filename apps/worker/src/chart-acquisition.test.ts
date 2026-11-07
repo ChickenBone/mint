@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { matchRecording, musicBrainzJson } from "./services/musicbrainz";
+import { matchRecording as cachedMatchRecording, musicBrainzJson as cachedMusicBrainzJson } from "./services/musicbrainz";
+const matchRecording: typeof cachedMatchRecording = (query) => cachedMatchRecording(query, null);
+const musicBrainzJson: typeof cachedMusicBrainzJson = (url, query, options) => cachedMusicBrainzJson(url, query, { ...options, cache: null });
 import { importedFile } from "./services/lidarr";
 
 test("an explicit MusicBrainz recording is looked up by identity and cannot be replaced by a fuzzy result", async (t) => {
@@ -101,7 +103,7 @@ test("optional MusicBrainz mirror keeps public fallback and conservative matchin
       });
     }
 
-    await t.test("mirror ceiling leaves public timeout and retries unchanged", async (t) => {
+    await t.test("mirror ceiling preserves the total timeout and public failures are not retried in a tight loop", async (t) => {
       process.env.MUSICBRAINZ_MIRROR_URL = "http://musicbrainz.fixture:5000/ws/2";
       const timeouts: number[] = [], hosts: string[] = [];
       const timeout = AbortSignal.timeout.bind(AbortSignal);
@@ -111,11 +113,11 @@ test("optional MusicBrainz mirror keeps public fallback and conservative matchin
       });
       t.mock.method(globalThis, "fetch", async (input: string) => {
         hosts.push(new URL(input).hostname);
-        return hosts.length < 3 ? new Response("unavailable", { status: 503 }) : Response.json({ recordings: [] });
+        return new Response("unavailable", { status: 503, headers: { "retry-after": "120" } });
       });
-      assert.deepEqual(await musicBrainzJson(publicUrl, undefined, { timeoutMs: 7000, retries: 1 }), { recordings: [] });
-      assert.deepEqual(hosts, ["musicbrainz.fixture", "musicbrainz.org", "musicbrainz.org"]);
-      assert.deepEqual(timeouts, [3000, 7000, 7000]);
+      await assert.rejects(musicBrainzJson(publicUrl, undefined, { timeoutMs: 7000, retries: 1 }), /503/);
+      assert.deepEqual(hosts, ["musicbrainz.fixture", "musicbrainz.org"]);
+      assert.deepEqual(timeouts, [7000, 3000]);
     });
 
     await t.test("public errors remain visible after mirror failure", async (t) => {

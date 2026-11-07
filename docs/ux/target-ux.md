@@ -5,7 +5,10 @@
 > contract is [DESIGN.md](../../DESIGN.md); the primary Expo app's three
 > destinations, Browse all grid and native limitations are specified in
 > [mobile design](../mobile-design.md) and [native playback](../mobile-playback.md).
-> Existing Next.js routes and admin capabilities remain supported.
+> Native mobile now governs future consumer UX/UI. Browser UX is frozen,
+> maintenance-only; existing Next.js routes/listening, security/backend
+> compatibility and admin capabilities remain supported. This plan is not a
+> mandate for more browser redesign work.
 
 ## 1. Information architecture
 

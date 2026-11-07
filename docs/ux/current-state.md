@@ -5,7 +5,9 @@ claim that the current Expo app or a deployed backend passed the same journey.
 Current contracts live in [DESIGN.md](../../DESIGN.md),
 [mobile design](../mobile-design.md) and [native playback](../mobile-playback.md).
 The Expo consumer app now leads with Home/Search/Your Library and Search's
-data-backed Browse all; Next.js listening and admin management remain supported.
+data-backed Browse all and is the design authority for future listener work.
+Browser UX is frozen, maintenance-only; Next.js listening/routes,
+security/backend compatibility and admin management remain supported.
 Android APK/EAS compatibility checks do not prove physical-device background
 playback, lockscreen artwork, offline recovery or OTA application.
 

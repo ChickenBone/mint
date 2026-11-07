@@ -1,4 +1,4 @@
-import { ApiError } from "@mint/client";
+import { albumPlayerId, artistPlayerId, ApiError } from "@mint/client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { randomUUID } from "expo-crypto";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -10,6 +10,8 @@ import { OfflineStore, OFFLINE_BUDGET, type OfflineState } from "../offline/stor
 import { accountScope, registerPlaybackCleanup } from "./account-cleanup";
 import { PlaybackEngine } from "./engine";
 import { createPlaylist } from "./playlist";
+import { PlaybackDiagnostics, emptyDiagnostics, type DiagnosticsSnapshot } from "./diagnostics";
+import { DiagnosticsPreference } from "./diagnostics-preference";
 import { emptyPlayerState, type MobileTrack, type PlayerCollection, type PlayerState, type RepeatMode } from "./types";
 
 export type { MobileTrack, PlayerCollection, QueueEntry } from "./types";
@@ -22,6 +24,10 @@ export interface PlayerController {
   offline: OfflineState;
   format: "original" | "mp3";
   setFormat(format: "original" | "mp3"): Promise<void>;
+  diagnosticsEnabled: boolean;
+  diagnosticsWarning: string | null;
+  diagnostics: DiagnosticsSnapshot;
+  setDiagnosticsEnabled(enabled: boolean): Promise<void>;
   playTrack(track: MobileTrack): Promise<void>;
   playCollection(collection: PlayerCollection, options?: { shuffle?: boolean; id?: string; occurrenceId?: string }): Promise<void>;
   toggle(): Promise<void>;
@@ -48,6 +54,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => { apiRef.current = api; }, [api]);
   const engineRef = useRef<PlaybackEngine | null>(null);
   const offlineRef = useRef<OfflineStore | null>(null);
+  const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>(emptyDiagnostics);
+  const [recorder] = useState(() => new PlaybackDiagnostics(undefined, setDiagnostics));
+  const diagnosticsRef = useRef(recorder);
+  const diagnosticsPreferenceRef = useRef<DiagnosticsPreference | null>(null);
+  const [diagnosticsEnabled, setDiagnosticsEnabledState] = useState(false);
+  const [diagnosticsWarning, setDiagnosticsWarning] = useState<string | null>(null);
+  const [diagnosticsOwner, setDiagnosticsOwner] = useState<string | null>(null);
   const startupErrorRef = useRef<Error | null>(null);
   const [state, setState] = useState<PlayerState>(emptyPlayerState);
   const [offline, setOffline] = useState<OfflineState>(emptyOffline);
@@ -59,6 +72,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const scopeServer = auth.serverUrl, scopeUser = auth.user?.id;
 
   useEffect(() => {
+    const localDiagnostics = diagnosticsRef.current;
+    localDiagnostics.setEnabled(false);
     if (!scopeServer || !scopeUser) return;
     startupErrorRef.current = null;
     let cancelled = false, removeStatus: (() => void) | undefined;
@@ -70,6 +85,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     void (async () => {
       try {
         const scope = await accountScope(scopeServer, scopeUser);
+        if (cancelled) return;
+        const preference = new DiagnosticsPreference(AsyncStorage, scope, (enabled, warning) => {
+          if (cancelled) return;
+          diagnosticsRef.current.setEnabled(enabled);
+          setDiagnosticsOwner(JSON.stringify([scopeServer, scopeUser]));
+          setDiagnosticsEnabledState(enabled);
+          setDiagnosticsWarning(warning ?? null);
+          setDiagnostics(emptyDiagnostics());
+        });
+        diagnosticsPreferenceRef.current = preference;
+        await preference.restore();
         if (cancelled) return;
         const native = await createPlaylist();
         if (cancelled) { native.port.destroy(); return; }
@@ -85,11 +111,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         else setOffline({ ...emptyOffline, status: "unavailable" });
         if (cancelled) { native.port.destroy(); return; }
         engine = new PlaybackEngine(native.port, {
-          openQueue: (input, signal) => requireApi().openQueue(input, signal),
-          queuePage: (id, position, signal) => requireApi().queuePage(id, position, signal),
+          openQueue: (input, signal) => diagnosticsRef.current.request("queue request", () => requireApi().openQueue(input, signal)),
+          queuePage: (id, position, signal) => diagnosticsRef.current.request("queue page", () => requireApi().queuePage(id, position, signal)),
           artworkUrl: (path) => requireApi().artworkUrl(path),
           source: async (track) => {
             const local = Platform.OS !== "web" && formatRef.current === "original" ? await localDownloads.source(track.id) : null;
+            if (!cancelled) localDiagnostics.source(track.id, local ? "offline" : formatRef.current === "mp3" ? "MP3 stream" : "original stream");
             return local ?? { ...requireApi().mediaSource(track.id, formatRef.current), name: track.title };
           },
           validate: async (signal) => {
@@ -105,14 +132,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           metadata: async (id, signal) => {
             const { track } = await requireApi().trackInfo(id, signal);
             return { id: track.id, title: track.title, artist: track.artist, album: track.album ?? undefined,
+              artistId: track.artist ? artistPlayerId(track.artist) : undefined,
+              albumId: track.album ? albumPlayerId(track.artist, track.album) : undefined,
               duration: track.duration ?? track.existingDuration ?? undefined, thumb: requireApi().artworkUrl(`/api/artwork/${id}`) };
           },
         }, AsyncStorage, `mint.queue.v1.${scope}`, randomUUID);
         const localEngine = engine;
         engineRef.current = engine;
-        engine.subscribe(() => { if (!cancelled) setState(localEngine.state); });
-        removeStatus = native.subscribe((status) => localEngine.onStatus(status));
+        engine.subscribe(() => {
+          if (cancelled) return;
+          setState(localEngine.state);
+          if (localDiagnostics.trackChanged(localEngine.state)) setDiagnostics(emptyDiagnostics());
+        });
+        removeStatus = native.subscribe((status) => {
+          if (cancelled) return;
+          localEngine.onStatus(status);
+          if (diagnosticsRef.current.status(status, localEngine.state, native.port.trackCount)) {
+            setDiagnostics(diagnosticsRef.current.read());
+          }
+        });
         registerPlaybackCleanup(scope, async () => {
+          if (!cancelled) {
+            localDiagnostics.setEnabled(false);
+            setDiagnosticsEnabledState(false);
+            setDiagnosticsOwner(null);
+            setDiagnostics(emptyDiagnostics());
+          }
+          await preference.dispose();
           await Promise.all([localEngine.revoke(), localDownloads.revoke()]);
         });
         await engine.restore();
@@ -132,6 +178,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })();
     return () => {
       cancelled = true;
+      void diagnosticsPreferenceRef.current?.dispose();
+      diagnosticsPreferenceRef.current = null;
+      localDiagnostics.setEnabled(false);
+      setDiagnosticsEnabledState(false);
+      setDiagnosticsOwner(null);
+      setDiagnostics(emptyDiagnostics());
+      setState(emptyPlayerState);
       removeStatus?.();
       engine?.dispose();
       engineRef.current = null;
@@ -178,6 +231,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
   const value = useMemo<PlayerController>(() => ({
     state, offline, expanded, open, close, format,
+    diagnosticsEnabled: diagnosticsEnabled && diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]),
+    diagnosticsWarning: diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]) ? diagnosticsWarning : null,
+    diagnostics: diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]) ? diagnostics : emptyDiagnostics(),
+    setDiagnosticsEnabled: async (enabled) => {
+      const preference = diagnosticsPreferenceRef.current;
+      if (!preference) throw new Error("Sign in and wait for playback to start before changing diagnostics.");
+      await preference.set(enabled);
+    },
     setFormat: async (next) => {
       if (engineRef.current?.state.queueLoading) throw new Error("Wait for the full queue to prepare before changing audio format.");
       const previous = formatRef.current;
@@ -197,7 +258,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     moveInQueue: (id, before) => act((engine) => engine.moveInQueue(id, before)), clearUpcoming: () => act((engine) => engine.clearUpcoming()),
     download: (track) => downloadAct((store) => store.download(track)), removeDownload: (id) => downloadAct((store) => store.remove(id)),
     retryDownload: (id) => downloadAct((store) => store.retry(id)), clearDownloads: () => downloadAct((store) => store.clear()),
-  }), [act, downloadAct, state, offline, expanded, open, close, format]);
+  }), [act, downloadAct, state, offline, expanded, open, close, format, diagnosticsEnabled, diagnosticsWarning, diagnostics, diagnosticsOwner, scopeServer, scopeUser]);
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
 export function usePlayer(): PlayerController {

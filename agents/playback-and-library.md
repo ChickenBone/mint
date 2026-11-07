@@ -46,6 +46,16 @@ Stored public artwork URLs remain fallback metadata; do not overwrite them with 
 
 Preserve bounded caches, concurrent request coalescing, short failure cooldowns, stale-cover recovery and later Plex retry. Fetches need bounded bytes/time, validated redirects and safe raster content. Keep Plex tokens and URLs private.
 
+Approved public Cover Art Archive resolution/images and YouTube thumbnails reuse
+the shared server-only public-read cache; private Plex artwork fetches retain
+their existing separate path and 32 MiB artwork LRU. Public image reads validate
+bounded raster content and allowed redirects, including approved archive hosts.
+Artwork responses expose cache status/age without provider credentials; stale
+fallbacks do not permanently suppress later Plex retry. Artist metadata adapters
+also reuse bounded MusicBrainz/Wikidata/Wikipedia/ListenBrainz reads. Full coverage
+and retention limits live in [the cache contract](architecture.md#server-side-public-read-caches);
+direct chart image URLs are not newly backend-proxied.
+
 Explicit custom/imported playlist artwork has separate semantics; do not indiscriminately replace it. Complete failure shows the shared neutral artwork tile.
 
 ## DSP, analysis and lyrics
@@ -57,6 +67,14 @@ Loudness normalization uses measured LUFS/true peak, LRA-aware gain clamping, an
 Mint analysis (`mint-dsp-v2`, `16 kHz` streaming decode) measures SHA-256 fingerprints, EBU R128 loudness (`integratedLufs`, `truePeakDbtp`, `lraLu`, `shortTermMaxLufs`, `crestFactorDb`), silence, 256-bin waveform, MixRamp fade contours, beatgrid tempo/stability, HPCP key + Camelot/Open Key notation, 12-band Bark energy, 13 MFCCs, genre/sub-genre + mood + vocal/instrumental classifications, and 64-d `audio-embedding-v2` similarity vectors. Existing `v1` (`mint-dsp-v1`) records remain valid via a discriminated union (`analysisV1Schema | analysisV2Schema`) until upgraded or reprocessed. Library filters and Smart Playlists can filter by `genre`, `mood`, `minBpm`, `maxBpm`, `camelotKey`, and `vocalType`.
 
 LRCLIB and Lyrics.ovh lyrics are compared on demand, not library-wide. Prefer actual enhanced-LRC word timing, then line sync, then plain text; never synthesize word timing from line duration. Source/timing details, partial provider failures, source choice and personal LRCLIB match/timing corrections are available in the admin lyrics details. Keep instrumental/no-match/error states and manual-follow behavior; listeners can report an issue to admins. A corrected match takes precedence over automatic ranking. Never send audio, private paths or credentials to a lyrics provider. Providers remain bounded, Redis-cached and rate-limited; LRCLIB cooldown does not block the independent fallback.
+
+LRCLIB get/search/by-ID and Lyrics.ovh now share server-only cache plumbing with
+explicit fresh/stale/negative/error policies. Stale lyrics carry warnings; only
+validated no-match/404 results use negative caching, never provider failures.
+Personal match/timing corrections are applied outside the shared public provider
+cache, and authenticated lyric API responses remain private/no-store. See the
+[read coverage and retention table](architecture.md#server-side-public-read-caches);
+this does not introduce offline/service-worker lyric caching.
 
 ## Collections, devices and offline
 

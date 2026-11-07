@@ -9,7 +9,8 @@ import { eq } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
 import { chartAcquisition, chartPage } from "../src/lib/chart-service";
-import type { ChartEntry, ChartSnapshot } from "../src/lib/charts";
+import { CHARTS, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
+import { chartCacheKey } from "../src/lib/chart-cache";
 
 const database = process.env.MUSIC_TEST_DATABASE_URL, cache = process.env.CHART_TEST_REDIS_URL;
 test("chart → exact local playback / explicit acquisition → progress → playable, with ownership and edition isolation", {
@@ -37,7 +38,7 @@ test("chart → exact local playback / explicit acquisition → progress → pla
       durationSec: 180, stage: "ready", filePath: "/read-only-originals/first.flac", existingFilePath: "/read-only-originals/first.flac", plexRatingKey: "fixture" }).returning();
     const snapshot: ChartSnapshot = { entries: [{ ...entry, id: "available", rank: 1, title: available!.title, recordingId: null }, entry],
       period: "Fictional fixture period", fetchedAt: new Date().toISOString(), providerUpdatedAt: new Date().toISOString(), revision: "fixture", notice: null };
-    await redis.set("mint:charts:v1:apple-us", JSON.stringify(snapshot), "EX", 3600);
+    await redis.set(chartCacheKey(CHARTS[0]!), JSON.stringify(snapshot), "EX", 3600);
     const publicPage = await chartPage("apple-us", null);
     assert.equal(publicPage.items[0]!.availability, "available"); assert.equal(publicPage.items[0]!.item, null);
     assert.equal(publicPage.items[1]!.availability, "missing");
@@ -97,7 +98,7 @@ test("chart → exact local playback / explicit acquisition → progress → pla
     shared.__mintDb = previous; shared.__mintChartRedis?.disconnect(); delete shared.__mintChartRedis;
     if (previousSecret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = previousSecret;
     if (previousRedis === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = previousRedis;
-    await redis.del("mint:charts:v1:apple-us"); redis.disconnect();
+    await redis.del(chartCacheKey(CHARTS[0]!)); redis.disconnect();
     await pool.end(); await admin.query(`drop database "${namespace}"`); await admin.end();
   }
 });

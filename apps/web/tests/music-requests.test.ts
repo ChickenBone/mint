@@ -8,6 +8,7 @@ import { and, eq } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
 import { readRequestRecording, requestRecording, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
+import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const catalogFixture = () => ({ recordings: [{
   id: randomUUID(), title: "First Light", length: 90000, score: 100,
@@ -139,10 +140,11 @@ test("client cancellation stops mirror fallback, body reads and cached responses
 });
 
 test("metadata cache is bounded, expires, isolates configuration and never stores failed responses", async () => {
-  let calls = 0;
+  let calls = 0, now = Date.now();
+  const store = publicCacheFixture(() => now);
   const fixture = catalogFixture();
   const fetcher: typeof fetch = async () => { calls++; return Response.json(fixture); };
-  const options = { mirrorUrl: "", cache: true };
+  const options = { mirrorUrl: "", cache: true, cacheStore: store.cache };
   const first = await searchRecordingMetadata("fixture", fetcher, undefined, options);
   first[0]!.title = "changed";
   assert.equal((await searchRecordingMetadata("fixture", fetcher, undefined, options))[0]!.title, "First Light");
@@ -150,22 +152,41 @@ test("metadata cache is bounded, expires, isolates configuration and never store
   const cancelled = new AbortController(); cancelled.abort();
   await assert.rejects(searchRecordingMetadata("fixture", fetcher, undefined, { ...options, signal: cancelled.signal }));
   assert.equal(calls, 1);
-  const originalNow = Date.now;
-  try {
-    const later = originalNow() + 61_000;
-    Date.now = () => later;
-    await searchRecordingMetadata("fixture", fetcher, undefined, options);
-    assert.equal(calls, 2);
-  } finally { Date.now = originalNow; }
-  for (let i = 0; i < 128; i++) await searchRecordingMetadata(`fixture ${i}`, fetcher, undefined, options);
+  now += 3601_000;
   await searchRecordingMetadata("fixture", fetcher, undefined, options);
-  assert.equal(calls, 131, "old entries are evicted at the 128-entry budget");
+  assert.equal(calls, 2);
+  for (let i = 0; i < 128; i++) {
+    now += 2100;
+    await searchRecordingMetadata(`fixture ${i}`, fetcher, undefined, options);
+  }
+  await searchRecordingMetadata("fixture", fetcher, undefined, options);
+  assert.equal(calls, 130, "hot-memory eviction retains public entries in the shared store");
+  now += 2100;
   await searchRecordingMetadata("fixture", fetcher, undefined, { ...options, mirrorUrl: "https://mirror.test/ws/2" });
-  assert.equal(calls, 132);
+  assert.equal(calls, 131);
   let failures = 0;
   const failing: typeof fetch = async () => { failures++; return new Response(null, { status: 503 }); };
-  for (let i = 0; i < 2; i++) await assert.rejects(searchRecordingMetadata("fixture", failing, undefined, options), /busy/);
-  assert.equal(failures, 2);
+  const failed = publicCacheFixture(() => now);
+  for (let i = 0; i < 2; i++) await assert.rejects(searchRecordingMetadata("fixture", failing, undefined,
+    { ...options, cacheStore: failed.instance() }), /busy/);
+  assert.equal(failures, 1, "provider cooldown prevents retries for identical or different failed reads");
+});
+test("public recording searches coalesce across stores and do not share signed/local account outputs", async () => {
+  const fixture = publicCacheFixture(), raw = catalogFixture();
+  let calls = 0;
+  const fetcher: typeof fetch = async (_input, init) => {
+    calls++; assert.equal(init?.redirect, "error");
+    assert.equal(new Headers(init?.headers).get("authorization"), null);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    return Response.json(raw);
+  };
+  const results = await Promise.all(Array.from({ length: 30 }, (_, index) => searchRecordingMetadata("First Light", fetcher,
+    undefined, { mirrorUrl: "", cacheStore: index % 2 ? fixture.cache : fixture.instance() })));
+  assert.ok(results.every((rows) => rows[0]!.id === raw.recordings[0]!.id)); assert.equal(calls, 1);
+  await searchRecordingMetadata("First Light", fetcher, undefined, { mirrorUrl: "", cacheStore: fixture.instance() });
+  assert.equal(calls, 1, "31 searches use one public provider call");
+  const values = [...fixture.entries.values()].map((entry) => entry.value).join("");
+  assert.ok(!values.includes('"token"')); assert.ok(!values.includes('"existing"'));
 });
 
 test("cached metadata still resolves local status and signs for each searching account without acquiring tracks", async () => {
@@ -179,7 +200,7 @@ test("cached metadata still resolves local status and signs for each searching a
   process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
   try {
     const fetcher: typeof fetch = async () => { fetches++; return Response.json(fixture); };
-    const options = { mirrorUrl: "", cache: true };
+    const options = { mirrorUrl: "", cache: true, cacheStore: publicCacheFixture().cache };
     const first = await searchRecordings("owner", "fixture", fetcher, undefined, options);
     assert.equal(first[0]!.existing, null);
     assert.equal(readRequestRecording("owner", first[0]!.token).id, fixture.recordings[0]!.id);

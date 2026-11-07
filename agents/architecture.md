@@ -4,8 +4,8 @@
 
 | Surface | Responsibility |
 | --- | --- |
-| `apps/web` | Next.js frontend, authentication, server actions/APIs, catalog and provider metadata |
-| `apps/mobile` | Primary Expo consumer app: Home/Search/Your Library, native playback and account-scoped downloads; no operator dashboard |
+| `apps/web` | Next.js backend/API, authentication, catalog/provider metadata and admin tools; browser consumer UX is frozen, maintenance-only |
+| `apps/mobile` | Consumer UX/UI design authority: Home/Search/Your Library, native playback and account-scoped downloads; no operator dashboard |
 | `apps/realtime` | Authenticated/public WebSocket channels backed by Redis events |
 | `apps/worker` | Pipeline, indexing, acquisition/finalization, private audio/artwork gateway and analysis scheduling |
 | Worker `hub` entry point | Lease-validated volunteer uploads and media validation |
@@ -46,6 +46,60 @@ Reuse shared view/protocol helpers so APIs, realtime events and UI agree. Preser
 WebSockets enhance server-rendered state; they are not the only recovery mechanism. Preserve polling/invalidation fallbacks where implemented. Public events must not reveal which member liked a track.
 
 Library metadata, public artwork and provider chart visibility are intentional public features. Private HTML, player APIs, sessions, lyrics and audio must not become shared CDN/service-worker cache entries.
+
+Server-side caches may reuse validated public provider metadata independently of
+the member response. Apply authorization and account-specific choices after that
+shared read; never put playback items, lyric corrections, private history or
+credentials in public cache keys/values. Each consumer owns its freshness/stale
+window, negative/error backoff, payload budget and invalidation semantics; shared
+plumbing is not evidence that every read endpoint is cached.
+
+## Server-side public read caches
+
+`@mint/core/public-cache` supplies shared Redis coordination and a bounded
+process-local hot cache. Web and worker adapters reuse validated public metadata,
+not member response bodies. Keys hash provider, canonical URL/query/body,
+variant/version and the MusicBrainz mirror identity where applicable; keys contain
+no raw queries, credentials or account choices.
+ListenBrainz popularity's read-only POST uses the canonical body in its identity;
+this is not permission to cache mutations or arbitrary POST requests.
+
+| Implemented read | Fresh / maximum retention |
+| --- | --- |
+| LRCLIB get/by-ID and Lyrics.ovh; LRCLIB search | 24 hours / 7 days; search 1 hour / 1 day |
+| MusicBrainz web recording and worker recording/artist/release-group searches | 1 hour / 1 day |
+| MusicBrainz entities, Wikidata, Wikipedia summaries and ListenBrainz popularity/related metadata | 24 hours / 7 days |
+| Approved Cover Art Archive resolution/images and YouTube thumbnails | 24 hours / 7 days |
+| Direct chart feeds; configured chart-source proxy | 1 hour / 7 days; proxy 60 seconds / 7 days with embedded ranking age checked |
+
+Only actual 404s or validated no-matches become five-minute negatives. Failures
+remain errors or explicitly bounded stale data, never an empty successful match.
+Leases coalesce reads across processes; atomic token-owned publication/release
+rejects expired/replaced lease writers. Invalidation is TTL, cache version and
+provider/parameter identity changes, not a manual purge API.
+Total deadlines/AbortSignals bound source work; canceling one waiter does not
+cancel a shared fetch needed by other callers.
+
+The shared adapter spaces provider requests, including a two-second MusicBrainz
+interval across web/worker, and honors bounded Retry-After. Failures use a
+30-second cooldown; Redis outages fail closed with a 30-second circuit, using
+only known-good hot stale values where policy permits, not unrestricted upstream
+fallback. Direct charts retain their separate provider throttling policy.
+Payload limits are consumer-specific: 512 KB default JSON, 1 MB MusicBrainz,
+300 KB lyric reads (2 MB search), 2 MB charts and 4 MiB validated raster images
+with a 6 MiB base64 storage limit. The hot cache is bounded to 128 entries/16 MiB;
+artwork retains its separate 32 MiB LRU. Redis has no application-wide aggregate
+byte cap here: configure deployment `maxmemory`/eviction; per-entry limits and
+expiry are not a promise of unlimited safe storage.
+
+Coverage is deliberately not every API. Private Plex/bearer requests, OAuth and
+personal Spotify/YouTube metadata, authorization, signed audio/private delivery
+and acquisition mutations are excluded. Direct provider chart image URLs are
+not newly proxied/backend-cached. Member lyric corrections and chart/playback
+availability remain outside shared public values; API privacy/no-store rules
+still apply. See [charts](../docs/charts.md#configuration-and-resilience),
+[artwork/lyrics](playback-and-library.md) and the owning adapter tests for budgets,
+stale notices and failure semantics.
 
 ## Persistence
 

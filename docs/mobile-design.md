@@ -1,8 +1,11 @@
 # Consumer mobile design
 
-The Expo app is a listener-only experience. It shares Mint's music and account
-contracts with the web service, not the web administration interface. Existing
-web charts, provider integrations and operator controls remain unchanged. The
+The Expo app is a listener-only experience and the design authority for future
+consumer UX/UI. It shares Mint's music and account contracts with the web service,
+not the web administration interface. Browser consumer UX is frozen,
+maintenance-only; existing routes/listening and security/backend compatibility
+remain supported, as do the Next.js backend/API and admin tools. Existing
+web charts, provider integrations and operator controls remain available. The
 only chart surface in the app is a read-only Search category; chart acquisition,
 provider setup and operator controls are never routed in the mobile app, even
 for an administrator account.
@@ -14,6 +17,12 @@ secondary text and Mint's green action accent. The native primitives use the
 platform sans-serif rather than downloading a font at runtime. Semantic colors,
 spacing, typography and responsive geometry live in
 `apps/mobile/src/theme/tokens.ts`.
+
+Interactions are independently implemented and Spotify-inspired: familiar
+transport, likes, options, direct sheet manipulation and accessible alternatives,
+not proprietary assets or a claim of exact feature/animation parity. Dynamic
+gradients derive from actual artwork and remain bounded, decorative and readable;
+neutral backgrounds and music tiles handle missing or failed art.
 
 The visual contract is shared; implementation ownership is feature-local under
 `apps/mobile/src/features/`. Albums and artists have their own entry screens,
@@ -27,14 +36,28 @@ not a branded header. Phones have three bottom destinations. At 900px and above,
 these become a persistent sidebar. Content scrolls independently of the
 mini-player and navigation. Safe-area insets protect persistent controls.
 Interactive controls have at least 44px targets and explicit accessible names;
-status is communicated in text, not color alone. Nonessential animation is
-omitted. Artwork failure shows a neutral music tile; artist portraits never
+status is communicated in text, not color alone. Motion explains state and
+direct manipulation, respects reduced motion and does not compete with listening.
+Artwork failure shows a neutral music tile; artist portraits never
 substitute album artwork.
 
 The persistent player provider wraps the route outlet. Its mini-player sits
 above phone navigation; expansion and the `/player` deep link open the same
 player presentation without creating another engine. Album-art-derived player
 color belongs to the current listening context, not the entire app chrome.
+
+The player uses one measured cover through expansion, collapse and interrupted
+dragging, not competing mini/expanded images. Vertical title/artwork dragging
+opens the sheet; directional horizontal mini-player swipes move previous/next.
+Expanded header/artwork/metadata allow collapse, leaving seek, buttons and
+lyrics/queue scrolling independent. Explicit transport, open/close, Back/Escape
+and accessibility actions preserve non-gesture access. UI-thread worklets and
+reduced-motion handling are implementation choices, not measured device FPS.
+The mini-player keeps Shuffle, Play/Pause and Next together in one control row,
+including narrow phones. Title/open and artist navigation have separate
+nonoverlapping touch targets; the loading indicator overlays artwork instead of
+consuming another control slot. Seek preview and commit are occurrence/account
+scoped so a previous track's slider event cannot seek the newly selected track.
 
 ## Listener flows
 
@@ -71,10 +94,19 @@ color belongs to the current listening context, not the entire app chrome.
   is distinct from playback. Duplicate playlist entries keep their own identity.
 - **Song options:** queue insertion, likes, playlist addition and supported
   offline downloads. Smart/source-managed playlists are not offered as manual
-  song-addition targets.
+  song-addition targets. Player hearts and song options share account/API-scoped
+  like state with pending/confirmed/error feedback and confirmed liked-list
+  invalidation; small individual lookups do not download the entire liked library
+  or add polling.
 - **Settings:** account connection, private sessions, history deletion,
   device-local download storage, optional MP3 compatibility, supported playback information, issue reporting
-  and sign-out. There is no download pipeline dashboard or infrastructure panel.
+  and sign-out. Developer options enables the local-only Stats for nerds panel
+  in the player; it does not add a pipeline dashboard or infrastructure panel.
+
+Developer diagnostics are opt-in and local-only: traces are not uploaded,
+automatically appended to reports or used as telemetry. Stored analysis must be
+labeled separately from live audio-engine observations; unavailable codec,
+throughput, waveform or DSP data stays unavailable, not synthesized.
 
 Issue reports send only explicitly written content. Destructive listener actions
 require confirmation. Loading, empty, failed and unavailable states are distinct,

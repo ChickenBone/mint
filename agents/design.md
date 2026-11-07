@@ -1,6 +1,11 @@
 # Design and experience guidance
 
-The current visual contract is [DESIGN.md](../DESIGN.md): a familiar, music-first consumer service rather than a backend dashboard.
+The current visual contract is [DESIGN.md](../DESIGN.md): native mobile is the
+consumer UX/UI authority, using independently implemented Spotify-inspired
+interactions and artwork-derived dynamic gradients with neutral fallbacks.
+Browser consumer UX is frozen, maintenance-only; preserve its existing
+routes/features, security, Next.js backend/API compatibility and administration.
+Browser guidance below is a retained-system reference, not a parallel redesign.
 
 For native UI tasks, read the compact repo-local
 [Mint mobile UX skill](../.github/skills/mint-mobile-ux/SKILL.md) first, then only
@@ -16,6 +21,7 @@ release-device profiling, not a successful export, substantiates FPS claims.
 - Prefer coherent collection shelves and artwork-led views over crowded diagnostic panels.
 - Use each surface's existing tokens and primitives: `apps/web/src/app/globals.css` for browser UI, `apps/mobile/src/theme/tokens.ts` for Expo. Native platform typography is intentional, not web Figtree parity. Avoid parallel palettes and one-off variants within either surface.
 - Keep errors, loading, empty, unavailable and success states intentional; never make failures resemble empty success.
+- Dynamic artwork color is decorative and contrast-safe, with a neutral fallback. Developer diagnostics are opt-in, local-only, bounded and based on actual engine or stored analysis values; never fake codec/throughput/waveform/DSP or upload traces.
 
 ## Information architecture
 
@@ -39,7 +45,9 @@ podcast/audiobook/event catalog. Native chart browsing never exposes a chart
 acquisition mutation; a missing song can lead to explicit Search resolution.
 Operator tools remain on Next.js. See [mobile design](../docs/mobile-design.md).
 
-Move machinery out of the listening foreground; do not remove it. Sync status, acquisition failures and necessary user actions still need contextual visibility.
+Move machinery out of the native listening foreground; do not remove backend/admin
+tools or existing browser functionality. Sync status, acquisition failures and
+necessary user actions still need contextual visibility.
 
 ## Playback surface
 

@@ -4,6 +4,8 @@ import { resolveNativeSession } from "@/lib/native-sessions";
 import * as catalog from "../../player/catalog/route";
 import * as audio from "../../player/audio/[id]/route";
 import * as info from "../../player/info/[id]/route";
+import * as analysis from "../../player/analysis/[id]/route";
+import { trackAnalysisResponseSchema } from "@mint/client";
 import * as lyrics from "../../player/lyrics/[id]/route";
 import * as session from "../../player/session/route";
 import * as offline from "../../player/offline/route";
@@ -30,6 +32,17 @@ async function dispatch(request: Request, path: string[]) {
   if (key === "player/items") return items.POST(request);
   if (path[0] === "player" && path[1] === "audio") return audio.GET(request, id);
   if (path[0] === "player" && path[1] === "info") return info.GET(request, id);
+  if (path[0] === "player" && path[1] === "analysis") {
+    const response = await analysis.GET(request, id);
+    // Native admins use the same safe consumer DTO as listeners, never worker errors.
+    if (!response.ok) return json("Track analysis is unavailable.", response.status);
+    const parsed = trackAnalysisResponseSchema.safeParse(await response.json());
+    if (!parsed.success) {
+      console.error("[native-api] track analysis response validation failed");
+      return json("Track analysis is unavailable.", 503);
+    }
+    return Response.json(parsed.data);
+  }
   if (path[0] === "player" && path[1] === "lyrics") return lyrics.GET(request, id);
   if (path[0] === "player" && path[1] === "queue") {
     return queue.GET(request, { params: Promise.resolve({ path: path.slice(2) }) });

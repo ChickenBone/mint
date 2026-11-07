@@ -42,6 +42,21 @@ Set `MINT_CHARTS_ENABLED=false` in the command-line `.env`, or change its value 
 - Failures retain bounded stale rankings with a reason and retry time. Provider cooldown defaults to five minutes; Retry-After is bounded to one minute–one day. Newly published empty rankings, unavailable charts and stale cache are different states.
 - Publications over eight days old are labeled stale independently of the cache's last fetch time. Audius supplies no publication time; fetch time is not treated as publication time.
 
+The configured chart-source proxy now also coalesces and caches validated public
+snapshots server-side: 60 seconds fresh, at most seven days retained, with the
+embedded ranking's age checked so cache layers cannot extend that lifetime.
+It retains provider notices/times and rejects wrong identity, malformed ranks
+and expired snapshots before admission. This cache is shared public metadata,
+not per-member local matches, signed choices or playable items; final chart GET
+responses remain private/no-store.
+
+Shared public-read plumbing also covers lyrics, recording/artist metadata and
+approved artwork-source fetches with their own budgets and policies. Redis outage
+does not trigger unthrottled provider fallback; bounded known-good stale data is
+explicit, and missing/failed/negative results stay distinct. This is not caching
+every API or reproxying direct Apple/Audius chart artwork links. See the
+[coverage and privacy contract](../agents/architecture.md#server-side-public-read-caches).
+
 ## Optional standalone chart source
 
 `services/chart-source/main.mts` runs the same supported providers behind a small, metadata-only HTTP API. It is **not a general-purpose web scraper**: no HTML scraping, arbitrary URLs, cookies, OAuth credentials, provider audio or acquisition routes are accepted. It never invents missing charts or combines storefronts into a global ranking. The existing Mint `/api/charts` contract and local matching stay unchanged.

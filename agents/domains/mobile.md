@@ -5,6 +5,7 @@
 - Owns Expo configuration, the route layout, navigation shell, shared music/UI components, theme, app-wide hooks and client authentication lifecycle. Feature folders and their routes/tests have separate owners; this is a fallback, not a reason to load every feature.
 - [Native contracts](mobile-contracts.md) own `@mint/client` and `/api/native/**`; [playback](mobile-playback.md) owns the engine/offline store; [player presentation](mobile-player.md) owns the sheet and controls.
 - The Expo app is consumer-only: Home, Search, Your Library, personal collections, listening and personal settings. Provider machinery, chart acquisition and administrator/management screens stay out of its navigation. Existing Next.js features remain intact.
+- Native mobile is the consumer design authority; evolve original Spotify-inspired interactions and artwork-derived gradients with neutral fallbacks. Browser UX is frozen, maintenance-only; backend/API, security and administration continue.
 - Share presentation through `src/components/music` and `src/components/ui`, never by importing Home's styles into another feature. Shell navigation is not feature state.
 
 ## Invariants
@@ -34,7 +35,7 @@
 - **Imported by:** [`mobile-albums`](mobile-albums.md), [`mobile-artists`](mobile-artists.md), [`mobile-home`](mobile-home.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md), [`mobile-playlists`](mobile-playlists.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md), [`mobile-your-music`](mobile-your-music.md)
 - **Live detail:** `npm run agents -- map mobile` (exports, line counts, cross-domain import edges).
 
-### Owned files (39)
+### Owned files (42)
 
 - `apps/mobile/` `app.json`, `eas.json`, `eslint.config.cjs`, `metro.config.cjs`, `package.json`, `tsconfig.json`
 - `apps/mobile/app/` `_layout.tsx`, `sign-in.tsx`
@@ -42,21 +43,21 @@
 - `apps/mobile/src/auth/` `AuthProvider.tsx`, `SignInScreen.tsx`, `account-request.ts`, `index.ts`, `persistence.ts`, `storage.native.ts`, `storage.ts`
 - `apps/mobile/src/components/music/` `CollectionDetail.tsx`, `detail-model.ts`, `screen-styles.ts`
 - `apps/mobile/src/components/ui/` `PageTitle.tsx`, `SongOptions.tsx`, `music.tsx`, `primitives.tsx`
-- `apps/mobile/src/hooks/` `paged-model.ts`, `useDebouncedValue.ts`, `usePagedResource.ts`, `usePlaybackAction.tsx`, `useResource.ts`
+- `apps/mobile/src/hooks/` `paged-model.ts`, `song-likes.ts`, `useDebouncedValue.ts`, `usePagedResource.ts`, `usePlaybackAction.tsx`, `useResource.ts`, `useSongLike.ts`
 - `apps/mobile/src/shell/` `ConsumerShell.tsx`, `navigation.ts`
 - `apps/mobile/src/theme/` `tokens.ts`
-- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `screens.test.ts`
+- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `screens.test.ts`, `song-likes.test.ts`
 - `apps/mobile/tests/helpers/` `hook-harness.ts`, `music-fixtures.ts`
 - `docs/` `mobile-design.md`, `mobile.md`
 
 ### Validate
 
-Owned tests: 3.
+Owned tests: 4.
 
 ```bash
 npm run typecheck -w @mint/mobile
 npm run lint -w @mint/mobile
-npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/screens.test.ts
+npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/screens.test.ts tests/song-likes.test.ts
 ```
 
 <!-- agents:generated:end -->

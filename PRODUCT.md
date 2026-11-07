@@ -4,11 +4,14 @@
 
 ## Platform
 
-web
+mobile
 
-The Next.js web service remains the backend, browser listener and admin surface.
-The Expo iOS/Android app (Android first) is the primary consumer client; its
-responsive web export is a secondary target, not a native-device certification.
+The Expo iOS/Android app (Android first) is the consumer UX/UI design authority.
+The Next.js web service remains the backend/API and admin surface; its existing
+browser listener is frozen, maintenance-only, with security and compatibility
+fixes retained. Do not remove browser routes, listening features or administration,
+or develop a parallel browser redesign. The Expo responsive web export is a
+secondary development target, not a native-device certification.
 
 ## Users
 - **Members**: approved people who listen to the shared library in Mint, discover music and manage their own likes and playlists, and can report problems to the admins. Linking another service is not required for listening.
@@ -24,7 +27,7 @@ Mint is a self-hosted listening service: private files, personal collections and
 ## Operating Context
 - Self-hosted with Docker Compose. Images are published to GHCR from GitHub Actions.
 - Lidarr, TorBox (debrid), Cobalt, and Plex live on an internal network. The public app never talks to them directly; it uses Postgres and Redis queues.
-- Approved members listen inside Mint's persistent, independently implemented browser player, or optionally use an external Plex client with a separate Plex invitation. Public pages remain browse-only.
+- Approved members listen inside Mint's persistent, independently implemented native app or existing browser player, or optionally use an external Plex client with a separate Plex invitation. Public pages remain browse-only.
 - The Expo app uses the same approved accounts through an allowlisted native bearer-session facade. Home, Search and Your Library lead; backend administration stays on Next.js, not in native consumer navigation.
 - EAS Build produces Android APKs and EAS Update delivers compatible JavaScript/assets. Native runtime changes require a new signer-verified APK; a finished matching build is the compatibility baseline. The NAS does not host application updates. Quotas and physical-device verification remain separate constraints.
 
@@ -41,10 +44,11 @@ Mint is a self-hosted listening service: private files, personal collections and
 - Android Chrome can install Mint as a standalone HTTPS PWA. Its service worker caches only a generic, account-free offline player shell. Explicit account-scoped audio downloads live in IndexedDB with device storage controls, seven-day renewal and logout cleanup. Authenticated HTML, API responses and lyrics are not service-worker cached. Android can suspend background work or evict browser storage; native-style background guarantees are not offered.
 - Massive libraries are a searchable backlog, not the default homepage. Recommendations are bounded; full matching collections use frozen server-side ID queues and progressive 100-song metadata windows. Search accepts reordered words, accents, prefixes and conservative typos. Explicit signed MusicBrainz recording requests feed existing acquisition; external sources/configuration remain necessary.
 - Optional Spotify OAuth mirrors accessible playlist metadata read-only, preserves order/duplicates and plays only confidently matched local Plex music. Missing/ambiguous/unavailable songs remain visible and never automatically download. Spotify's account, app approval and current development-mode restrictions apply; its audio and analysis APIs are not used.
+- Native Settings offers opt-in, local-only Stats for nerds: bounded ephemeral engine observations and the current track's existing measured analysis. It never uploads traces, schedules analysis, invents decoder/throughput/FPS/DSP data or widens native admin access. See [measured fields and limits](docs/mobile-playback.md#local-stats-for-nerds).
 
 ## Brand Commitments
 - Name: **Mint**.
-- Mint should feel immediately familiar to listeners of Spotify and Apple Music: music, search, playlists and liked songs lead; operational tools stay in a separate admin area. Use Mint branding and independently implemented UI and assets. Desktop and mobile must make the primary listening flow easy to discover. Mint owns the interface and audio engine; navigation never remounts playback.
+- Native Mint should feel immediately familiar to Spotify listeners: music, search, playlists and liked songs lead; operational tools stay in a separate admin area. Use Mint branding, original assets and independently implemented interactions, not proprietary code or parity claims. Artwork-derived dynamic gradients supply listening color with readable neutral fallbacks. Mobile decisions govern future consumer UX/UI work; the browser stays maintenance-only. Mint owns the interface and audio engine; navigation never remounts playback.
 
 ## Evidence on Hand
 - There are no users, testimonials, or metrics yet. All stats on the front page must come from the live database and must never be invented.
@@ -57,7 +61,7 @@ Mint is a self-hosted listening service: private files, personal collections and
 
 ## Consumer-first direction
 
-The current direction is a consumer-focused music service with a familiar commercial music-app interface and an admin-only area in the same application. Ordinary controls use listener language such as "Liked songs" and "Create playlist", not redundant Mint qualifiers. Existing provider connections and data are preserved, but provider sync should not organize the consumer experience. YouTube playlist import remains supported. A self-hosted MusicBrainz mirror is optional, with public service fallback; it must not become a mandatory multi-gigabyte install. Chart sources must be honest about scope and respect their terms. Feature parity with commercial services is an aspiration, not a claim that unimplemented capabilities exist.
+The current direction is a native-first consumer music service with familiar Spotify-inspired interactions and an admin-only Next.js area. Browser consumer UX is frozen; backend/API work, administration, security and compatibility maintenance continue. Ordinary controls use listener language such as "Liked songs" and "Create playlist", not redundant Mint qualifiers. Existing provider connections and data are preserved, but provider sync should not organize the consumer experience. YouTube playlist import remains supported. A self-hosted MusicBrainz mirror is optional, with public service fallback; it must not become a mandatory multi-gigabyte install. Chart sources must be honest about scope and respect their terms. Feature parity with commercial services is an aspiration, not a claim that unimplemented capabilities exist.
 
 Native Search's **Browse all** includes real recommendations/new arrivals,
 paginated genres, moods and decades, and explicitly labeled read-only provider

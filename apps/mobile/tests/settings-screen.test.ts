@@ -13,3 +13,10 @@ test("app info is the final Settings section and exposes update diagnostics", ()
   assert.match(settings, /Recovery detail: \{Updates\.emergencyLaunchReason/);
   assert.doesNotMatch(settings, /Constants\.platform\?\.android\?\.versionCode/);
 });
+test("diagnostics restore warning has a Settings surface independent of player engine errors", () => {
+  const settings = readFileSync(resolve("src/features/settings/SettingsScreen.tsx"), "utf8");
+  const provider = readFileSync(resolve("src/playback/PlayerProvider.tsx"), "utf8");
+  assert.match(settings, /player\.diagnosticsWarning \? <Notice title="Diagnostics preference needs attention"/);
+  assert.match(provider, /setDiagnosticsWarning\(warning \?\? null\)/);
+  assert.doesNotMatch(provider, /preference\.restore\(\)\.catch/);
+});

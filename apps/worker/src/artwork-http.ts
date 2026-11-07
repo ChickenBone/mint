@@ -20,6 +20,10 @@ export async function serveArtwork(req: IncomingMessage, res: ServerResponse, tr
   res.writeHead(200, {
     "content-type": image.type, "content-length": image.bytes.length, "x-content-type-options": "nosniff",
     "cache-control": `public, max-age=${image.maxAge}, stale-while-revalidate=86400`, etag: image.etag,
+    ...(image.ageSeconds !== undefined ? {
+      "x-mint-cache-age": String(image.fetchedAt !== undefined ? Math.max(0, Math.floor((Date.now() - image.fetchedAt) / 1000)) : image.ageSeconds),
+      "x-mint-cache-status": image.cacheStale || (image.fetchedAt !== undefined && Date.now() - image.fetchedAt >= 86400_000) ? "stale" : "fresh",
+    } : {}),
   });
   res.end(req.method === "HEAD" ? undefined : image.bytes);
 }

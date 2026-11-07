@@ -25,7 +25,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       return unavailable(502);
     }
     const headers = new Headers({ "content-type": type, "x-content-type-options": "nosniff" });
-    for (const name of ["content-length", "cache-control", "etag"]) {
+    for (const name of ["content-length", "cache-control", "etag", "x-mint-cache-age", "x-mint-cache-status"]) {
       const value = response.headers.get(name);
       if (value) headers.set(name, value);
     }

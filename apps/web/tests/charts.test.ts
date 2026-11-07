@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CHARTS, chartKey, chartRecordingResolution, chartRequestEffect, compatibleChartRecording, confidentChartRecording, matchChartEntry, type ChartCandidate, type ChartRequestOutcome, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
 import { boundedProviderJson, ChartProviderError, fetchChart } from "../src/lib/chart-providers";
-import { cachedChart, CHART_KEEP_SECONDS, type ChartCacheStore } from "../src/lib/chart-cache";
+import { cachedChart, chartCacheKey, CHART_KEEP_SECONDS, type ChartCacheStore } from "../src/lib/chart-cache";
 
 const now = new Date("2026-11-04T04:00:00Z");
 const entry: ChartEntry = { id: "fixture-1", rank: 1, title: "Distant Window", artist: "The Paper Moons", album: "Night Letters",
@@ -17,6 +17,10 @@ function memory() {
     get: async (key) => data.get(key)?.value ?? null,
     set: async (key, value, seconds, absent) => { if (absent && data.has(key)) return false; data.set(key, { value, seconds }); return true; },
     release: async (key, value) => { if (data.get(key)?.value === value) data.delete(key); },
+    publish: async (key, value, seconds, lease, token) => {
+      if (data.get(lease)?.value !== token) return false;
+      data.set(key, { value, seconds }); return true;
+    },
   };
   return { data, store };
 }
@@ -161,7 +165,7 @@ test("cache bounds storage, coalesces refresh, preserves stale data and honors p
   const load = async () => { calls++; return snapshot(); };
   const first = await cachedChart(chart, store, load, now.getTime());
   assert.equal(first.status, "fresh"); assert.equal(calls, 1);
-  assert.equal(data.get(`mint:charts:v1:${chart.id}`)!.seconds, CHART_KEEP_SECONDS);
+  assert.equal(data.get(chartCacheKey(chart))!.seconds, CHART_KEEP_SECONDS);
   await cachedChart(chart, store, load, now.getTime() + 1000); assert.equal(calls, 1);
   data.delete("mint:charts:throttle:apple");
   const later = now.getTime() + 3601_000;
@@ -174,6 +178,37 @@ test("cache bounds storage, coalesces refresh, preserves stale data and honors p
   const requests = await Promise.all([cachedChart(chart, store, load, later), cachedChart(chart, store, load, later)]);
   assert.equal(calls, 3); assert.ok(requests.some((result) => result.status === "stale"));
 });
+test("cold chart callers on separate store instances coalesce and invalid rankings never publish", async () => {
+  const chart = CHARTS[0]!, { store } = memory();
+  let calls = 0;
+  const load = async () => { calls++; await new Promise((resolve) => setTimeout(resolve, 20)); return snapshot(); };
+  const results = await Promise.all(Array.from({ length: 20 }, () => cachedChart(chart, { ...store }, load, now.getTime())));
+  assert.equal(calls, 1); assert.ok(results.every((result) => result.snapshot?.revision === "fixture"));
+  await cachedChart(chart, { ...store }, load, now.getTime()); assert.equal(calls, 1);
+  const invalid = memory();
+  const result = await cachedChart(chart, invalid.store, async () => ({ ...snapshot(),
+    entries: [{ ...entry, artwork: "https://untrusted.example/cover.jpg" }] }), now.getTime());
+  assert.equal(result.status, "error"); assert.equal(invalid.data.has(chartCacheKey(chart)), false);
+  assert.notEqual(chartCacheKey(chart), chartCacheKey({ ...chart, country: "gb" }));
+  assert.notEqual(chartCacheKey(chart), chartCacheKey({ ...chart, genre: "Rock" }));
+});
+test("an expired chart lease cannot overwrite another refresh or release its lease", async () => {
+  const chart = CHARTS[0]!, { data, store } = memory(), key = chartCacheKey(chart);
+  const result = await cachedChart(chart, store, async () => {
+    data.set(`${key}:refresh`, { value: "new-owner", seconds: 30 });
+    return snapshot();
+  }, now.getTime());
+  assert.equal(result.status, "error"); assert.match(result.notice!, /lease expired/);
+  assert.equal(data.has(key), false);
+  assert.equal(data.get(`${key}:refresh`)?.value, "new-owner");
+});
+test("malformed provider cooldowns remain explicit and never permit another upstream request", async () => {
+  const { store, data } = memory();
+  data.set("mint:charts:cooldown:apple", { value: "{bad", seconds: 60 });
+  let calls = 0;
+  const result = await cachedChart(CHARTS[0]!, store, async () => { calls++; return snapshot(); }, now.getTime());
+  assert.equal(result.status, "error"); assert.match(result.notice!, /cooldown/); assert.equal(calls, 0);
+});
 test("empty, expired, malformed, timed-out and stale provider output remain distinguishable", async () => {
   const chart = CHARTS[0]!;
   const empty = await cachedChart(chart, memory().store, async () => ({ ...snapshot(), entries: [] }), now.getTime());
@@ -183,10 +218,10 @@ test("empty, expired, malformed, timed-out and stale provider output remain dist
   const old = { ...snapshot(), providerUpdatedAt: "2026-10-01T00:00:00Z" };
   assert.equal((await cachedChart(chart, memory().store, async () => old, now.getTime())).status, "stale");
   const { data, store } = memory();
-  data.set(`mint:charts:v1:${chart.id}`, { value: JSON.stringify({ ...snapshot(), fetchedAt: "2026-10-01T00:00:00Z" }), seconds: 1 });
+  data.set(chartCacheKey(chart), { value: JSON.stringify({ ...snapshot(), fetchedAt: "2026-10-01T00:00:00Z" }), seconds: 1 });
   const expired = await cachedChart(chart, store, async () => { throw new Error("offline"); }, now.getTime());
   assert.equal(expired.status, "error"); assert.equal(expired.snapshot, null);
-  const corrupt = memory(); corrupt.data.set(`mint:charts:v1:${chart.id}`, { value: "{bad", seconds: 100 });
+  const corrupt = memory(); corrupt.data.set(chartCacheKey(chart), { value: "{bad", seconds: 100 });
   assert.equal((await cachedChart(chart, corrupt.store, async () => snapshot(), now.getTime())).status, "fresh");
   await assert.rejects(boundedProviderJson(new Response("x".repeat(2_000_001))), /safety limit/);
   await assert.rejects(boundedProviderJson(new Response("{")), /invalid JSON/);

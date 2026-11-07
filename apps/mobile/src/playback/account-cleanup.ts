@@ -15,5 +15,5 @@ export async function revokePlaybackAccount(serverUrl: string, userId: string): 
   await active.get(scope)?.();
   active.delete(scope);
   await createOfflineFiles(scope).clear();
-  await AsyncStorage.multiRemove([`mint.queue.v1.${scope}`, `mint.offline.v1.${scope}`]);
+  await AsyncStorage.multiRemove([`mint.queue.v1.${scope}`, `mint.offline.v1.${scope}`, `mint.diagnostics.v1.${scope}`]);
 }

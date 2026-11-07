@@ -12,6 +12,13 @@ swipe equivalents, immediate feedback, existing tokens and one player engine.
 Native release-device measurement is required for FPS claims. Generic Expo advice
 does not override Mint's audio, dependency, theme or privacy constraints.
 
+Native mobile is the consumer UX/UI design authority: use independently
+implemented Spotify-inspired interactions and dynamic artwork-derived gradients
+with readable neutral fallbacks. Browser consumer UX is frozen, maintenance-only;
+preserve existing browser listening/routes, security, Next.js backend/API
+compatibility and administration rather than creating a parallel redesign.
+Keep developer diagnostics local-only and measured, never fabricated or uploaded.
+
 Detect existing harness todo/session SQL capabilities before choosing a tracker;
 keep one authoritative source, never create an application DB for agent progress.
 Read [portable task tracking](../.github/skills/mint-task-tracking/SKILL.md) only

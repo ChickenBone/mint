@@ -159,12 +159,21 @@ Presentation lives in `apps/mobile/src/features/player`; playback and offline
 engines remain in `src/playback` and `src/offline`. The shell imports the
 presentation once. Feature routes do not own or recreate audio engines.
 
-The mini-player sits above navigation. Header/artwork/metadata drags directly
-follow the finger or mouse, use recent release velocity, and can interrupt or
-reverse settling. Controls and seek sliders are outside drag activation;
+The mini-player sits above navigation. Vertical drags on its title/artwork open
+the sheet; directional horizontal drags there move to previous/next, with explicit
+transport controls and accessible alternatives. Expanded header/artwork/metadata
+drags collapse. Gesture Handler/Reanimated worklets track direct manipulation
+and interruptible velocity-aware spring settling; direction locking and canceled
+drags prevent accidental transport or opening. One measured artwork instance
+travels between the mini-player and expanded square through a shell-level overlay
+without a native Modal handoff, using UI-thread transforms and scroll offsets rather than
+per-frame React state or duplicated cross-fading covers.
+Controls and seek sliders are outside drag activation;
 lyrics/queue keep their own scroll gestures, with the header as the reliable
 collapse region. Escape/Back and a labeled close control dismiss the sheet.
-Reduced motion skips settling animation but keeps direct tracking.
+System reduced-motion changes are honored while open; settling/travel reduce to
+functional state changes. No haptics are added. These implementation choices do
+not establish native-device smoothness or frame rate.
 
 The background is extracted from actual artwork, never a random seed or uniform
 brand green. Native uses a resized 32-pixel image and a platform color extractor;
@@ -178,6 +187,49 @@ Lyrics come only from the authorized existing server endpoint. Genuine enhanced
 LRC words, line timestamps and plain text are distinguished; word timing is never
 fabricated. Listeners can scroll independently, resume following, seek to timed
 lines, retry errors and send a lyrics report. No operator diagnostics appear.
+
+Authorized lyric responses reuse the server's bounded public-provider cache,
+including explicit stale warnings and true no-match versus failure states;
+account-specific corrections and member authorization stay outside shared values.
+Artwork-source caching likewise remains behind Mint's public proxy, separate from
+native palette extraction. These caches do not download lyrics to the offline
+store or cache arbitrary/private APIs. See the
+[server read-cache coverage](../agents/architecture.md#server-side-public-read-caches).
+
+## Local Stats for nerds
+
+**Settings → Developer options** enables **Stats for nerds** in the expanded
+player. It is off by default. The preference is scoped by a hash of server and
+account and removed on sign-out/revocation. Runtime traces are ephemeral: at most
+60 status samples, sampled no faster than once a second, and 24 numeric events.
+Disabling diagnostics, changing account or track occurrence clears them.
+No traces, credentials, request URLs/headers or raw error messages are persisted
+or uploaded, and issue reports remain written-only.
+If a saved preference cannot be restored, Settings shows a warning and leaves
+diagnostics off; retry through the toggle rather than treating it as enabled.
+
+| Observation | Meaning and limit |
+| --- | --- |
+| Position, duration, loaded/playing/loading/buffering | Actual engine status; position/duration stay unavailable when unloaded. |
+| Buffering transitions | Observed status changes, not certified audible stalls or buffer depth. |
+| Queue preparation, hydrated/total/native items and queue API latency | Existing queue work and measured request timing, not network throughput. |
+| Status update cadence | JavaScript-observed engine notifications, not render FPS or native timing certification. |
+| Source mode | Observed original, MP3 or offline source selection; an unobserved already-loaded source stays unavailable. |
+| Error diagnostics | Native error code and error HTTP status only when exposed. Successful audio HTTP status is not exposed. |
+| Stored audio analysis | Actual existing v1/v2 measurements, including at most 256 amplitude-envelope bins; not live DSP or a synthesized waveform. |
+
+The visible, enabled panel reads the current track's existing analysis once,
+with explicit Refresh/Retry. Closing, disabling, switching track/account or
+unmounting aborts/discards stale requests; there is no new polling or analysis
+job scheduling. The GET-only native facade retains approved-member/playable-track
+authorization and omits worker errors/notes, fingerprints and embeddings, even
+for an administrator. Stored v2 fade contours, energy and estimates remain labeled
+analysis, not evidence of active native effects.
+
+Decoder codec, live bitrate, network throughput, buffer depth, FPS and native DSP
+are not measured and are not invented. A graph is a bounded rendering of the
+actual stored amplitude envelope; absent analysis has an explicit unavailable
+state rather than fabricated data.
 
 ## Web and verification
 

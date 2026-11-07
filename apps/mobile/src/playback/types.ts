@@ -3,6 +3,8 @@ export interface MobileTrack {
   title: string;
   artist?: string;
   album?: string;
+  artistId?: string;
+  albumId?: string;
   thumb?: string;
   duration?: number;
 }

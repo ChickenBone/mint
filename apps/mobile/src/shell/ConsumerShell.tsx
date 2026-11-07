@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { router, usePathname } from "expo-router";
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from "react-native";
@@ -9,6 +9,7 @@ import { colors, layout } from "../theme/tokens";
 import { activeTab, consumerTabs } from "./navigation";
 
 export function ConsumerShell({ children }: { children: ReactNode }) {
+  const [playerPresented, setPlayerPresented] = useState(false);
   const { width } = useWindowDimensions();
   const wide = width >= layout.wide;
   const path = usePathname();
@@ -25,7 +26,7 @@ export function ConsumerShell({ children }: { children: ReactNode }) {
     </Pressable>)}
   </View>;
   return <View style={[s.root, { paddingTop: insets.top, paddingLeft: insets.left, paddingRight: insets.right }]}>
-    <View style={s.body}>
+    <View style={s.body} accessibilityElementsHidden={playerPresented} importantForAccessibility={playerPresented ? "no-hide-descendants" : "auto"}>
       {wide ? <View style={s.sidebar}>{nav}<Text style={s.sidebarCaption}>A place for all your music.</Text></View> : null}
       <View style={s.main}>
         {!primaryPage ? <View style={s.accountRow}>
@@ -38,8 +39,9 @@ export function ConsumerShell({ children }: { children: ReactNode }) {
         <View style={s.route}>{children}</View>
       </View>
     </View>
-    <PlayerSurface bottomInset={0} />
-    {!wide ? <View style={[s.navigation, { paddingBottom: Math.max(insets.bottom, 8) }]}>{nav}</View> : <View style={{ height: insets.bottom }} />}
+    <PlayerSurface bottomInset={0} onPresentationChange={setPlayerPresented} />
+    {!wide ? <View accessibilityElementsHidden={playerPresented} importantForAccessibility={playerPresented ? "no-hide-descendants" : "auto"}
+      style={[s.navigation, { paddingBottom: Math.max(insets.bottom, 8) }]}>{nav}</View> : <View style={{ height: insets.bottom }} />}
   </View>;
 }
 

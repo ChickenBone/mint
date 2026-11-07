@@ -8,6 +8,9 @@ description: Design, improve or review any Mint native mobile screen, listener f
 Make the listener's next action obvious and the phone feel responsive.
 This is task guidance, not permission to redesign unrelated UI, invent features,
 install packages, publish builds or certify FPS. Repository rules win.
+Native mobile is the consumer design authority; browser UX is maintenance-only.
+Use original Spotify-inspired interactions and artwork-derived gradients with
+readable neutral fallbacks, never proprietary assets or parity claims.
 
 ## 1. Load a small, current task map
 
@@ -69,9 +72,9 @@ into each feature. Coordinate shared contracts with their owner.
 Keep charcoal/mint semantic tokens and native platform typography; do not port
 web CSS, replace the palette or rename folders to match generic advice.
 
-## 4. Preserve the meaning of web interactions on a phone
+## 4. Preserve action meaning while evolving native interactions
 
-Parity means the same action, outcome and spatial continuity—not identical CSS
+Existing web actions retain the same meaning, outcome and spatial continuity—not identical CSS
 or every browser animation. Use direct manipulation where it fits the task.
 Mini-player upward drag/tap expands; downward drag/close dismisses the same
 presentation. Detail navigation may use platform back gestures; retain Back.

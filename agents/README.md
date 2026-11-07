@@ -49,7 +49,13 @@ the portable entry points.
 5. If intent and code differ, state the discrepancy and resolve it within the task rather than making an undocumented product change.
 6. Keep feature-owned work narrow. `mobile` is shared foundation, not every screen; `mobile-contracts` is the DTO/native server boundary; player presentation and playback engine have separate cards. Future Events/Profiles/Jams seams are documented, not implemented features.
 
-The latest direction is a familiar, independently implemented consumer experience led by the Expo Android/mobile app, with Home, Search and Your Library. Browse all uses real music categories and provider-scoped charts. Next.js browser listening and admin operations remain supported. Pipeline-first UI and embedded Plexamp are historical, not instructions to restore them.
+The native Expo Android/mobile app is the consumer UX/UI design authority, with
+Home, Search and Your Library, independently implemented Spotify-inspired
+interactions and artwork-derived gradients with neutral fallbacks. Browse all
+uses real music categories and provider-scoped charts. Browser consumer UX is
+frozen, maintenance-only: keep existing routes/listening, security fixes, the
+Next.js backend/API and admin operations. Pipeline-first UI, parallel browser
+redesigns and embedded Plexamp are not directions to restore.
 
 Exact implementation limits below are useful regression checkpoints, not permission to duplicate constants or silently change their values. Read the owning schema/helper for authoritative values.
 

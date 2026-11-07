@@ -4,8 +4,9 @@ import test, { type TestContext } from "node:test";
 import { createChartSourceServer } from "../../../services/chart-source/service.mjs";
 import { CHARTS, type ChartSnapshot } from "../src/lib/charts";
 import { ChartProviderError } from "../src/lib/chart-providers";
-import { chartSourceOrigin, fetchChartSource } from "../src/lib/chart-source";
-import type { ChartCacheStore } from "../src/lib/chart-cache";
+import { cachedChartSource, chartSourceOrigin, fetchChartSource } from "../src/lib/chart-source";
+import { chartCacheKey, type ChartCacheStore } from "../src/lib/chart-cache";
+import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const now = Date.parse("2026-11-06T12:00:00Z");
 const chart = CHARTS[0]!;
@@ -27,6 +28,10 @@ function memory() {
       values.set(key, value); return true;
     },
     release: async (key, value) => { if (values.get(key) === value) values.delete(key); },
+    publish: async (key, value, _seconds, lease, token) => {
+      if (values.get(lease) !== token) return false;
+      values.set(key, value); return true;
+    },
   };
   return { store, values };
 }
@@ -108,7 +113,7 @@ test("disabled, Redis-down and provider failures report unavailable, not empty",
 test("provider failures keep bounded stale ranks and revisions through the standalone API", async (t) => {
   const cache = memory();
   const old = { ...snapshot, fetchedAt: new Date(now - 3601_000).toISOString() };
-  cache.values.set(`mint:charts:v1:${chart.id}`, JSON.stringify(old));
+  cache.values.set(chartCacheKey(chart), JSON.stringify(old));
   const origin = await serve(t, { store: cache.store, now: () => now,
     load: async () => { throw new ChartProviderError("Provider unavailable.", 300); } });
   const result = await fetchChartSource(chart, origin, fetch, now);
@@ -151,4 +156,45 @@ test("remote source validates origin, scope, bounded data, cache states and rank
   }), now);
   assert.equal(empty.status, "empty");
   await assert.rejects(fetchChartSource(chart, "http://chart-source:3090", async () => new Response("x".repeat(2_000_001)), now), /safety limit/);
+});
+
+test("the configured chart-source proxy coalesces identical reads and keeps Retry-After stale state", async (t) => {
+  let clock = now, calls = 0, busy = false;
+  t.mock.method(Date, "now", () => clock);
+  const fixture = publicCacheFixture(() => clock);
+  const transport: typeof fetch = async (_input, init) => {
+    calls++; assert.equal(init?.redirect, "error"); assert.ok(init?.signal);
+    if (busy) return new Response(null, { status: 429, headers: { "retry-after": "180" } });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    return Response.json({ chart, snapshot, status: "fresh", notice: null, retryAt: null });
+  };
+  const results = await Promise.all(Array.from({ length: 24 }, (_, index) =>
+    cachedChartSource(chart, "http://chart-source:3090", transport, index % 2 ? fixture.cache : fixture.instance())));
+  assert.ok(results.every((result) => result.snapshot?.revision === "fixture"));
+  await cachedChartSource(chart, "http://chart-source:3090", transport, fixture.instance());
+  assert.equal(calls, 1, "25 proxy reads require one shared-source request");
+  clock += 61_000; busy = true;
+  const stale = await cachedChartSource(chart, "http://chart-source:3090", transport, fixture.instance());
+  assert.equal(stale.status, "stale"); assert.match(stale.notice!, /61 seconds/); assert.equal(calls, 2);
+  await cachedChartSource(chart, "http://chart-source:3090", transport, fixture.instance()); assert.equal(calls, 2);
+  const other = CHARTS[1]!;
+  await assert.rejects(cachedChartSource(other, "http://chart-source:3090", transport, fixture.instance()), /temporarily unavailable/);
+  assert.equal(calls, 2, "429 pauses all chart IDs on that source");
+  clock += 181_000; busy = false;
+  await cachedChartSource(chart, "http://chart-source:3090", transport, fixture.instance());
+  assert.equal(calls, 3);
+});
+test("unavailable chart-source responses cannot be persisted as successful empty charts", async (t) => {
+  t.mock.method(Date, "now", () => now);
+  const fixture = publicCacheFixture();
+  let calls = 0;
+  const transport: typeof fetch = async () => {
+    calls++;
+    return Response.json({ chart, snapshot: null, status: "error", notice: "Provider unavailable",
+      retryAt: new Date(now + 90000).toISOString() }, { status: 503 });
+  };
+  for (let index = 0; index < 2; index++) await assert.rejects(cachedChartSource(chart, "http://source:3090", transport,
+    fixture.instance()), /temporarily unavailable/);
+  assert.equal(calls, 1);
+  assert.ok([...fixture.entries.keys()].every((key) => key.includes("cooldown") || key.includes("throttle")));
 });

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { lyricsSchema, lyricTiming, parseLrc, rankLyrics, type Lyrics } from "../src/lib/lyrics";
-import { fetchBestLyrics, fetchLyricsById, fetchOvhLyrics, LyricsBusyError } from "../src/lib/lyrics-provider";
+import { fetchBestLyrics, fetchLyrics, fetchLyricsById, fetchOvhLyrics, LyricsBusyError, searchLyrics } from "../src/lib/lyrics-provider";
+import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const track = { title: "Test song", artist: "Fixture artist", album: "Test album", duration: 123 };
 const plain: Lyrics = { source: "Lyrics.ovh", instrumental: false, plainLyrics: "First phrase", syncedLyrics: null };
@@ -78,5 +79,64 @@ test("fallback rejects oversized or malformed responses and identifies its own r
   await assert.rejects(() => fetchOvhLyrics(track, async () => new Response(null, { status: 429 })), (error: unknown) =>
     error instanceof LyricsBusyError && error.provider === "Lyrics.ovh");
   assert.equal(await fetchLyricsById(12, async () => new Response(null, { status: 404 })), null);
+  await assert.rejects(() => fetchLyricsById(12, async () => Response.json(null)), /invalid/);
+  await assert.rejects(() => searchLyrics("Fixture song", async () => Response.json(null)), /invalid/);
   await assert.rejects(() => fetchLyricsById(-1), /Invalid lyric match/);
+});
+
+test("all four public lyric endpoint families share validated persistent metadata across callers", async () => {
+  let now = Date.now(), calls = 0;
+  const fixture = publicCacheFixture(() => now);
+  const request: typeof fetch = async (input) => {
+    calls++;
+    const url = new URL(String(input));
+    return Response.json(url.hostname === "api.lyrics.ovh" ? { lyrics: "First phrase" } :
+      url.pathname === "/api/search" ? [{ ...synced, trackName: track.title, artistName: track.artist, albumName: track.album, duration: 123 }] : synced);
+  };
+  const results = await Promise.all(Array.from({ length: 30 }, (_, index) =>
+    fetchLyrics(track, request, index % 2 ? fixture.cache : fixture.instance())));
+  assert.ok(results.every((lyrics) => lyrics?.id === 12)); assert.equal(calls, 1);
+  await fetchLyrics(track, request, fixture.instance()); assert.equal(calls, 1);
+  now += 2000;
+  await fetchLyricsById(12, request, fixture.cache); await fetchLyricsById(12, request, fixture.instance());
+  assert.equal(calls, 2);
+  now += 2000;
+  assert.equal((await searchLyrics("Fixture artist Test song", request, fixture.cache)).length, 1);
+  await searchLyrics("Fixture artist Test song", request, fixture.instance()); assert.equal(calls, 3);
+  await fetchOvhLyrics(track, request, fixture.cache); await fetchOvhLyrics(track, request, fixture.instance());
+  assert.equal(calls, 4, "37 endpoint lookups need four upstream reads");
+  now += 2000;
+  await fetchLyrics({ ...track, album: "Different edition" }, request, fixture.cache);
+  assert.equal(calls, 5, "album/duration variants cannot collide");
+});
+test("fallback lyrics respect their own provider-wide Retry-After without suppressing LRCLIB", async () => {
+  let now = Date.now(), fallbackCalls = 0, lrclibCalls = 0;
+  const fixture = publicCacheFixture(() => now);
+  const request: typeof fetch = async (input) => {
+    if (String(input).includes("lrclib.net")) { lrclibCalls++; return Response.json(synced); }
+    fallbackCalls++;
+    return new Response(null, { status: 429, headers: { "retry-after": "120" } });
+  };
+  const first = await fetchBestLyrics(track, request, 0, fixture.cache);
+  assert.equal(first.lyrics?.source, "LRCLIB"); assert.equal(first.retryAfter, 120);
+  now += 2000;
+  const second = await fetchBestLyrics({ ...track, title: "Another song" }, request, 0, fixture.instance());
+  assert.equal(second.lyrics?.source, "LRCLIB");
+  assert.equal(fallbackCalls, 1); assert.equal(lrclibCalls, 2);
+});
+test("lyrics retain bounded real no-match negatives and stale lyrics report their original age", async () => {
+  let now = Date.now(), calls = 0;
+  const fixture = publicCacheFixture(() => now);
+  const missing: typeof fetch = async () => { calls++; return new Response(null, { status: 404 }); };
+  assert.equal(await fetchLyrics(track, missing, fixture.cache), null);
+  assert.equal(await fetchLyrics(track, missing, fixture.instance()), null); assert.equal(calls, 1);
+  now += 301_000;
+  assert.equal(await fetchLyrics(track, missing, fixture.instance()), null); assert.equal(calls, 2);
+  const kept = publicCacheFixture(() => now);
+  await fetchBestLyrics(track, async (input) => Response.json(String(input).includes("lrclib") ? synced : { lyrics: "First phrase" }), 0, kept.cache);
+  now += 86401_000;
+  const stale = await fetchBestLyrics(track, async () => new Response(null, { status: 503 }), 0, kept.instance());
+  assert.equal(stale.lyrics?.source, "LRCLIB");
+  assert.equal(stale.warnings.length, 2);
+  assert.match(stale.warnings[0]!, /cached lyrics.*86401 seconds old/);
 });

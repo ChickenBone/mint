@@ -1,6 +1,9 @@
 import { optionalEnv } from "@mint/core/env";
-import { HttpError, httpJson, type RequestOpts } from "../http";
+import { HttpError, type RequestOpts } from "../http";
 import { log } from "../log";
+import { canonicalPublicUrl, getPublicReadCache, PublicProviderBusyError, publicCacheKey, publicRetryAfter,
+  type PublicReadCache } from "@mint/core/public-cache";
+import { boundedMetadataJson } from "./public-metadata";
 
 const API = "https://musicbrainz.org/ws/2";
 const UA = optionalEnv("MUSICBRAINZ_USER_AGENT", "Mint/3.5 ( https://github.com/ChickenBone/mint )");
@@ -52,10 +55,10 @@ function validMirrorResult(value: unknown, pathname: string): boolean {
 export function musicBrainzJson<T>(
   url: string,
   query?: Record<string, string | number | boolean | undefined>,
-  options: Pick<RequestOpts, "timeoutMs" | "retries"> = {},
+  options: Pick<RequestOpts, "timeoutMs" | "retries"> & { cache?: PublicReadCache | null } = {},
 ) {
   const request = { ...options, headers: { "user-agent": UA }, query };
-  return throttled(async () => {
+  const load = async (signal: AbortSignal) => {
     const mirror = optionalEnv("MUSICBRAINZ_MIRROR_URL", "").trim();
     const publicUrl = new URL(url);
     // Route canonical URLs here so all existing worker consumers share the same fallback.
@@ -69,12 +72,10 @@ export function musicBrainzJson<T>(
         }
         base.pathname = base.pathname.replace(/\/+$/, "") + publicUrl.pathname.slice("/ws/2".length);
         base.search = publicUrl.search;
-        const result = await httpJson<T>(base.toString(), {
-          ...request,
-          timeoutMs: Math.min(options.timeoutMs ?? 3000, 3000),
-          retries: 0,
-          redirect: "error",
-        });
+        if (query) for (const [key, value] of Object.entries(query)) if (value !== undefined) base.searchParams.set(key, String(value));
+        const response = await fetch(base, { headers: request.headers, redirect: "error",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(Math.min(options.timeoutMs ?? 3000, 3000))]) });
+        const result = await boundedMetadataJson(response, 1_000_000) as T;
         if (!validMirrorResult(result, publicUrl.pathname)) {
           throw new Error("Invalid MusicBrainz mirror JSON");
         }
@@ -84,7 +85,37 @@ export function musicBrainzJson<T>(
           "MusicBrainz mirror unavailable or invalid; falling back to public service");
       }
     }
-    return httpJson<T>(url, request);
+    if (query) for (const [key, value] of Object.entries(query)) if (value !== undefined) publicUrl.searchParams.set(key, String(value));
+    const response = await fetch(publicUrl, { headers: request.headers, redirect: "error", signal });
+    if (response.status === 429 || response.status === 503 || (!response.ok && response.headers.has("retry-after"))) {
+      await response.body?.cancel();
+      const error = new PublicProviderBusyError("MusicBrainz", publicRetryAfter(response.headers.get("retry-after")));
+      error.message = `MusicBrainz returned HTTP ${response.status}`;
+      throw error;
+    }
+    return await boundedMetadataJson(response, 1_000_000) as T;
+  };
+  if (options.cache === null) return throttled(() => load(AbortSignal.timeout(options.timeoutMs ?? 15000)));
+  const canonical = new URL(url);
+  if (canonical.origin !== "https://musicbrainz.org" ||
+    !/^\/ws\/2\/(?:artist|recording|release-group)(?:\/[\da-f-]{36})?$/.test(canonical.pathname) ||
+    canonical.username || canonical.password || canonical.port) throw new Error("Unsupported MusicBrainz public read");
+  if (query) for (const [key, value] of Object.entries(query)) if (value !== undefined) canonical.searchParams.set(key, String(value));
+  const byId = /^\/ws\/2\/(?:artist|recording|release-group)\/[^/]+$/.test(canonical.pathname);
+  return (options.cache ?? getPublicReadCache()).read({
+    provider: "MusicBrainz", key: publicCacheKey("MusicBrainz", "entity-v1",
+      [canonicalPublicUrl(canonical), optionalEnv("MUSICBRAINZ_MIRROR_URL", "").trim()]),
+    freshSeconds: byId ? 86400 : 3600, keepSeconds: byId ? 7 * 86400 : 86400,
+    negativeSeconds: 300, spacingSeconds: 2, maxBytes: 1_000_000,
+    validate: (value) => {
+      if (!validMirrorResult(value, canonical.pathname)) throw new Error("Invalid MusicBrainz metadata");
+      return value as T;
+    },
+    negative: (value) => object(value) && ["recordings", "artists", "release-groups"].some((key) => Array.isArray(value[key]) && !value[key].length),
+    timeoutMs: Math.min(options.timeoutMs ?? 15000, 15000), load,
+  }).then((result) => {
+    if (result.stale) log.warn({ provider: "MusicBrainz", ageSeconds: result.ageSeconds }, "Using cached public metadata while refresh is unavailable");
+    return result.value;
   });
 }
 
@@ -122,15 +153,17 @@ export async function matchRecording(q: {
   album?: string | null;
   durationSec?: number | null;
   mbRecordingId?: string | null;
-}): Promise<MbMatch | null> {
+}, cache?: PublicReadCache | null): Promise<MbMatch | null> {
   const primaryArtist = q.artist.split(/,|&| feat\.? | ft\.? /i)[0]!.trim();
   const query = `recording:"${esc(q.title)}" AND artist:"${esc(primaryArtist)}"`;
   const data = q.mbRecordingId ? { recordings: [{ ...await musicBrainzJson<MbRecording>(
     `${API}/recording/${encodeURIComponent(q.mbRecordingId)}`,
     { inc: "artists+releases+release-groups", fmt: "json" },
+    { cache },
   ), score: 100 }] } : await musicBrainzJson<{ recordings: MbRecording[] }>(
     `${API}/recording`,
     { query, fmt: "json", limit: 15 },
+    { cache },
   );
 
   type Candidate = { rec: MbRecording; rel: NonNullable<MbRecording["releases"]>[number]; score: number };
@@ -174,7 +207,7 @@ export function coverArtUrl(releaseGroupId: string) {
 }
 
 /** Match both artist and album; never use the first fuzzy search hit as a cover. */
-export async function albumReleaseGroups(artist: string, album: string): Promise<string[]> {
+export async function albumReleaseGroups(artist: string, album: string, cache?: PublicReadCache | null): Promise<string[]> {
   const data = await musicBrainzJson<{ "release-groups": Array<{
       id: string;
       title: string;
@@ -182,7 +215,7 @@ export async function albumReleaseGroups(artist: string, album: string): Promise
       "artist-credit"?: Array<{ name: string; artist?: { name: string } }>;
     }> }>(`${API}/release-group`, {
     query: `releasegroup:"${esc(album)}" AND artist:"${esc(artist)}"`, fmt: "json", limit: 10,
-    }, { timeoutMs: 15_000, retries: 0 });
+    }, { timeoutMs: 15_000, retries: 0, cache });
   return (data["release-groups"] ?? [])
     .filter((group) => group.score >= 90 && norm(group.title) === norm(album) &&
       group["artist-credit"]?.some((credit) => norm(credit.artist?.name ?? credit.name) === norm(artist)))

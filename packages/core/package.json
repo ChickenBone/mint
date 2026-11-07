@@ -26,6 +26,7 @@
     "./spotify-store": "./src/spotify-store.ts",
     "./queues": "./src/queues.ts",
     "./redis": "./src/redis.ts",
+    "./public-cache": "./src/public-cache.ts",
     "./env": "./src/env.ts",
     "./views": "./src/views.ts",
     "./stats": "./src/stats.ts",

@@ -114,6 +114,15 @@ export function SettingsScreen() {
         await api.reportIssue({ category: "app", message: report.trim() }); setReport("");
       }, "Your report was sent to the server owner.")} />
     </Section>
+    <Section title="Developer options">
+      <View style={s.setting}><View style={s.settingText}><Text style={s.title}>Stats for nerds</Text>
+        <Text style={s.secondary}>Show local playback graphs and existing measured track analysis in Now Playing. Off by default, saved only for this account and server on this device. No diagnostics are uploaded. Turning off or signing out clears the local trace.</Text></View>
+        <Switch accessibilityLabel="Stats for nerds" value={player.diagnosticsEnabled} disabled={busy}
+          trackColor={{ false: colors.line, true: colors.action }}
+          onValueChange={(value) => void act(() => player.setDiagnosticsEnabled(value), value ? "Local playback diagnostics enabled." : "Local playback diagnostics cleared and disabled.")} />
+      </View>
+      {player.diagnosticsWarning ? <Notice title="Diagnostics preference needs attention" message={player.diagnosticsWarning} /> : null}
+    </Section>
     <Section title="App info">
       <Text selectable style={s.secondary}>App config version (may be from the current update): {Constants.expoConfig?.version ?? "Not available"}</Text>
       <Text selectable style={s.secondary}>Installed native build: {nativeBuild}</Text>

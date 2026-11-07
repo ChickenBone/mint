@@ -2,6 +2,13 @@
 
 Mint is split into **domains** so an agent session loads only the context a task needs. Prompts do not need to name a domain; route every request yourself.
 
+The native Expo app is the consumer UX/UI design authority: evolve its
+independently implemented Spotify-inspired interactions and artwork-derived
+gradients with accessible neutral fallbacks. Browser consumer UX is frozen,
+maintenance-only; preserve its routes and features, security fixes, Next.js
+backend/API compatibility and administration. Do not build parallel browser
+redesigns or infer native feature parity.
+
 ## Every task
 
 1. Read the always-read guides: [product decisions](agents/product-decisions.md) and [engineering](agents/engineering.md).
@@ -49,17 +56,17 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | --- | --- |
 | [`mobile`](agents/domains/mobile.md) | Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle |
 | [`mobile-contracts`](agents/domains/mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions |
-| [`mobile-playback`](agents/domains/mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, native adapters and account-scoped offline storage |
+| [`mobile-playback`](agents/domains/mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage |
 | [`mobile-home`](agents/domains/mobile-home.md) | Listener Home recommendations, bounded album shelves and recent additions |
 | [`mobile-artists`](agents/domains/mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation |
 | [`mobile-albums`](agents/domains/mobile-albums.md) | Album detail navigation, album identity and full-selection playback actions |
 | [`mobile-playlists`](agents/domains/mobile-playlists.md) | Playlist and liked-song details, occurrence-based editing and collection actions |
 | [`mobile-search`](agents/domains/mobile-search.md) | Local and recording Search, Browse all discovery/categories and read-only chart destinations |
 | [`mobile-your-music`](agents/domains/mobile-your-music.md) | Your Library overview, collection browsing, folders/pins and playlist invitations |
-| [`mobile-settings`](agents/domains/mobile-settings.md) | Listener settings, privacy/history, local storage, app information and compatible update checks |
-| [`mobile-player`](agents/domains/mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures and artwork colors |
+| [`mobile-settings`](agents/domains/mobile-settings.md) | Listener settings, privacy/history, local storage, developer options, app information and compatible update checks |
+| [`mobile-player`](agents/domains/mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds |
 | [`mobile-design`](agents/domains/mobile-design.md) | Compact Mint mobile UX skill and pinned official Expo native UI/animation references, loaded on demand |
-| [`platform`](agents/domains/platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing |
+| [`platform`](agents/domains/platform.md) | Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime |
 | [`playback`](agents/domains/playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery |
 | [`library`](agents/domains/library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing |
 | [`collections`](agents/domains/collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves |

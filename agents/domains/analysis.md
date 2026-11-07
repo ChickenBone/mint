@@ -31,7 +31,7 @@ Details: [workers and operations](../workers-and-operations.md#analysis-behavior
 - **Scope:** Measured audio analysis (mint-dsp), scheduling/backfills, remote analysis workers and analysis UI.
 - **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/playback-and-library.md](../playback-and-library.md) (UI: also check desktop/mobile per DESIGN.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`collections`](collections.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`collections`](collections.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map analysis` (exports, line counts, cross-domain import edges).
 
 ### Owned files (20)

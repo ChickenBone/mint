@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fetchArtistMetadata } from "./artist-metadata";
+import { fetchArtistMetadata as cachedArtistMetadata } from "./artist-metadata";
+const fetchArtistMetadata: typeof cachedArtistMetadata = (name, ids) => cachedArtistMetadata(name, ids, null);
 
 const artistId = "8f6bd1e4-fbe1-4f50-aa9b-94c450ec0f11";
 const relatedId = "4ac1c9a0-4d3d-4c65-99b6-123456789abc";

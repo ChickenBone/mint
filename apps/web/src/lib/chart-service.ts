@@ -1,12 +1,13 @@
 import { getDb, schema } from "@mint/core/db";
 import { createRedis } from "@mint/core/redis";
+import { redisPublicCacheStore } from "@mint/core/public-cache";
 import { PLAYABLE } from "@mint/core/playback";
 import { MusicError } from "@mint/core/music";
 import { toTrackView } from "@mint/core/views";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { CHARTS, chartIdentity, chartKey, chartRecordingResolution, compatibleChartRecording, matchChartEntry, type ChartEntry, type ChartPage, type ChartDefinition } from "./charts";
 import { cachedChart, type CachedChart, type ChartCacheStore } from "./chart-cache";
-import { fetchChartSource } from "./chart-source";
+import { cachedChartSource } from "./chart-source";
 import { readRequestRecording, requestRecording, searchRecordings } from "./music-requests";
 import { trackPlayerItem } from "./player-protocol";
 
@@ -17,19 +18,13 @@ function cacheStore(): ChartCacheStore {
     connections.__mintChartRedis.on("error", (error) => console.error("Chart cache connection failed", error.message));
   }
   const redis = connections.__mintChartRedis;
-  return {
-    get: (key) => redis.get(key),
-    set: async (key, value, seconds, onlyIfAbsent) => (onlyIfAbsent
-      ? await redis.set(key, value, "EX", seconds, "NX")
-      : await redis.set(key, value, "EX", seconds)) === "OK",
-    release: async (key, value) => { await redis.eval("if redis.call('get',KEYS[1]) == ARGV[1] then return redis.call('del',KEYS[1]) else return 0 end", 1, key, value); },
-  };
+  return redisPublicCacheStore(() => redis);
 }
 async function loadChart(chart: ChartDefinition): Promise<CachedChart> {
   if (process.env.MINT_CHARTS_ENABLED === "false") return { snapshot: null, status: "error", retryAt: null,
     notice: "Charts are disabled on this instance. The operator can enable MINT_CHARTS_ENABLED on the web service." };
   if (process.env.MINT_CHART_SOURCE_URL) {
-    try { return await fetchChartSource(chart, process.env.MINT_CHART_SOURCE_URL); }
+    try { return await cachedChartSource(chart, process.env.MINT_CHART_SOURCE_URL); }
     catch (error) {
       console.error("Chart source request failed", error instanceof Error ? error.name : "Unknown error");
       return { snapshot: null, status: "error", retryAt: null,

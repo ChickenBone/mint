@@ -5,6 +5,7 @@
 - Inspect the current code, shared helpers and tests before editing. Follow existing patterns and retain type safety.
 - Prefer precise root-cause fixes and reusable existing contracts over shortcuts, broad rewrites or duplicate state.
 - Preserve unrelated work and existing behavior. UI redesign does not authorize feature removal, permission changes or schema resets.
+- Native mobile decisions govern future consumer UX/UI. Browser UX is frozen, maintenance-only; security and backend/API compatibility fixes and administration remain in scope, not a parallel browser redesign.
 - Ask for decisions that materially change product behavior, provider cost, deployment exposure or scope.
 - Surface failures explicitly with actionable states and repository-standard logging. Never swallow errors into success-shaped defaults.
 - Respect source/service terms and only support acquisition the operator is authorized to perform.
@@ -27,6 +28,13 @@ Use the smallest existing command covering the change; expand when results requi
 | Deployment | Compose validation, relevant `deploy/docker` tests, migration startup/order, private networks and secret separation |
 | Native distribution | Finished matching EAS APK baseline, exact production runtime/channel/fingerprint, stable signer and recovery; device lockscreen/background/offline/OTA testing remains separate |
 | Documentation | Correct relative links/anchors, current screenshots, accurate commands, generic examples and honest limitations |
+
+Read-cache changes need evidence for coverage, freshness/stale expiry, failure
+backoff, coalescing, bounded admission/eviction, invalidation and account isolation.
+Do not describe all APIs as cached without a route-level audit. Keep mutable or
+authorization-sensitive responses private/no-store where required. Opt-in
+developer diagnostics stay on-device, use actual engine/existing analysis values,
+omit credentials/URLs and never become automatic reports or telemetry uploads.
 
 Some integration tests skip without PostgreSQL/Redis/audio environment settings. Inspect the test and `.github/workflows/ci.yml`; a skipped integration is not a passed integration. Never point destructive fixture/database tests at a real deployment.
 

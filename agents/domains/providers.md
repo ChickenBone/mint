@@ -12,6 +12,7 @@
 
 - Report honest scope. Apple Music RSS covers country storefront Top 50 charts, ListenBrainz covers worldwide community listening, and Audius covers platform trending. Never aggregate countries into a "global" chart or call genre labels independent rankings.
 - Bound charts to 50 entries and 25 per page, and keep rank order across revision-aware pagination. Keep Redis caching, refresh leases, throttles, timeouts and Retry-After handling.
+- Configured chart-source reads cache validated public snapshots with embedded age bounds; account matches/choices/player items remain outside shared values and final GET privacy stays no-store. Do not imply direct chart image URLs are newly proxied. See [cache coverage](../architecture.md#server-side-public-read-caches).
 - Show provider, territory, period, publication and check times separately. Distinguish empty, disabled, unavailable, stale and old states.
 - Match recording identities, including version qualifiers and duration. Missing songs are muted and get an explicit **Add to library** action. **Play local songs** never acquires.
 - Spotify is read-only metadata only: no audio, no analysis API and no automatic downloads. YouTube/Google is read-only import and never posts upstream.

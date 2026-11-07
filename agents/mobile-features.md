@@ -1,6 +1,9 @@
 # Focused mobile features
 
-The Expo listener app is the primary consumer surface. Route ordinary feature
+The Expo listener app is the consumer UX/UI design authority. Browser consumer
+UX is frozen, maintenance-only; existing routes/listening, security fixes,
+backend/API compatibility and Next.js administration remain supported.
+Route ordinary feature
 requests without asking people to name a domain. An explicit browser, backend or
 file-path request takes precedence; inspect the current owner and contract before
 editing. These are capability names, not a replacement for album/artist/playlist
@@ -47,6 +50,10 @@ adapters. Feature cards own their exact route and focused tests. The manifest an
 - Browsing, charts and Play never acquire missing music. Only explicit supported
   requests do. Source-managed imports stay read-only and copying stays separate.
   Native DSP/Smart Fades and device behavior are not implied by browser support.
+- Server-side public metadata caches are feature contracts, not an excuse to
+  share member responses or cache authorization. Local developer diagnostics
+  consume real engine/existing analysis observations, remain opt-in and bounded,
+  and never upload traces.
 
 ## UI and verification
 
@@ -65,7 +72,9 @@ Begin with the listener's task: one primary action per area, with preserved
 secondary actions in accessible overflow. Swipes keep web action meaning but
 have explicit button/menu equivalents; do not intercept scrolling or seeking.
 Provide immediate tap feedback and distinct pending/success/error/retry states.
-Native animation communicates state or direct manipulation, not decoration;
+Use independently implemented Spotify-inspired gestures and artwork-derived
+dynamic gradients with readable neutral fallbacks, not proprietary assets or
+parity claims. Native animation communicates state or direct manipulation, not decoration;
 respect reduced motion, interruption and cancellation. Keep one player engine.
 Use current tokens/components/dependencies; Tailwind/NativeWind is not adopted.
 

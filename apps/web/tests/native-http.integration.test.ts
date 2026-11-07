@@ -121,6 +121,11 @@ test("real Next native login, consumer mutations and signed private audio retain
     assert.equal((await api.recordHistory({ eventId: randomUUID(), trackId: track!.id, listenedMs: 1000 })).recorded, true);
     assert.equal((await api.history()).entries[0]?.track.id, track!.id);
     assert.equal((await api.trackInfo(track!.id)).track.id, track!.id);
+    assert.equal((await api.trackAnalysis(track!.id)).status, "missing");
+    assert.equal((await fetch(`${origin}/api/native/player/analysis/${track!.id}`)).status, 401);
+    assert.equal((await fetch(`${origin}/api/native/player/analysis/${randomUUID()}`, { headers })).status, 404);
+    assert.equal((await fetch(`${origin}/api/native/player/analysis/${track!.id}`, { method: "POST", headers })).status, 404,
+      "Even native admins cannot schedule or mutate analysis.");
     assert.equal((await fetch(`${origin}/api/native/player/offline`, { headers })).status, 200);
     assert.equal((await fetch(`${origin}/api/native/browse?facet=decade`)).status, 401, "Browse categories require a native session.");
     assert.equal((await fetch(`${origin}/api/native/charts`)).status, 401, "Charts require a native session.");
@@ -149,6 +154,7 @@ test("real Next native login, consumer mutations and signed private audio retain
     assert.equal(await head.text(), "");
     assert.equal((await fetch(`${origin}/api/native/auth/logout`, { method: "POST", headers })).status, 200);
     assert.equal((await fetch(`${origin}/api/native/player/audio/${track!.id}`, { headers })).status, 401);
+    assert.equal((await fetch(`${origin}/api/native/player/analysis/${track!.id}`, { headers })).status, 401);
   } finally {
     next?.kill("SIGTERM"); redis?.kill("SIGTERM");
     if (worker.listening) await new Promise<void>((resolve) => worker.close(() => resolve()));

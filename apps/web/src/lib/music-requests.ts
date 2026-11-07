@@ -5,6 +5,8 @@ import { eq, inArray, sql } from "drizzle-orm";
 import { MusicError } from "@mint/core/music";
 import { PLAYABLE } from "@mint/core/playback";
 import type { Stage } from "@mint/core/stages";
+import { canonicalPublicUrl, getPublicReadCache, PublicProviderBusyError, publicCacheKey, publicRetryAfter,
+  type PublicReadCache } from "@mint/core/public-cache";
 
 const recording = z.object({
   id: z.uuid(), title: z.string().trim().min(1).max(1000), artist: z.string().trim().min(1).max(1000),
@@ -21,7 +23,7 @@ export type RecordingSearchItem = RequestRecording & {
   } | null;
 };
 export interface RecordingSearchResponse { items: RecordingSearchItem[] }
-interface RecordingSearchOptions { signal?: AbortSignal; mirrorUrl?: string; cache?: boolean }
+interface RecordingSearchOptions { signal?: AbortSignal; mirrorUrl?: string; cache?: boolean; cacheStore?: PublicReadCache }
 const catalogResponse = z.object({
   error: z.never().optional(),
   recordings: z.array(z.object({
@@ -33,7 +35,6 @@ const catalogResponse = z.object({
     isrcs: z.array(z.string().max(100)).max(100).optional(),
   })).max(10),
 });
-const catalogCaches = new WeakMap<typeof fetch, Map<string, { expires: number; items: RequestRecording[] }>>();
 const normalize = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 const sameRecordingMetadata = (track: { title: string; artist: string; durationSec: number | null }, item: RequestRecording) =>
   normalize(track.title) === normalize(item.title) && normalize(track.artist) === normalize(item.artist) &&
@@ -59,6 +60,8 @@ async function fetchRecordingMetadata(url: URL, fetcher: typeof fetch, signal: A
   }
   if (!response.ok) {
     await response.body?.cancel();
+    if (response.status === 429 || response.status === 503 || response.headers.has("retry-after"))
+      throw new PublicProviderBusyError("MusicBrainz", publicRetryAfter(response.headers.get("retry-after")));
     throw new MusicError(response.status === 429 || response.status === 503 ? "MusicBrainz is busy. Wait a few seconds and search again." : "The recording catalog could not be reached. Try again.", 503);
   }
   const reader = response.body?.getReader();
@@ -112,40 +115,41 @@ export async function searchRecordingMetadata(query: string, fetcher: typeof fet
   const identifier = isrc?.replaceAll("-", "").toUpperCase();
   url.search = new URLSearchParams({ query: identifier && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(identifier) ? `isrc:${identifier}` : escaped, fmt: "json", limit: "10" }).toString();
   const mirror = options.mirrorUrl ?? process.env.MUSICBRAINZ_MIRROR_URL?.trim() ?? "";
-  const cacheKey = JSON.stringify([url.href, mirror, process.env.MUSICBRAINZ_USER_AGENT]);
-  let cache = catalogCaches.get(fetcher);
-  if (!cache) { cache = new Map(); catalogCaches.set(fetcher, cache); }
-  const useCache = options.cache ?? fetcher === fetch;
-  const now = Date.now();
-  for (const [key, entry] of cache) if (entry.expires <= now) cache.delete(key);
-  const cached = useCache ? cache.get(cacheKey) : undefined;
-  if (cached) return structuredClone(cached.items);
-  const deadline = AbortSignal.timeout(10_000);
-  const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
-  let items: RequestRecording[] | undefined;
   const mirrorUrl = mirrorRecordingUrl(url, mirror);
-  if (mirrorUrl) {
-    try {
-      items = await fetchRecordingMetadata(mirrorUrl, fetcher, AbortSignal.any([signal, AbortSignal.timeout(3000)]));
-    } catch {
-      signal.throwIfAborted();
-      // A broken mirror must not turn an unavailable catalog into an empty search.
+  const load = async (signal: AbortSignal): Promise<RequestRecording[]> => {
+    if (mirrorUrl) {
+      try {
+        return await fetchRecordingMetadata(mirrorUrl, fetcher, AbortSignal.any([signal, AbortSignal.timeout(3000)]));
+      } catch {
+        signal.throwIfAborted();
+        console.error("Recording catalog mirror unavailable or invalid; trying the public catalog");
+      }
     }
-  }
+    return fetchRecordingMetadata(url, fetcher, signal);
+  };
   try {
-    items ??= await fetchRecordingMetadata(url, fetcher, signal);
+    if (options.cache ?? (fetcher === fetch || !!options.cacheStore)) {
+      const cached = await (options.cacheStore ?? getPublicReadCache()).read({
+        provider: "MusicBrainz", key: publicCacheKey("MusicBrainz", "recording-search-v1",
+          [canonicalPublicUrl(url), mirrorUrl ? canonicalPublicUrl(mirrorUrl) : null]),
+        freshSeconds: 3600, keepSeconds: 86400, negativeSeconds: 300, spacingSeconds: 2,
+        maxBytes: 1_000_000, validate: (value) => z.array(recording).max(10).parse(value),
+        negative: (value) => !value.length, signal: options.signal, timeoutMs: 10_000, load,
+      });
+      if (cached.stale) console.error("Recording catalog refresh unavailable; using validated cached public metadata", { ageSeconds: cached.ageSeconds });
+      return cached.value;
+    }
+    const deadline = AbortSignal.timeout(10_000);
+    const signal = options.signal ? AbortSignal.any([options.signal, deadline]) : deadline;
+    const items = await load(signal);
     signal.throwIfAborted();
+    return items;
   } catch (error) {
     options.signal?.throwIfAborted();
+    if (error instanceof PublicProviderBusyError) throw new MusicError("MusicBrainz is busy. Wait before searching again.", 503);
     if (error instanceof MusicError) throw error;
     throw new MusicError("The recording catalog could not be reached or returned an invalid response. Try again.", 503);
   }
-  if (useCache) {
-    cache.delete(cacheKey);
-    while (cache.size >= 128) cache.delete(cache.keys().next().value!);
-    cache.set(cacheKey, { expires: Date.now() + 60_000, items: structuredClone(items) });
-  }
-  return items;
 }
 
 export async function searchRecordings(userId: string, query: string, fetcher: typeof fetch = fetch, isrc?: string | null, options: RecordingSearchOptions = {}): Promise<RecordingSearchItem[]> {

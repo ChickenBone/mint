@@ -30,8 +30,8 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     const lockKey = `${cacheKey}:lookup`, lock = crypto.randomUUID();
     if (!await redis.set(lockKey, lock, "EX", 15, "NX")) return json({ error: "This song's lyrics are already loading. Try again in a few seconds." }, 429, 3);
     try {
-      const { retryAfter, ...body } = await fetchBestLyrics({ artist: track.artist, title: track.title, album: track.album, duration: track.durationSec ?? track.existingDurationSec }, fetch, cooldown);
-      if (retryAfter) await redis.set("mint:lyrics:cooldown", "1", "EX", retryAfter);
+      const { lyrics, alternatives, warnings } = await fetchBestLyrics({ artist: track.artist, title: track.title, album: track.album, duration: track.durationSec ?? track.existingDurationSec }, fetch, cooldown);
+      const body = { lyrics, alternatives, warnings };
       await redis.set(cacheKey, JSON.stringify(body), "EX", body.warnings.length ? 300 : body.lyrics ? 86400 : 3600);
       return json({ ...body, offsetMs: match?.offsetMs ?? 0, admin });
     } catch (error) {
@@ -42,7 +42,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       await redis.eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end", 1, lockKey, lock);
     }
   } catch (error) {
-    console.error("Lyrics lookup failed", error instanceof Error ? error.message : "Unknown failure");
+    console.error("Lyrics lookup failed", error instanceof Error ? error.name : "Unknown failure");
     return json({ error: "Lyrics are unavailable right now. Check your connection and try again." }, 503);
   }
 }

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { trackAnalysisResponseSchema } from "./analysis";
 import { connectionErrorMessage, nativeTokenSchema, normalizeServerUrl } from "./auth";
 import { catalogPageSchema, queuePageSchema, type QueueEdit, type PlayerCollection } from "./playback";
 import {
@@ -130,6 +131,10 @@ export class MintApi {
   }
   lyrics(id: string, signal?: AbortSignal) { return this.request(`player/lyrics/${id}`, lyricsResponseSchema, { signal }); }
   trackInfo(id: string, signal?: AbortSignal) { return this.request(`player/info/${id}`, trackInfoSchema, { signal }); }
+  trackAnalysis(id: string, signal?: AbortSignal) {
+    z.uuid().parse(id);
+    return this.request(`player/analysis/${id}`, trackAnalysisResponseSchema, { signal });
+  }
   offlineEntitlement(signal?: AbortSignal) { return this.request("player/offline", offlineEntitlementSchema, { signal }); }
   mediaSource(id: string, format: "original" | "mp3" = "original"): MediaSource {
     z.uuid().parse(id);

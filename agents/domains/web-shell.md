@@ -4,6 +4,7 @@
 
 ## Boundaries
 
+- Browser consumer UX is frozen, maintenance-only. Preserve existing routes/listening and security/backend compatibility fixes; Next.js backend/API and admin tools continue. Native mobile governs future consumer design, not a parallel browser redesign.
 - Owns root and app layouts, sidebar and mobile navigation, `components/ui/**`, `globals.css` tokens, auth/session and account actions, public landing/login/request-access/activity pages, Settings, Manage and Admin views, and shared view helpers (`core/src/views.ts`, `stats.ts`).
 - Feature panels hosted in Settings or Manage (devices, workers, analysis, sync) belong to their feature domains. This domain owns the frame, not the panel internals.
 - Owns member issue reports: `lib/issue-report-model.ts` (client-safe input contract), `lib/issue-reports.ts`, `POST /api/issue-reports`, the reusable `components/app/report-issue.tsx` entry point (`ReportIssueButton`, `ReportIssueDialog`) and the admin portal **Reports** tab. Feature domains may embed the entry point; the `issue_reports` table and migration belong to `platform`.
