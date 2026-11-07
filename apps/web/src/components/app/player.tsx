@@ -617,6 +617,14 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
 function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
+/** The sheet is fixed, so the first paint can stay in the tree and match the server. After mount it moves to the body so the app shell can be inert without freezing the player. */
+function PlayerSheetSlot({ active, children }: { active: boolean; children: React.ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!active) return null;
+  if (!mounted) return children;
+  return createPortal(children, document.body);
+}
 export function MusicStage({ children }: { children: React.ReactNode }) {
   const shell = useContext(ShellContext)!;
   const { nowPlaying, sheetActive, ready, panel, setPanel, measureSheetArtwork, restorePageScroll } = shell;
@@ -635,7 +643,7 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
     {!nowPlaying && <main id="listening-content" tabIndex={-1} className="listening-content h-full overflow-y-auto scrollbar-thin">{children}</main>}
     {!nowPlaying && panel === "queue" && <PlayerPanel title="Queue" close={closeQueue}><QueueContents state={player.state} command={player.command} /></PlayerPanel>}
     {!nowPlaying && panel === "lyrics" && <PlayerPanel title="Lyrics" close={closeQueue}><LyricsPanel state={player.state} command={player.command} /></PlayerPanel>}
-    {(nowPlaying || sheetActive) && createPortalSafe(
+    <PlayerSheetSlot active={nowPlaying || sheetActive}>
       <NowPlaying
         state={player.state}
         ready={ready}
@@ -653,8 +661,8 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
         onMore={(track, button) => {
           const rect = button.getBoundingClientRect(); player.menu(track, { x: rect.x, y: rect.bottom }, button);
         }}
-      />,
-    )}
+      />
+    </PlayerSheetSlot>
   </div>;
 }
 
