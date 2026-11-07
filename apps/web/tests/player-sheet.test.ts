@@ -1,12 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  playerSheetArtworkOrigin,
   playerSheetDestination,
   playerSheetProgress,
   playerSheetReleaseVelocity,
   resistPlayerSheetProgress,
   stepPlayerSheetSpring,
 } from "../src/components/app/player-sheet-gesture";
+
+test("artwork starts at the mini-player position and reaches its expanded position", () => {
+  const origin = playerSheetArtworkOrigin(
+    { x: 24, y: 680, width: 48, height: 48 },
+    { x: 180, y: 140, width: 360, height: 360 },
+    620,
+  );
+  assert.deepEqual(origin, { x: -156, y: -80, scale: 48 / 360 });
+});
 
 test("slow drags follow their full distance and can reverse direction", () => {
   assert.equal(playerSheetProgress(0, 900, 540, 720), 0.5);

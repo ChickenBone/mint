@@ -18,12 +18,11 @@ const tabs = [
 ] as const;
 
 export function NowPlaying({
-  state, ready, command, panel, setPanel, active, interactive, onCollapse, onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
+  state, ready, command, panel, setPanel, interactive, onCollapse, onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
   onLostPointerCapture, onClickCapture, onMore,
 }: {
   state: PlayerState; ready: boolean; command: (command: PlayerCommand) => Promise<boolean>;
   panel: Panel | null; setPanel: (panel: Panel) => void;
-  active: boolean;
   interactive: boolean;
   onCollapse: () => void;
   onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
@@ -71,6 +70,7 @@ export function NowPlaying({
     aria-label="Now Playing"
     aria-hidden={!interactive}
     tabIndex={-1}
+    data-player-drag-surface
     className="player-sheet"
     onPointerDown={onPointerDown}
     onPointerMove={onPointerMove}
@@ -79,13 +79,6 @@ export function NowPlaying({
     onLostPointerCapture={onLostPointerCapture}
     onClickCapture={onClickCapture}
   >
-    {active && <button type="button" aria-label="Collapse now playing" data-player-drag-handle data-player-drag-region
-      tabIndex={interactive ? 0 : -1}
-      onClick={onCollapse}
-      onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); onCollapse(); } }}
-      className="player-sheet-grab player-drag-region grid place-items-center rounded-full focus-visible:text-fg">
-      <span aria-hidden className="player-sheet-grip" />
-    </button>}
     <div className="player-sheet-content" inert={!interactive}>
     <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing music-atmosphere relative flex flex-col overflow-hidden">
     <ArtworkAtmosphere src={track?.thumb} />
@@ -108,8 +101,8 @@ export function NowPlaying({
       <Link href="/app/library" className="mt-6 inline-flex min-h-11 items-center rounded-full bg-mint px-6 font-semibold text-mint-ink hover:bg-mint-strong">Browse music</Link>
     </div> : <div className="now-playing-grid">
       <section aria-label="Current song" className="mx-auto flex w-full min-w-0 max-w-lg flex-col px-5 pb-6 pt-5 sm:px-8">
-        <MusicItem item={track} className="mx-auto w-full max-w-[min(38dvh,23rem)] xl:max-w-[min(48dvh,28rem)]"><Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art w-full rounded-lg shadow-[0_16px_40px_-16px_#000]" /></MusicItem>
-        <div className="mt-6 flex items-start justify-between gap-3">
+        <MusicItem item={track} data-player-drag-surface className="player-expanded-artwork mx-auto w-full max-w-[min(38dvh,23rem)] xl:max-w-[min(48dvh,28rem)]"><Artwork key={track.thumb ?? track.id} track={{ artworkUrl: track.thumb ?? "" }} eager className="now-playing-art w-full rounded-lg shadow-[0_16px_40px_-16px_#000]" /></MusicItem>
+        <div data-player-drag-surface className="mt-6 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{track.title}</h2>
             <p className="mt-2 break-words text-base text-muted"><ArtistLink item={track} /></p>

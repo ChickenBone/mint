@@ -428,6 +428,7 @@
   background-image: var(--gradient-atmosphere);
   opacity: calc(1 - var(--player-progress, 0));
 }
+.player-dock[data-sheet-active="true"] .player-mini-artwork { visibility: hidden; }
 .player-sheet {
   position: fixed;
   z-index: var(--z-overlay);
@@ -455,19 +456,6 @@
 }
 .player-sheet[aria-hidden="true"] .player-sheet-content { pointer-events: none; }
 .player-grab-handle { touch-action: none; }
-.player-sheet-grab {
-  position: absolute;
-  z-index: 2;
-  top: var(--safe-area-top);
-  left: 50%;
-  display: grid;
-  width: 3.5rem;
-  height: 2rem;
-  place-items: center;
-  border-radius: var(--radius-pill);
-  opacity: clamp(0, var(--player-progress, 0), 1);
-  transform: translateX(-50%);
-}
 .player-sheet-grip {
   display: block;
   width: 2rem;
@@ -476,8 +464,6 @@
   background: var(--color-muted);
   opacity: 0.8;
 }
-.player-sheet-grab:hover .player-sheet-grip,
-.player-sheet-grab:focus-visible .player-sheet-grip { background: var(--color-fg); }
 .player-sheet .artwork-atmosphere {
   max-height: min(56dvh, 36rem);
   opacity: clamp(0, calc(var(--player-progress, 0) * 0.7), 0.7);
@@ -491,7 +477,7 @@
   width: 100%;
   min-height: 0;
   overflow: hidden;
-  opacity: var(--player-progress, 0);
+  opacity: 1;
 }
 .player-sheet-content > .now-playing {
   position: relative;
@@ -509,13 +495,22 @@
   opacity: clamp(0, calc((var(--player-progress, 0) - 0.24) * 1.32), 1);
   transform: translate3d(0, calc((1 - var(--player-progress, 0)) * 0.45rem), 0);
 }
-.player-sheet-content .now-playing-grid > section:first-child > :first-child {
-  transform: scale(calc(0.18 + var(--player-progress, 0) * 0.82));
-  transform-origin: center;
+.player-sheet-content .now-playing > .mx-auto {
+  opacity: clamp(0, calc((var(--player-progress, 0) - 0.24) * 1.32), 1);
 }
+.player-sheet-content [data-player-drag-surface] { touch-action: none; }
+.player-sheet-content .player-expanded-artwork {
+  transform: translate3d(
+    calc(var(--player-art-from-x, 0px) * (1 - var(--player-progress, 0))),
+    calc(var(--player-art-from-y, 0px) * (1 - var(--player-progress, 0))),
+    0
+  ) scale(calc(var(--player-art-from-scale, 1) + (1 - var(--player-art-from-scale, 1)) * var(--player-progress, 0)));
+  transform-origin: top left;
+}
+.player-dock [data-player-drag-surface] { touch-action: none; }
 .player-sheet-content .now-playing-art {
   border-radius: calc((1 - var(--player-progress, 0)) * var(--radius-control));
-  box-shadow: var(--shadow-floating);
+  box-shadow: 0 16px 40px -16px rgb(0 0 0 / calc(var(--player-progress, 0) * 0.5));
 }
 .now-playing-grid {
   display: grid;

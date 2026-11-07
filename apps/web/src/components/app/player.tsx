@@ -19,7 +19,7 @@ import { PlaybackControls, SeekControl, Transport } from "./player-controls";
 import { NowPlaying } from "./now-playing";
 import { ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
-import { playerSheetDestination, playerSheetProgress, playerSheetReleaseVelocity, stepPlayerSheetSpring } from "./player-sheet-gesture";
+import { playerSheetArtworkOrigin, playerSheetDestination, playerSheetProgress, playerSheetReleaseVelocity, stepPlayerSheetSpring } from "./player-sheet-gesture";
 
 type Menu = { item: PlayerItem; x: number; y: number; path: string; returnTo: HTMLElement | null };
 type SheetGesture = {
@@ -29,6 +29,7 @@ type SheetGesture = {
   startProgress: number;
   travel: number;
   origin: HTMLElement;
+  captureTarget: HTMLElement;
   scrollCollapse: boolean;
   active: boolean;
   samples: { y: number; time: number }[];
@@ -44,6 +45,7 @@ const Context = createContext<PlayerContext | null>(null);
 interface ShellContext {
   nowPlaying: boolean; ready: boolean;
   sheetActive: boolean;
+  measureSheetArtwork: () => void;
   panel: "queue" | "lyrics" | null; setPanel: (panel: "queue" | "lyrics" | null) => void;
   returnTo: string; rememberReturn: () => void;
   restorePageScroll: () => void;
@@ -138,6 +140,38 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     document.documentElement.style.setProperty("--player-collapse-offset", `${Math.max(0, offset)}px`);
   }, []);
 
+  const measureSheetArtwork = useCallback(() => {
+    measureSheet();
+    const root = document.documentElement;
+    const progress = sheetProgress.current;
+    root.style.setProperty("--player-progress", "1");
+    let mini: DOMRect | undefined;
+    let expanded: DOMRect | undefined;
+    try {
+      mini = document.querySelector<HTMLElement>(".player-mini-artwork")?.getBoundingClientRect();
+      expanded = document.querySelector<HTMLElement>(".player-expanded-artwork")?.getBoundingClientRect();
+    } finally {
+      writeSheetProgress(progress);
+    }
+
+    if (!mini || !expanded) {
+      root.style.setProperty("--player-art-from-x", "0px");
+      root.style.setProperty("--player-art-from-y", "0px");
+      root.style.setProperty("--player-art-from-scale", "1");
+      return;
+    }
+
+    const collapseOffset = Number.parseFloat(root.style.getPropertyValue("--player-collapse-offset")) || 0;
+    const origin = playerSheetArtworkOrigin(
+      { x: mini.left, y: mini.top, width: mini.width, height: mini.height },
+      { x: expanded.left, y: expanded.top, width: expanded.width, height: expanded.height },
+      collapseOffset,
+    );
+    root.style.setProperty("--player-art-from-x", `${origin.x}px`);
+    root.style.setProperty("--player-art-from-y", `${origin.y}px`);
+    root.style.setProperty("--player-art-from-scale", String(origin.scale));
+  }, [measureSheet, writeSheetProgress]);
+
   const finishSheet = useCallback((destination: number, navigate: boolean) => {
     sheetTarget.current = destination;
     writeSheetProgress(destination);
@@ -207,18 +241,19 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
     const target = event.target instanceof Element ? event.target : null;
     const handle = target?.closest("[data-player-drag-handle]");
     const dragRegion = target?.closest("[data-player-drag-region]");
+    const dragSurface = target?.closest("[data-player-drag-surface]");
     const scrollTarget = target?.closest("[data-player-sheet-scroll]");
     const scrollRegion = scrollTarget instanceof HTMLElement ? scrollTarget : null;
-    if (!handle && !dragRegion && !scrollRegion) return;
-    if (target?.closest("button,a,input,select,textarea,[role=button],[contenteditable=true]") && !handle) return;
+    if (!handle && !dragRegion && !dragSurface && !scrollRegion) return;
+    if (target?.closest("button,input,select,textarea,[role=button],[role=menuitem],[contenteditable=true]") && !handle) return;
     if (scrollRegion && (scrollRegion.scrollTop > 0 || !nowPlayingRef.current)) return;
     suppressClick.current = false;
     if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
     const time = performance.now();
-    const captureAtStart = !scrollRegion;
     const currentTarget = event.currentTarget;
-    if (captureAtStart) {
-      try { currentTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have been canceled. */ }
+    const captureTarget = target?.closest<HTMLElement>("a[href]") ?? currentTarget;
+    if (!scrollRegion) {
+      try { captureTarget.setPointerCapture(event.pointerId); } catch { /* The pointer may already have been canceled. */ }
     }
     gesture.current = {
       pointerId: event.pointerId,
@@ -227,6 +262,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
       startProgress: sheetProgress.current,
       travel: Math.max(1, Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--player-collapse-offset")) || window.innerHeight),
       origin: currentTarget,
+      captureTarget,
       scrollCollapse: Boolean(scrollRegion),
       active: false,
       samples: [{ y: event.clientY, time }],
@@ -248,7 +284,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
         gesture.current = null;
         return;
       }
-      if (current.scrollCollapse && window.getSelection() && !window.getSelection()?.isCollapsed) {
+      if (window.getSelection() && !window.getSelection()?.isCollapsed) {
         gesture.current = null;
         return;
       }
@@ -266,8 +302,8 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
         setReturnTo(destination);
         pageScrollPosition.current = document.querySelector<HTMLElement>(".listening-content")?.scrollTop ?? 0;
       }
-      if (current.scrollCollapse && !current.origin.hasPointerCapture(event.pointerId)) {
-        try { current.origin.setPointerCapture(event.pointerId); } catch { /* The browser may have taken over scrolling. */ }
+      if (!current.captureTarget.hasPointerCapture(event.pointerId)) {
+        try { current.captureTarget.setPointerCapture(event.pointerId); } catch { /* The browser may have taken over scrolling. */ }
       }
       if (!current.scrollCollapse && event.nativeEvent.cancelable) event.preventDefault();
     }
@@ -498,10 +534,10 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   useEffect(() => {
     const dock = document.querySelector<HTMLElement>(".player-dock");
     measureSheet();
-    const observer = dock && "ResizeObserver" in window ? new ResizeObserver(measureSheet) : null;
+    const observer = dock && "ResizeObserver" in window ? new ResizeObserver(measureSheetArtwork) : null;
     if (dock) observer?.observe(dock);
     const resize = () => {
-      measureSheet();
+      measureSheetArtwork();
       const current = gesture.current;
       if (!current) return;
       gesture.current = null;
@@ -529,7 +565,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
       if (sheetFrame.current !== null) cancelAnimationFrame(sheetFrame.current);
       if (suppressClickTimer.current !== null) window.clearTimeout(suppressClickTimer.current);
     };
-  }, [finishSheet, measureSheet, settleSheet, suppressNextClick]);
+  }, [finishSheet, measureSheet, measureSheetArtwork, settleSheet, suppressNextClick]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || !state.track) return;
@@ -560,7 +596,7 @@ export function PlayerProvider({ children, memberId }: { children: React.ReactNo
   return (
     <Context.Provider value={{ ready, busy, state, command, menu: showMenu }}>
       <ShellContext.Provider value={{
-        nowPlaying, sheetActive, ready, panel, setPanel, returnTo, rememberReturn, restorePageScroll, expandPlayer, collapsePlayer,
+        nowPlaying, sheetActive, measureSheetArtwork, ready, panel, setPanel, returnTo, rememberReturn, restorePageScroll, expandPlayer, collapsePlayer,
         onSheetPointerDown, onSheetPointerMove, onSheetPointerUp, onSheetPointerCancel, onSheetLostPointerCapture, onSheetClickCapture,
       }}>
         {children}
@@ -586,8 +622,11 @@ function createPortalSafe(children: React.ReactNode) {
 }
 export function MusicStage({ children }: { children: React.ReactNode }) {
   const shell = useContext(ShellContext)!;
-  const { nowPlaying, sheetActive, ready, panel, setPanel, restorePageScroll } = shell;
+  const { nowPlaying, sheetActive, ready, panel, setPanel, measureSheetArtwork, restorePageScroll } = shell;
   const player = usePlayer()!;
+  useLayoutEffect(() => {
+    if (sheetActive || nowPlaying) measureSheetArtwork();
+  }, [measureSheetArtwork, nowPlaying, player.state.track?.id, sheetActive]);
   useLayoutEffect(() => {
     if (!nowPlaying) restorePageScroll();
   }, [nowPlaying, restorePageScroll]);
@@ -606,7 +645,6 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
         command={player.command}
         panel={panel}
         setPanel={setPanel}
-        active={sheetActive || nowPlaying}
         interactive={nowPlaying}
         onCollapse={shell.collapsePlayer}
         onPointerDown={shell.onSheetPointerDown}
@@ -626,12 +664,14 @@ export function MusicStage({ children }: { children: React.ReactNode }) {
 export function PlayerBar() {
   const { state, ready, command } = usePlayer()!;
   const shell = useContext(ShellContext)!;
-  const { panel, setPanel, nowPlaying, rememberReturn, expandPlayer } = shell;
+  const { panel, setPanel, nowPlaying, sheetActive, rememberReturn, expandPlayer } = shell;
   const track = state.track;
   const previousVolume = useRef(100);
   return <section
     aria-label="Music player"
     aria-hidden={nowPlaying}
+    data-sheet-active={sheetActive || undefined}
+    data-player-drag-surface
     inert={nowPlaying}
     onPointerDown={shell.onSheetPointerDown}
     onPointerMove={shell.onSheetPointerMove}
@@ -651,8 +691,8 @@ export function PlayerBar() {
       className="player-grab-handle player-drag-region col-span-full mx-auto grid h-8 w-14 place-items-center rounded-full text-muted focus-visible:text-fg">
       <span aria-hidden className="player-sheet-grip" />
     </button>
-    <MusicItem item={track} className="flex min-w-0 items-center gap-3">
-      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
+    <MusicItem item={track} data-player-drag-surface className="flex min-w-0 items-center gap-3">
+      <Link href="/app/now-playing" onClick={rememberReturn} aria-label="Open now playing" className="player-mini-artwork shrink-0 rounded transition-transform active:scale-95"><Artwork track={{ artworkUrl: track?.thumb ?? "" }} className="size-10 rounded lg:size-12" /></Link>
       <div className="min-w-0">
         <Link href="/app/now-playing" onClick={rememberReturn} className="block truncate text-sm font-semibold hover:underline">{track?.title ?? "Nothing playing"}</Link>
         <p className="mt-1 truncate text-xs text-muted">{track ? <ArtistLink item={track} /> : ready ? "Choose a song to play" : "Connecting…"}</p>

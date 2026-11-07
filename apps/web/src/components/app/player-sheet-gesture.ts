@@ -8,6 +8,23 @@ export interface PlayerSheetSpring {
   velocity: number;
 }
 
+export interface PlayerSheetRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function playerSheetArtworkOrigin(mini: PlayerSheetRect, expanded: PlayerSheetRect, collapseOffset: number) {
+  return {
+    x: mini.x - expanded.x,
+    y: mini.y - expanded.y - collapseOffset,
+    scale: expanded.width > 0 && expanded.height > 0
+      ? Math.min(mini.width / expanded.width, mini.height / expanded.height)
+      : 1,
+  };
+}
+
 export function playerSheetProgress(start: number, startY: number, y: number, travel: number) {
   if (travel <= 0) return start;
   return resistPlayerSheetProgress(start + (startY - y) / travel);
