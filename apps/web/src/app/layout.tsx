@@ -8,11 +8,11 @@ const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree", displa
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.PUBLIC_URL ?? "https://mint.chickenbone.dev"),
-  title: { default: "Mint — Self-hosted music streaming with Plex", template: "%s · Mint" },
-  description: "Your music, with room for more. Listen to your Plex library, explore charts, sync YouTube likes and bring your playlists home.",
+  title: { default: "Mint — Your music, with room to wander", template: "%s · Mint" },
+  description: "Explore a shared music library, build personal playlists, and listen in Mint’s own player. Browse the public catalog or request access.",
   openGraph: {
-    title: "Mint — Self-hosted music streaming with Plex",
-    description: "Your music library, one self-hosted player. Bring together Plex music, YouTube Music likes and Spotify playlist matches in Mint.",
+    title: "Mint — Your music, with room to wander",
+    description: "Explore a shared music library, build personal playlists, and listen in Mint’s own player.",
     type: "website",
   },
   manifest: "/manifest.webmanifest",

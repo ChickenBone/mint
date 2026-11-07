@@ -10,6 +10,8 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 **First viewport:** navigation, familiar music shelves and an anchored transport. Phones retain the same primary destinations and persistent playback.
 **Signature:** a requested chart recording becomes a full-color playable song in place. Navigation and Now Playing never recreate the audio engine.
 
+**Public landing:** The public homepage is a single artwork-led invitation: authorized library covers when available, an abstract Mint-only illustration when the library is empty or artwork is unavailable, concise copy about the shared library and personal playlists, and a compact recent-additions strip only when live data exists. The strip stays subordinate to the hero; a failed activity query gets a plain recovery link without exposing operational detail. Public navigation keeps Browse and sign-in prominent. Existing chart and activity routes remain functional but are not marketed from the landing page. Do not add setup instructions, pipeline promotion, or private listening data.
+
 **Search & Explore:** Search is the single entry for finding music and starting discovery. The focused query searches local and external recordings; the empty-query view includes browse shortcuts, personalized playlist shelves, artist radio, genres and charts. Dedicated mix and chart routes retain their detailed flows, with back links returning to Search. Generated covers carry oversized typography, a confident color palette and small Mint/source credits. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
 
 ## System
@@ -50,7 +52,8 @@ Mint is a listening service, not a pipeline dashboard. Its navigation and everyd
 | Worker registration, ownership, approval and revocation | Settings → Workers / Admin |
 | Analysis controls, backfills, coverage and diagnostics | Settings → Admin → Audio analysis |
 | Service diagnostics, read-only Plex indexing/setup | Settings → Admin |
-| Public browsing, chart availability and account requests | Public Library / Charts / Request access |
+| Public library browsing and account requests | Public landing / Browse / Request access |
+| Existing public chart and activity routes | Direct routes and existing bookmarks |
 | Public pipeline visibility | Public footer → Library activity |
 | Docker, GHCR, migrations and CI/CD | Existing deployment tooling and self-hosting guide |
 

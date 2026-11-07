@@ -625,3 +625,352 @@
     scroll-behavior: auto !important;
   }
 }
+
+.marketing-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+  width: min(100%, var(--content-max));
+  margin-inline: auto;
+  padding: clamp(3rem, 7vw, 6rem) var(--space-page-gutter) clamp(3.5rem, 7vw, 6rem);
+  isolation: isolate;
+}
+.marketing-hero-copy {
+  position: relative;
+  z-index: 1;
+  animation: marketing-arrive 700ms var(--ease-out-expo) both;
+}
+.marketing-hero h1 {
+  max-width: 11ch;
+  font-size: clamp(2.75rem, 6.2vw, 5rem);
+  font-weight: 700;
+  line-height: .99;
+  letter-spacing: -.045em;
+}
+.marketing-hero-copy > p {
+  max-width: 34rem;
+  margin-top: 1.5rem;
+  color: var(--color-muted);
+  font-size: clamp(1rem, 1.4vw, 1.125rem);
+  line-height: 1.65;
+}
+.marketing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem;
+  margin-top: 2rem;
+}
+.marketing-primary,
+.marketing-signin,
+.marketing-close-link {
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  gap: .625rem;
+  border-radius: var(--radius-pill);
+  font-weight: 650;
+  transition:
+    background-color var(--duration-standard) var(--ease-standard),
+    color var(--duration-standard) var(--ease-standard),
+    transform var(--duration-standard) var(--ease-out-expo);
+}
+.marketing-primary {
+  padding: .75rem 1.25rem;
+  background-image: var(--gradient-action);
+  color: var(--color-mint-ink);
+}
+.marketing-primary:hover {
+  transform: translateY(-2px);
+}
+.marketing-signin {
+  padding: .75rem 1rem;
+  color: var(--color-muted);
+}
+.marketing-signin:hover {
+  color: var(--color-fg);
+  background: var(--color-surface);
+}
+.marketing-artwork {
+  position: relative;
+  width: min(100%, 38rem);
+  aspect-ratio: 1.08;
+  margin-inline: auto;
+  isolation: isolate;
+}
+.marketing-art-glow {
+  position: absolute;
+  inset: 9% 4%;
+  z-index: -1;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 63% 36%, rgb(63 224 160 / 13%), transparent 58%),
+    radial-gradient(ellipse at 34% 64%, rgb(100 143 193 / 19%), transparent 63%);
+}
+.marketing-cover {
+  position: absolute;
+  width: 36%;
+  aspect-ratio: 1;
+  filter: drop-shadow(0 1.5rem 1.4rem rgb(0 0 0 / 42%));
+  animation: marketing-sleeve-arrive 900ms var(--ease-out-expo) both;
+  transition: transform 360ms var(--ease-out-expo);
+}
+.marketing-cover > div {
+  width: 100%;
+  height: 100%;
+  border-radius: 2px;
+}
+.marketing-cover-1 {
+  top: 14%;
+  left: 23%;
+  z-index: 4;
+  width: 56%;
+  animation-delay: 80ms;
+}
+.marketing-cover-2 {
+  top: 5%;
+  left: 3%;
+  z-index: 2;
+  transform: rotate(-9deg);
+  animation-delay: 170ms;
+}
+.marketing-cover-3 {
+  top: 3%;
+  right: 2%;
+  z-index: 1;
+  transform: rotate(8deg);
+  animation-delay: 250ms;
+}
+.marketing-cover-4 {
+  right: 9%;
+  bottom: 1%;
+  z-index: 3;
+  transform: rotate(5deg);
+  animation-delay: 330ms;
+}
+.marketing-artwork:hover .marketing-cover-1 { transform: translateY(-5px) rotate(-2deg); }
+.marketing-artwork:hover .marketing-cover-2 { transform: translate(-2px, -4px) rotate(-12deg); }
+.marketing-artwork:hover .marketing-cover-3 { transform: translate(2px, -3px) rotate(11deg); }
+.marketing-artwork:hover .marketing-cover-4 { transform: translateY(-5px) rotate(8deg); }
+.marketing-empty-art {
+  position: absolute;
+  inset: 5% 8%;
+  display: grid;
+  place-items: center;
+  animation: marketing-sleeve-arrive 900ms var(--ease-out-expo) both;
+}
+.marketing-record {
+  display: grid;
+  width: min(78%, 25rem);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgb(176 187 177 / 18%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, transparent 0 14%, rgb(176 187 177 / 11%) 14.2% 14.4%, transparent 14.7% 22%, rgb(176 187 177 / 9%) 22.2% 22.4%, transparent 22.7% 31%, rgb(176 187 177 / 8%) 31.2% 31.4%, transparent 31.7% 41%, rgb(176 187 177 / 7%) 41.2% 41.4%, transparent 41.7% 52%, rgb(176 187 177 / 6%) 52.2% 52.4%, transparent 52.7%),
+    radial-gradient(circle at 35% 30%, #29473f, #171d20 62%, #101314);
+  box-shadow: var(--shadow-floating);
+}
+.marketing-record-label {
+  display: grid;
+  width: 31%;
+  aspect-ratio: 1;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--gradient-action);
+  box-shadow: 0 0 0 1px rgb(4 20 13 / 26%);
+}
+.marketing-story {
+  display: grid;
+  grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+  align-items: start;
+  gap: clamp(2rem, 7vw, 7rem);
+  width: min(100%, 80rem);
+  margin: 0 auto;
+  padding: clamp(2.5rem, 5vw, 4.5rem) var(--space-page-gutter);
+  border-top: 1px solid var(--color-line);
+}
+.marketing-story-lead h2,
+.marketing-close h2 {
+  font-size: clamp(1.75rem, 3.3vw, 2.75rem);
+  font-weight: 650;
+  line-height: 1.12;
+  letter-spacing: -.035em;
+}
+.marketing-story-lead p {
+  max-width: 31rem;
+  margin-top: 1rem;
+  color: var(--color-muted);
+  line-height: 1.65;
+}
+.marketing-story-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(1rem, 3vw, 2.5rem);
+}
+.marketing-story-pair article + article {
+  padding-left: clamp(1rem, 2.5vw, 2rem);
+  border-left: 1px solid var(--color-line);
+}
+.marketing-story-pair h3 {
+  font-size: 1.125rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.marketing-story-pair p,
+.marketing-recent-heading p,
+.marketing-recent-unavailable p {
+  margin-top: .625rem;
+  color: var(--color-muted);
+  font-size: .875rem;
+  line-height: 1.6;
+}
+.marketing-recent {
+  width: min(100%, 80rem);
+  margin: 0 auto;
+  padding: 1rem var(--space-page-gutter) clamp(2.5rem, 5vw, 4rem);
+}
+.marketing-recent-heading,
+.marketing-recent-unavailable {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+.marketing-recent-heading h2,
+.marketing-recent-unavailable h2 {
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -.02em;
+}
+.marketing-text-link {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: .5rem;
+  color: var(--color-muted);
+  font-size: .875rem;
+  font-weight: 600;
+  transition: color var(--duration-standard) var(--ease-standard);
+}
+.marketing-text-link:hover { color: var(--color-fg); }
+.marketing-recent-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.25rem;
+  padding: 0;
+  list-style: none;
+}
+.marketing-recent-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: .75rem;
+}
+.marketing-recent-item > div:first-child {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 2px;
+}
+.marketing-recent-copy { min-width: 0; }
+.marketing-recent-copy p,
+.marketing-recent-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.marketing-recent-copy p { font-size: .875rem; font-weight: 600; }
+.marketing-recent-copy span { display: block; margin-top: .25rem; color: var(--color-muted); font-size: .75rem; }
+.marketing-recent-unavailable { align-items: center; }
+.marketing-close {
+  display: flex;
+  width: min(100%, 80rem);
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  margin: 0 auto;
+  padding: 1.5rem var(--space-page-gutter) 2rem;
+  border-top: 1px solid var(--color-line);
+}
+.marketing-close h2 { font-size: clamp(1.5rem, 2.7vw, 2rem); }
+.marketing-close-link {
+  flex: 0 0 auto;
+  padding: .75rem 1.125rem;
+  background: var(--color-surface);
+  color: var(--color-fg);
+}
+.marketing-close-link:hover {
+  transform: translateY(-2px);
+  background: var(--color-elevated);
+}
+
+@keyframes marketing-arrive {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes marketing-sleeve-arrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@media (max-width: 860px) {
+  .marketing-hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+    padding-top: clamp(3rem, 9vw, 5rem);
+  }
+  .marketing-hero-copy { max-width: 42rem; }
+  .marketing-hero h1 { max-width: 12ch; }
+  .marketing-artwork { width: min(100%, 34rem); }
+  .marketing-story { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
+  .marketing-recent-list {
+    grid-auto-columns: minmax(14rem, 1fr);
+    grid-auto-flow: column;
+    grid-template-columns: none;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline mandatory;
+    scrollbar-width: thin;
+    padding-bottom: .5rem;
+  }
+  .marketing-recent-item { scroll-snap-align: start; }
+}
+@media (max-width: 520px) {
+  .marketing-hero {
+    gap: .5rem;
+    padding-top: 2.75rem;
+    padding-bottom: 2.5rem;
+  }
+  .marketing-hero h1 { font-size: clamp(2.5rem, 10.5vw, 3.25rem); }
+  .marketing-hero-copy > p { margin-top: 1.125rem; }
+  .marketing-actions { margin-top: 1.5rem; }
+  .marketing-artwork { width: 100%; }
+  .marketing-story-pair { grid-template-columns: minmax(0, 1fr); gap: 1.5rem; }
+  .marketing-story-pair article + article {
+    padding-top: 1.25rem;
+    padding-left: 0;
+    border-top: 1px solid var(--color-line);
+    border-left: 0;
+  }
+  .marketing-recent-heading,
+  .marketing-recent-unavailable,
+  .marketing-close {
+    align-items: flex-start;
+  }
+  .marketing-recent-heading { gap: .75rem; }
+  .marketing-recent-heading p { max-width: 24ch; }
+  .marketing-text-link { gap: .25rem; font-size: .75rem; }
+  .marketing-close { flex-direction: column; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .marketing-hero-copy,
+  .marketing-cover,
+  .marketing-empty-art { animation: none; }
+  .marketing-cover,
+  .marketing-primary,
+  .marketing-signin,
+  .marketing-close-link { transition: none; }
+}
