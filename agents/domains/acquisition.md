@@ -34,7 +34,7 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Imported by:** [`analysis`](analysis.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map acquisition` (exports, line counts, cross-domain import edges).
 
-### Owned files (32)
+### Owned files (33)
 
 - `apps/web/src/app/app/` `downloads/page.tsx`, `jobs/page.tsx`
 - `apps/web/src/components/` `pipeline-board.tsx`, `stage-badge.tsx`
@@ -43,7 +43,7 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - `apps/web/tests/` `backlog.test.ts`, `music-requests.test.ts`
 - `apps/worker/src/` `existing-track.ts`, `integrations.ts`, `media.ts`, `music-requests.test.ts`, `parse.test.ts`, `parse.ts`, `track-state.ts`
 - `apps/worker/src/jobs/` `acquire.ts`, `finalize.ts`, `media.integration.test.ts`, `torbox-bridge.integration.test.ts`, `torbox-bridge.ts`
-- `apps/worker/src/services/` `cobalt.ts`, `lidarr.ts`, `musicbrainz.ts`, `prowlarr.test.ts`, `prowlarr.ts`, `torbox.test.ts`, `torbox.ts`
+- `apps/worker/src/services/` `cobalt.ts`, `lidarr.ts`, `matching-classifier.ts`, `musicbrainz.ts`, `prowlarr.test.ts`, `prowlarr.ts`, `torbox.test.ts`, `torbox.ts`
 - `packages/core/migrations/` `0002_drop_previews.sql`
 - `packages/core/src/` `stages.ts`, `track-state.ts`
 

@@ -9,6 +9,7 @@ import { LyricsPanel, QueueContents } from "./player-panels";
 import { AlbumLink, ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
 import { PlaybackControls, SeekControl } from "./player-controls";
+import { useAccountPlayback } from "./account-playback";
 import { getTabTargetIndex } from "@/components/ui/interactive";
 
 type Panel = "queue" | "lyrics";
@@ -41,7 +42,14 @@ export function NowPlaying({
     setPanel(next);
     setVisited((previous) => previous.includes(next) ? previous : [...previous, next]);
   };
-  const track = state.track;
+  const account = useAccountPlayback(state.playing, state.time);
+  const mirror = account && !account.here ? account : null;
+  const view = mirror?.state ?? state;
+  const transport = mirror?.control ?? command;
+  const track = view.track;
+  const place = mirror?.deviceName ?? (account?.here ? account.deviceName : null);
+  const where = place && track ? `${view.playing ? "Playing" : "Paused"} on ${place}` : view.playing ? "Playing" : "Paused";
+  const preview = (milliseconds: number | null) => (mirror ?? account)?.preview(milliseconds);
   useEffect(() => {
     if (!interactive) return;
     heading.current?.focus({ preventScroll: true });
@@ -109,20 +117,21 @@ export function NowPlaying({
           <div className="min-w-0">
             <h2 className="break-words text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">{track.title}</h2>
             <p className="mt-2 break-words text-base text-muted"><ArtistLink item={track} /></p>
+            {place && <p className="mt-1 text-sm font-medium text-mint">{view.playing ? "Playing" : "Paused"} on {place}</p>}
             {track.album && <p className="mt-1 truncate text-sm text-faint"><AlbumLink item={track} /></p>}
           </div>
           <button type="button" aria-label={`More options for ${track.title}`} aria-haspopup="menu" onClick={(event) => onMore(track, event.currentTarget)}
             className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MoreHorizontal className="size-5" /></button>
         </div>
         <div className="mt-5 hidden xl:block">
-          <SeekControl key={track.queueId ?? track.id} state={state} ready={ready} command={command} />
-          <div className="mt-3"><PlaybackControls state={state} ready={ready} command={command} expanded /></div>
+          <SeekControl key={track.queueId ?? track.id} state={view} ready={mirror ? true : ready} command={transport} previewMs={mirror?.scrubMs ?? account?.scrubMs} onPreview={preview} />
+          <div className="mt-3"><PlaybackControls state={view} ready={mirror ? true : ready} command={transport} expanded /></div>
           <div className="mt-5 flex items-center justify-between gap-4">
-            <p className="text-xs text-muted" role="status">{state.transitioning ? "Blending into the next song" : state.playing ? "Playing" : "Paused"}</p>
+            <p className="text-xs text-muted" role="status">{view.transitioning ? "Blending into the next song" : where}</p>
             <label className="flex w-28 shrink-0 items-center gap-2">
               <Volume2 className="size-4 shrink-0 text-muted" /><span className="sr-only">Volume</span>
-              <input aria-label="Volume" type="range" min="0" max="100" value={state.volume} disabled={!ready}
-                onChange={(event) => command({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-full accent-mint" />
+              <input aria-label="Volume" type="range" min="0" max="100" value={view.volume} disabled={mirror ? false : !ready}
+                onChange={(event) => void transport({ action: "volume", value: Number(event.target.value) })} className="h-8 min-w-0 w-full accent-mint" />
             </label>
           </div>
         </div>
@@ -149,8 +158,8 @@ export function NowPlaying({
       </section>
     </div>}
     {track && <footer aria-label="Now playing controls" className="shrink-0 border-t border-line bg-surface px-4 pb-3 pt-1 xl:hidden">
-      <SeekControl key={track.queueId ?? track.id} state={state} ready={ready} command={command} />
-      <PlaybackControls state={state} ready={ready} command={command} expanded />
+      <SeekControl key={track.queueId ?? track.id} state={view} ready={mirror ? true : ready} command={transport} previewMs={mirror?.scrubMs ?? account?.scrubMs} onPreview={preview} />
+      <PlaybackControls state={view} ready={mirror ? true : ready} command={transport} expanded />
     </footer>}
     </main>
     </div>

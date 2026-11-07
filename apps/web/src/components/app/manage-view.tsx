@@ -30,6 +30,7 @@ import { issueCategoryLabel, type IssueReportView } from "@/lib/issue-report-mod
 import { formatCount, timeAgo } from "@/lib/format";
 import { ActionButton } from "./admin-controls";
 import { AnalysisPanel } from "./analysis-panel";
+import { MatchingPanel } from "./matching-panel";
 import { LiveTrackList } from "./live-track-list";
 import { AdminWorkers, WorkersPanel } from "./workers-panel";
 
@@ -151,6 +152,10 @@ export function ManageView({
     analysis: {
       title: "Audio analysis",
       description: "Configure analysis and inspect processing coverage and results.",
+    },
+    matching: {
+      title: "Matching",
+      description: "Choose when OpenAI may pick a recording. Deterministic matching remains the fallback.",
     },
   }[tab];
 
@@ -680,6 +685,10 @@ export function ManageView({
           {
             value: "analysis",
             content: <AnalysisPanel />,
+          },
+          {
+            value: "matching",
+            content: <MatchingPanel />,
           },
         ]}
       />

@@ -48,6 +48,7 @@ export interface ChartPage {
   items: ChartRow[]; offset: number; total: number; nextOffset: number | null; member: boolean;
 }
 export const chartKey = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+const coreChartTitle = (value: string) => chartKey(value).replace(/\s+(?:feat|ft|featuring)\b.*$/, "").trim() || chartKey(value);
 export const chartIdentity = (entry: ChartEntry) => JSON.stringify([entry.title, entry.artist, entry.album, entry.durationSec, entry.recordingId, entry.isrc]);
 
 export interface ChartCandidate {
@@ -81,7 +82,8 @@ export function chartRecordingResolution<T extends ChartRecordingCandidate>(entr
 }
 export function matchChartEntry(entry: ChartEntry, candidates: ChartCandidate[], linkedTrackId?: string) {
   const identity = candidates.filter((candidate) => compatibleChartRecording(entry, { ...candidate, id: candidate.mbRecordingId ?? undefined }));
-  const linked = identity.find((candidate) => candidate.id === linkedTrackId);
+  const linked = identity.find((candidate) => candidate.id === linkedTrackId)
+    ?? candidates.find((candidate) => candidate.id === linkedTrackId && coreChartTitle(candidate.title) === coreChartTitle(entry.title));
   const matches = linked ? [linked] : identity.filter((candidate) =>
     (!entry.recordingId || candidate.mbRecordingId === entry.recordingId) &&
     // The library index has no ISRC field; it must not claim to have verified one.

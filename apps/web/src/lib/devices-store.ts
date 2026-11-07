@@ -1,5 +1,7 @@
 import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { and, desc, eq, gt, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { CHANNEL, publish } from "@mint/core/events";
+import { getRedis } from "@mint/core/redis";
 import type { Db } from "@mint/core/db";
 import { sessions, tracks, users } from "@mint/core/schema";
 import { PLAYABLE } from "@mint/core/playback";
@@ -9,13 +11,25 @@ import {
   DEVICE_COMMAND_TTL_MS, DEVICE_ONLINE_MS, PARTY_TTL_MS, DeviceError,
   assertCommandClaimable, assertDeviceOnline, assertPartyEditor, assertPartyRevision, confirmsHandoff,
   deviceAckSchema, deviceCommandSchema, deviceHeartbeatSchema, deviceQueueSchema, deviceStateSchema, registerDeviceSchema,
-  type DeviceActor, type DeviceCommand,
+  type DeviceActor, type DeviceCommand, type DeviceState,
 } from "@mint/core/devices";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 type Device = typeof devices.$inferSelect;
 type Party = typeof parties.$inferSelect;
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
+function broadcastPlayback(device: { id: string; name: string; userId: string }, state: DeviceState, scrubbing = false) {
+  let redis: ReturnType<typeof getRedis>;
+  try { redis = getRedis(); } catch { return Promise.resolve(); }
+  return publish(redis, CHANNEL.user(device.userId), {
+    type: "playback",
+    data: {
+      deviceId: device.id, deviceName: device.name, playing: state.playing, time: state.time, duration: state.duration,
+      volume: state.volume, shuffle: state.shuffle, repeat: state.repeat, trackId: state.trackId, scrubbing,
+      reportedAt: new Date().toISOString(),
+    },
+  }).catch(() => undefined);
+}
 const token = () => randomBytes(32).toString("base64url");
 const publicDevice = (device: Device, now: number) => {
   const { queue, ...state } = device.state;
@@ -129,6 +143,19 @@ export class DeviceStore {
     });
   }
 
+  /** Reissue the in-memory receiver token for a device this browser session already registered. */
+  async resume(id: string) {
+    return this.run(async (tx) => {
+      const device = await this.owned(tx, id);
+      if (device.authSessionId !== this.actor.sessionId) throw new DeviceError(404, "Device not found.");
+      const secret = token();
+      const [updated] = await tx.update(devices).set({ tokenHash: hash(secret), lastSeenAt: new Date(this.clock()) })
+        .where(eq(devices.id, device.id)).returning();
+      if (!updated) throw new DeviceError(404, "Device not found.");
+      return { ...publicDevice(updated, this.clock()), token: secret };
+    });
+  }
+
   async rename(id: string, name: string) {
     const parsed = registerDeviceSchema.shape.name.parse(name);
     return this.run(async (tx) => {
@@ -156,6 +183,7 @@ export class DeviceStore {
       const parsed = deviceStateSchema.parse({ ...heartbeat, queue: heartbeat.queue ?? current.state.queue });
       await tx.delete(commands).where(and(eq(commands.deviceId, id), lt(commands.createdAt, new Date(this.clock() - 24 * 3600_000))));
       await tx.update(devices).set({ state: parsed, lastSeenAt: new Date(this.clock()) }).where(eq(devices.id, id));
+      await broadcastPlayback(current, parsed);
       await tx.update(commands).set({ status: "expired", error: "Device did not acknowledge before the deadline." })
         .where(and(eq(commands.deviceId, id), inArray(commands.status, ["pending", "delivered"]),
           lt(commands.expiresAt, new Date(this.clock()))));
@@ -205,7 +233,18 @@ export class DeviceStore {
         status: ack.success ? "succeeded" : "failed", acknowledgedAt: new Date(this.clock()),
         error: ack.success ? null : (ack.error || "Playback was blocked. Open Mint and start playback on the destination."),
       }).where(eq(commands.id, command.id));
+      const [device] = await tx.select().from(devices).where(eq(devices.id, id)).limit(1);
       await tx.update(devices).set({ state: ack.state, lastSeenAt: new Date(this.clock()) }).where(eq(devices.id, id));
+      if (device) await broadcastPlayback(device, ack.state);
+      return { ok: true };
+    });
+  }
+
+  /** Share a scrub position with the account without moving the playing device until seek is committed. */
+  async preview(id: string, time: number, scrubbing: boolean) {
+    return this.run(async (tx) => {
+      const device = await this.owned(tx, id);
+      await broadcastPlayback(device, { ...device.state, time }, scrubbing);
       return { ok: true };
     });
   }
@@ -216,6 +255,23 @@ export class DeviceStore {
     return this.run(async (tx) => this.enqueue(tx, await this.owned(tx, id), parsed));
   }
 
+  private async enqueueHandoff(tx: Tx, source: Device, destination: Device, state: DeviceState) {
+    assertDeviceOnline(source, this.clock());
+    assertDeviceOnline(destination, this.clock());
+    if (!state.queue.length) throw new DeviceError(400, "Start a track before moving playback.");
+    const party = await tx.select({ id: parties.id }).from(parties)
+      .where(and(inArray(parties.deviceId, [source.id, destination.id]), isNull(parties.closedAt), gt(parties.expiresAt, new Date(this.clock())))).limit(1);
+    if (party.length) throw new DeviceError(409, "End the party before moving its playback device.");
+    const command = await this.enqueue(tx, destination, {
+      action: "handoff", handoff: {
+        queue: state.queue, currentIndex: state.currentIndex, position: state.time,
+        playing: state.playing, shuffle: state.shuffle, repeat: state.repeat,
+        queueContext: state.queueContext,
+      },
+    });
+    return { ...command, sourceId: source.id };
+  }
+
   async handoff(sourceId: string, sourceToken: string, destinationId: string, state: unknown) {
     const parsed = deviceStateSchema.parse(state);
     if (sourceId === destinationId) throw new DeviceError(400, "Choose another device.");
@@ -223,19 +279,25 @@ export class DeviceStore {
       // Stable lock order also covers two browsers moving playback in opposite directions.
       const ids = [sourceId, destinationId].sort();
       for (const id of ids) await this.owned(tx, id, id === sourceId ? sourceToken : undefined);
-      if (!parsed.queue.length) throw new DeviceError(400, "Start a track before moving playback.");
-      const source = await this.owned(tx, sourceId, sourceToken);
-      assertDeviceOnline(source, this.clock());
-      const party = await tx.select({ id: parties.id }).from(parties)
-        .where(and(inArray(parties.deviceId, [sourceId, destinationId]), isNull(parties.closedAt), gt(parties.expiresAt, new Date(this.clock())))).limit(1);
-      if (party.length) throw new DeviceError(409, "End the party before moving its playback device.");
-      return this.enqueue(tx, await this.owned(tx, destinationId), {
-        action: "handoff", handoff: {
-          queue: parsed.queue, currentIndex: parsed.currentIndex, position: parsed.time,
-          playing: parsed.playing, shuffle: parsed.shuffle, repeat: parsed.repeat,
-          queueContext: parsed.queueContext,
-        },
-      });
+      return this.enqueueHandoff(tx, await this.owned(tx, sourceId, sourceToken), await this.owned(tx, destinationId), parsed);
+    });
+  }
+
+  /** Move the account's current playback onto a device, including from another signed-in browser. */
+  async transfer(destinationId: string) {
+    return this.run(async (tx) => {
+      const rows = await tx.select().from(devices)
+        .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt)))
+        .orderBy(desc(devices.lastSeenAt));
+      const now = this.clock();
+      const onlineWithQueue = (device: Device) => device.state.queue.length > 0 && now - device.lastSeenAt.getTime() <= DEVICE_ONLINE_MS;
+      const destination = rows.find((device) => device.id === destinationId);
+      const sourceRow = rows.find((device) => device.id !== destinationId && device.state.playing && onlineWithQueue(device))
+        ?? (destination && destination.state.playing && onlineWithQueue(destination) ? undefined
+          : rows.find((device) => device.id !== destinationId && onlineWithQueue(device)));
+      if (!sourceRow) throw new DeviceError(400, destination?.state.playing ? "Playback is already on that device." : "Play a song on one device before moving it.");
+      for (const id of [sourceRow.id, destinationId].sort()) await this.owned(tx, id);
+      return this.enqueueHandoff(tx, await this.owned(tx, sourceRow.id), await this.owned(tx, destinationId), deviceStateSchema.parse(sourceRow.state));
     });
   }
 

@@ -38,7 +38,7 @@
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map platform` (exports, line counts, cross-domain import edges).
 
-### Owned files (37)
+### Owned files (41)
 
 - `./` `package.json`, `tsconfig.base.json`
 - `apps/web/` `eslint.config.mjs`, `next-env.d.ts`, `next.config.ts`, `package.json`, `postcss.config.mjs`, `tsconfig.json`
@@ -47,9 +47,9 @@
 - `apps/worker/src/` `config.ts`, `files.ts`, `http.ts`, `index.ts`, `log.ts`, `queues.ts`
 - `apps/worker/src/jobs/` `maintenance.ts`
 - `packages/core/` `drizzle.config.ts`, `package.json`, `tsconfig.json`
-- `packages/core/migrations/` `0000_init.sql`, `0015_issue_reports.sql`
-- `packages/core/src/` `crypto.ts`, `env.ts`, `index.ts`, `public-cache-fixture.ts`, `public-cache.test.ts`, `public-cache.ts`, `queues.ts`, `redis.ts`
-- `packages/core/src/db/` `index.ts`, `migrate-cli.ts`, `migrate.ts`, `schema.ts`
+- `packages/core/migrations/` `0000_init.sql`, `0015_issue_reports.sql`, `0016_matching_settings.sql`, `0017_openai_matching.sql`
+- `packages/core/src/` `crypto.ts`, `env.ts`, `index.ts`, `matching.ts`, `public-cache-fixture.ts`, `public-cache.test.ts`, `public-cache.ts`, `queues.ts`, `redis.ts`
+- `packages/core/src/db/` `index.ts`, `matching.ts`, `migrate-cli.ts`, `migrate.ts`, `schema.ts`
 
 ### Validate
 

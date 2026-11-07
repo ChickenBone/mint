@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { signToken, verifyToken } from "@mint/core/crypto";
 import { getDb, schema } from "@mint/core/db";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { MusicError } from "@mint/core/music";
 import { PLAYABLE } from "@mint/core/playback";
 import type { Stage } from "@mint/core/stages";
@@ -168,7 +168,7 @@ export function readRequestRecording(userId: string, token: string) {
   if (!raw || raw.userId !== userId) throw new MusicError("This search result expired. Search for the song again.", 400);
   return recording.parse(raw.recording);
 }
-export async function requestRecording(userId: string, token: string, source?: string) {
+export async function requestRecording(userId: string, token: string, source?: string, existingTrackId?: string) {
   const item = readRequestRecording(userId, token), videoId = youtubeSource(source);
   return getDb().transaction(async (tx) => {
     if (videoId) await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`video:${videoId}`}, 783))`);
@@ -188,8 +188,21 @@ export async function requestRecording(userId: string, token: string, source?: s
         track = existing;
       }
     }
+    if (track && existingTrackId && track.id !== existingTrackId) {
+      await tx.delete(schema.tracks).where(and(eq(schema.tracks.id, existingTrackId), sql`${schema.tracks.filePath} is null`));
+    }
+    if (!track && existingTrackId) {
+      const [placeholder] = await tx.select().from(schema.tracks).where(eq(schema.tracks.id, existingTrackId)).limit(1).for("update");
+      if (placeholder && !placeholder.filePath && !["ready", "analyzing"].includes(placeholder.stage)) track = placeholder;
+    }
     if (!track) [track] = await tx.insert(schema.tracks).values({ title: item.title, artist: item.artist, album: item.album,
       durationSec: item.durationSec, mbRecordingId: item.id, youtubeVideoId: videoId, detail: "Requested from search" }).returning();
+    else if (existingTrackId && track.id === existingTrackId) {
+      [track] = await tx.update(schema.tracks).set({
+        title: item.title, artist: item.artist, album: item.album, durationSec: item.durationSec,
+        mbRecordingId: item.id, youtubeVideoId: videoId ?? track.youtubeVideoId, stage: "queued", progress: 0, error: null, detail: "Matched. Queued for download.",
+      }).where(eq(schema.tracks.id, track.id)).returning();
+    }
     else if (!track.youtubeVideoId && videoId && !["ready", "analyzing"].includes(track.stage)) {
       [track] = await tx.update(schema.tracks).set({ youtubeVideoId: videoId }).where(eq(schema.tracks.id, track.id)).returning();
     }

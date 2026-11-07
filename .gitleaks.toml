@@ -1,0 +1,16 @@
+title = "Mint"
+
+[extend]
+useDefault = true
+
+# History contains placeholder names, not live credentials. The scanner still
+# checks every other file.
+[allowlist]
+description = "Test fixtures and documented placeholder identifiers"
+paths = [
+  '''apps/worker/src/music-requests\.test\.ts''',
+]
+regexTarget = "secret"
+regexes = [
+  '''^OTA_[A-Z0-9_]+=?$''',
+]

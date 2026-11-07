@@ -1,4 +1,5 @@
 import { getDb } from "@mint/core/db";
+import { AcquisitionAlerts } from "@/components/app/acquisition-alerts";
 import { MobileNav, SettingsLink, SidebarNav } from "@/components/app/sidebar-nav";
 import { MusicStage, PlayerBar, PlayerProvider, SearchShortcut } from "@/components/app/player";
 import { Logo } from "@/components/logo";
@@ -26,6 +27,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <ToastProvider>
+    <AcquisitionAlerts />
     <PlayerProvider memberId={user.id}>
     <div className="app-shell grid h-dvh grid-rows-[minmax(0,1fr)_auto_auto] bg-bg md:grid-cols-[5rem_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)_auto] lg:grid-cols-[16rem_minmax(0,1fr)]">
       <a href="#listening-content" className="skip-link">Skip to content</a>

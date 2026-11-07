@@ -15,6 +15,8 @@
     "./analysis": "./src/analysis.ts",
     "./artwork": "./src/artwork.ts",
     "./analysis-db": "./src/db/analysis.ts",
+    "./matching": "./src/matching.ts",
+    "./matching-db": "./src/db/matching.ts",
     "./music": "./src/music.ts",
     "./music-db": "./src/db/music.ts",
     "./devices": "./src/devices.ts",

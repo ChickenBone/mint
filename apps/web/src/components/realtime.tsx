@@ -2,6 +2,7 @@
 
 import type { RealtimeEvent, Stats, TrackView } from "@mint/core/events";
 import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { endpointOnPage } from "@/lib/page-endpoint";
 
 type Listener = (e: RealtimeEvent) => void;
 type Status = "connecting" | "live" | "offline";
@@ -16,7 +17,7 @@ const Ctx = createContext<Hub | null>(null);
 
 function wsUrl() {
   const configured = process.env.NEXT_PUBLIC_WS_URL;
-  if (configured) return configured;
+  if (configured) return endpointOnPage(configured, window.location);
   const { protocol, host } = window.location;
   return `${protocol === "https:" ? "wss" : "ws"}://${host}/ws`;
 }

@@ -4,6 +4,7 @@ import { analysisSchema, type TrackAnalysis } from "@mint/core/analysis";
 import { normalizationGain, smartTransition } from "../src/lib/smart-fades";
 import { defaultDsp, type PlayerItem, type PlayerState } from "../src/lib/player-protocol";
 import { ListeningHistory } from "../src/lib/listening-history";
+import { randomId } from "../src/lib/id";
 
 const analysis: TrackAnalysis = analysisSchema.parse({
   version: 1, algorithm: "mint-dsp-v1", fingerprint: { sha256: "a".repeat(64), bytes: 1000, mtimeMs: 1 },
@@ -45,4 +46,8 @@ test("history measures audible elapsed time, rejects seek jumps, and flushes onc
   now += 100; recorder.update({ ...state, track: to });
   recorder.flush(); recorder.flush();
   assert.equal(events.length, 1); assert.equal(events[0]!.listenedMs, 4000); assert.equal(events[0]!.trackId, from.id);
+});
+test("ids stay valid UUIDs when the page is served over plain HTTP", () => {
+  const id = randomId({ getRandomValues: (bytes: ArrayBufferView) => crypto.getRandomValues(bytes) });
+  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });

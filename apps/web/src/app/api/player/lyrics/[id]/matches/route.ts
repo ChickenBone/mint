@@ -4,7 +4,7 @@ import { PLAYABLE } from "@mint/core/playback";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
-import { boundedJson, publicUrl } from "@/lib/request";
+import { boundedJson, originAllowed } from "@/lib/request";
 import { rateLimit } from "@/lib/rate-limit";
 import { fetchLyricsById, LyricsBusyError, searchLyrics } from "@/lib/lyrics-provider";
 
@@ -36,7 +36,7 @@ export async function GET(request: Request, context: Context) {
 export async function POST(request: Request, context: Context) {
   const actor = await access(context);
   if (actor.error) return actor.error;
-  if (request.headers.get("origin") !== new URL(publicUrl()).origin) return json({ error: "Invalid request origin" }, 403);
+  if (!originAllowed(request.headers.get("origin"))) return json({ error: "Invalid request origin" }, 403);
   let body: unknown;
   try { body = await boundedJson(request, 4096); } catch { return json({ error: "Invalid JSON or correction exceeds its 4 KB limit" }, 400); }
   const input = z.object({ lyricsId: z.number().int().positive().optional(), offsetMs: z.number().int().min(-30_000).max(30_000).default(0), reset: z.boolean().default(false) }).safeParse(body);

@@ -6,6 +6,8 @@ import {
   deviceCommandSchema, deviceStateSchema, handoffSchema, type DeviceCommandEnvelope, type DeviceState,
 } from "@mint/core/devices";
 import { validDeviceOrigin } from "../src/lib/device-http";
+import { playbackSource } from "../src/lib/device-client";
+import { chooseAccountPlayback, shownPlaybackSeconds } from "../src/lib/account-playback";
 import { startDeviceBridge } from "../src/lib/device-client";
 
 const trackId = randomUUID(), deviceId = randomUUID();
@@ -48,10 +50,62 @@ test("device/party policy rejects replay, expiration, offline clients, permissio
 
 test("device mutations require exact configured same origin, never forwarded request origins", () => {
   const origin = "https://mint.example.test";
+  const tailscale = "http://mint.tailnet.ts.net:3000";
   for (const headers of [{}, { origin: "https://evil.example" }, { origin, "sec-fetch-site": "cross-site" }] as Record<string, string>[]) {
     assert.equal(validDeviceOrigin(new Request("https://mint.example.test/api/devices", { headers }), origin), false);
   }
   assert.equal(validDeviceOrigin(new Request(`${origin}/api/devices`, { headers: { origin, "sec-fetch-site": "same-origin" } }), origin), true);
+  assert.equal(validDeviceOrigin(new Request(`${tailscale}/api/devices`, { headers: { origin: tailscale, "sec-fetch-site": "same-origin" } }), [origin, tailscale]), true);
+  assert.equal(validDeviceOrigin(new Request(`${tailscale}/api/devices`, { headers: { origin: "https://evil.example", "sec-fetch-site": "same-origin" } }), [origin, tailscale]), false);
+});
+
+test("playback moves from the device that is playing, otherwise the most recent device with a queue", () => {
+  const devices = [
+    { id: "laptop", online: true, lastSeenAt: "2026-11-05T00:00:00.000Z", state: { playing: false, queueLength: 4 } },
+    { id: "phone", online: true, lastSeenAt: "2026-11-05T00:01:00.000Z", state: { playing: true, queueLength: 4 } },
+    { id: "asleep", online: false, lastSeenAt: "2026-11-05T00:02:00.000Z", state: { playing: true, queueLength: 4 } },
+  ];
+  assert.equal(playbackSource(devices, "laptop")?.id, "phone");
+  assert.equal(playbackSource(devices, "phone"), null);
+  const paused = devices.map((device) => ({ ...device, state: { ...device.state, playing: false } }));
+  assert.equal(playbackSource(paused, "phone")?.id, "laptop");
+  assert.equal(playbackSource([{ id: "only", online: true, lastSeenAt: "2026-11-05T00:00:00.000Z", state: { playing: true, queueLength: 1 } }], "only"), null);
+});
+
+test("refresh resumes the same device and does not revoke it", async () => {
+  const storage = new Map<string, string>();
+  const memory = {
+    getItem: (key: string) => storage.get(key) ?? null,
+    setItem: (key: string, value: string) => { storage.set(key, value); },
+    removeItem: (key: string) => { storage.delete(key); },
+  };
+  let registers = 0, resumes = 0, revokes = 0;
+  const fetcher: typeof fetch = async (url, init) => {
+    const path = String(url);
+    if (path === "/api/devices") { registers++; return Response.json({ id: deviceId, token: "secret" }); }
+    if (path.endsWith("/resume")) { resumes++; return Response.json({ id: deviceId, token: "rotated" }); }
+    if (path.endsWith("/revoke")) { revokes++; return Response.json({ ok: true }); }
+    return Response.json({ command: null });
+  };
+  const first = startDeviceBridge({
+    memberId: "persistent", name: "Computer", getState: state, pollMs: 50, error: () => {}, storage: memory,
+    execute: async () => {}, applyHandoff: async () => {}, fetcher,
+  });
+  try {
+    await until(() => first.deviceId === deviceId);
+    assert.equal(registers, 1);
+    assert.equal(storage.get("mint:device:persistent"), deviceId);
+  } finally { first.dispose(); }
+  assert.equal(revokes, 0);
+  const second = startDeviceBridge({
+    memberId: "persistent", name: "Computer", getState: state, pollMs: 50, error: () => {}, storage: memory,
+    execute: async () => {}, applyHandoff: async () => {}, fetcher,
+  });
+  try {
+    await until(() => second.deviceId === deviceId);
+    assert.equal(registers, 1);
+    assert.equal(resumes, 1);
+  } finally { second.dispose(); }
 });
 
 test("bridge executes a delivered command at most once and strips unchanged heartbeat queues", async () => {
@@ -152,6 +206,24 @@ test("blocked destination playback is negatively acknowledged and source playbac
     await assert.rejects(() => source.handoffTo(randomUUID()), /Autoplay blocked/);
     assert.equal(paused, false);
   } finally { source.dispose(); }
+});
+
+test("account playback follows the playing device and holds a scrub", () => {
+  const local = { id: "local", online: true, lastSeenAt: "2026-11-06T00:00:02.000Z", state: { playing: false, trackId: "song-a" } };
+  const phone = { id: "phone", online: true, lastSeenAt: "2026-11-06T00:00:03.000Z", state: { playing: true, trackId: "song-b" } };
+  const idle = { id: "idle", online: true, lastSeenAt: "2026-11-06T00:00:04.000Z", state: { playing: false, trackId: "song-c" } };
+  assert.equal(chooseAccountPlayback([local, phone, idle], "local", true)?.id, undefined);
+  assert.equal(chooseAccountPlayback([local, phone, idle], "local", false)?.id, "phone");
+  assert.equal(chooseAccountPlayback([local, phone, idle], "local", false, "phone")?.id, "phone");
+  assert.equal(chooseAccountPlayback([local, idle], "local", false)?.id, undefined, "A paused device does not replace this tab");
+  assert.equal(chooseAccountPlayback([local, idle], "local", false, "idle")?.id, "idle", "The device that was playing stays after it pauses");
+  assert.equal(chooseAccountPlayback([idle], "local", false)?.id, undefined);
+  assert.equal(chooseAccountPlayback([{ ...phone, online: false }], "local", false, "phone")?.id, undefined);
+  const started = Date.parse("2026-11-06T00:00:00.000Z");
+  assert.equal(shownPlaybackSeconds({ time: 10, duration: 30, playing: true, scrubbing: false, reportedAt: started }, started + 2500), 12.5);
+  assert.equal(shownPlaybackSeconds({ time: 10, duration: 30, playing: true, scrubbing: true, reportedAt: started }, started + 2500), 10);
+  assert.equal(shownPlaybackSeconds({ time: 10, duration: 30, playing: false, scrubbing: false, reportedAt: started }, started + 2500), 10);
+  assert.equal(shownPlaybackSeconds({ time: 29, duration: 30, playing: true, scrubbing: false, reportedAt: started }, started + 5000), 30);
 });
 
 test("handoff callback admission without matching playing state cannot acknowledge success", async () => {
