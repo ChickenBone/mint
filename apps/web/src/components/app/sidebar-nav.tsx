@@ -119,12 +119,17 @@ const destinationIcons = { "/app": Home, "/app/search": Search, "/app/collection
 const destinations = listeningDestinations.map((destination) => ({ ...destination, icon: destinationIcons[destination.href] }));
 
 const adminDestinations = [
-  { href: "/app/manage", tab: "requests", label: "Members", icon: Users },
-  { href: "/app/manage?tab=reports", tab: "reports", label: "Reports", icon: Flag },
-  { href: "/app/manage?tab=jobs", tab: "jobs", label: "Activity", icon: ListChecks },
-  { href: "/app/manage?tab=workers", tab: "workers", label: "Workers", icon: Cpu },
-  { href: "/app/manage?tab=analysis", tab: "analysis", label: "Analysis", icon: Waves },
+  { href: "/app/manage", tab: "requests", label: "Members", icon: Users, group: "People" },
+  { href: "/app/manage?tab=reports", tab: "reports", label: "Reports", icon: Flag, group: "People" },
+  { href: "/app/manage?tab=jobs", tab: "jobs", label: "Activity", icon: ListChecks, group: "Operations" },
+  { href: "/app/manage?tab=workers", tab: "workers", label: "Workers", icon: Cpu, group: "Operations" },
+  { href: "/app/manage?tab=analysis", tab: "analysis", label: "Analysis", icon: Waves, group: "Operations" },
 ] as const;
+
+const adminDestinationGroups = ["People", "Operations"].map((group) => ({
+  label: group,
+  links: adminDestinations.filter((destination) => destination.group === group),
+}));
 
 export function MobileNav({ isAdmin = false }: { isAdmin?: boolean }) {
   const path = usePathname();
@@ -194,19 +199,24 @@ export function SidebarNav({ isAdmin, pendingRequests, playlists = [], playlists
           <p className="flex items-center gap-2 text-lg font-bold"><ShieldCheck className="size-5 text-muted" aria-hidden />Admin portal</p>
           <p className="mt-1 text-xs text-muted">Keep the listening room running.</p>
         </div>
-        <ul className="space-y-1">
-          {adminDestinations.map(({ href, tab: value, label, icon: Icon }) => (
-            <li key={href}>
-              <Link href={href} aria-label={label} aria-current={tab === value ? "page" : undefined}
-                className={clsx("flex min-h-12 items-center justify-center gap-3 rounded-xl px-2 text-sm font-semibold lg:justify-start lg:px-4",
-                  tab === value ? "bg-elevated text-fg" : "text-muted hover:bg-surface hover:text-fg")}>
-                <Icon className="size-5 shrink-0" aria-hidden />
-                <span className="hidden lg:inline">{label}</span>
-                {value === "requests" && pending > 0 && <Badge tone="warning">{pending}</Badge>}
-              </Link>
-            </li>
-          ))}
-        </ul>
+        {adminDestinationGroups.map(({ label: group, links }) => (
+          <div key={group} className="mb-5">
+            <p className="mb-2 hidden px-4 text-[10px] font-bold tracking-[0.12em] text-faint uppercase lg:block">{group}</p>
+            <ul className="space-y-1">
+              {links.map(({ href, tab: value, label, icon: Icon }) => (
+                <li key={href}>
+                  <Link href={href} aria-label={label} aria-current={tab === value ? "page" : undefined}
+                    className={clsx("flex min-h-12 items-center justify-center gap-3 rounded-xl border px-2 text-sm font-semibold lg:justify-start lg:px-4",
+                      tab === value ? "border-line/70 bg-elevated text-fg" : "border-transparent text-muted hover:bg-surface hover:text-fg")}>
+                    <Icon className="size-5 shrink-0" aria-hidden />
+                    <span className="hidden lg:inline">{label}</span>
+                    {value === "requests" && pending > 0 && <Badge tone="warning">{pending}</Badge>}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
         <Link href="/app/settings?section=services" aria-label="Connected services"
           className="mt-5 flex min-h-12 items-center justify-center gap-3 rounded-xl px-2 text-sm text-muted hover:bg-surface hover:text-fg lg:justify-start lg:px-4">
           <Settings className="size-5 shrink-0" aria-hidden />

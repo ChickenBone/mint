@@ -11,7 +11,6 @@ import {
   getMembers,
   getMyWorkers,
   getRemotePoolSize,
-  getStats,
 } from "@/lib/data";
 import { listIssueReports } from "@/lib/issue-reports";
 import { publicUrl } from "@/lib/request";
@@ -30,7 +29,6 @@ export default async function ManagePage() {
     allWorkers,
     myWorkers,
     remotePoolSize,
-    stats,
     issueReports,
   ] = await Promise.all([
     getAccessRequests(),
@@ -41,7 +39,6 @@ export default async function ManagePage() {
     getAllWorkers(),
     getMyWorkers(admin.id),
     getRemotePoolSize(),
-    getStats(),
     listIssueReports(getDb()),
   ]);
 
@@ -63,7 +60,6 @@ export default async function ManagePage() {
       allWorkers={allWorkers}
       myWorkers={myWorkers}
       remotePoolSize={remotePoolSize}
-      workersOnline={stats.workersOnline ?? 0}
       issueReports={issueReports}
     />
   );
