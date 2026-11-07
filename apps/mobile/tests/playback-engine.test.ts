@@ -370,6 +370,115 @@ test("native errors stop playback and leave an explicit retryable state", async 
   engine.dispose();
 });
 
+test("the installed header-only APK exposes its existing numeric native error code through an OTA", async () => {
+  const { engine } = fixture(1);
+  await engine.playTrack({ id: "song", title: "Song" });
+  engine.onStatus({ currentIndex: 0, currentTime: 0, duration: 0, playing: false,
+    isBuffering: false, isLoaded: false, error: { message: "Source error", code: 2004 } });
+  assert.match(engine.state.error!, /Source error \(Native code 2004\)/);
+  assert.equal(engine.state.loading, false);
+  engine.dispose();
+});
+
+test("empty native playlist startup statuses cannot start an audio load timeout before a song is selected", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { engine, playlist } = fixture(1);
+  for (const isBuffering of [true, false]) {
+    engine.onStatus({ currentIndex: 0, currentTime: 0, duration: 0, playing: false, isBuffering, isLoaded: false });
+    t.mock.timers.tick(60_000);
+    assert.equal(engine.state.loading, false);
+    assert.equal(engine.state.error, null);
+    assert.equal(playlist.playing, false);
+  }
+  engine.dispose();
+});
+
+test("native source errors retain HTTP diagnostics and cannot be turned back into loading by pause or late status events", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { engine, playlist } = fixture(2);
+  await engine.playCollection({ kind: "library" });
+  const idle = { currentIndex: 0, currentTime: 0, duration: 0, playing: false, isBuffering: false, isLoaded: false };
+  engine.onStatus({ ...idle, isBuffering: true });
+  const pause = playlist.pause.bind(playlist);
+  playlist.pause = () => { pause(); engine.onStatus(idle); };
+  engine.onStatus({ ...idle, error: { message: "Source error", code: 2004,
+    codeName: "ERROR_CODE_IO_BAD_HTTP_STATUS", responseCode: 401 } });
+  const error = engine.state.error;
+  assert.match(error!, /ERROR_CODE_IO_BAD_HTTP_STATUS, HTTP 401/);
+  engine.onStatus(idle);
+  engine.onStatus({ ...idle, playing: true, isLoaded: true });
+  t.mock.timers.tick(60_000);
+  assert.equal(engine.state.error, error);
+  assert.equal(engine.state.loading, false);
+  assert.equal(engine.state.playing, false);
+  await engine.toggle();
+  engine.onStatus({ ...idle, playing: true, isLoaded: true, duration: 90 });
+  assert.equal(engine.state.error, null);
+  assert.equal(engine.state.playing, true);
+  assert.equal(playlist.clears, 2, "retry replaces the failed native sources");
+  engine.dispose();
+});
+
+test("a load timeout stays failed until explicit retry rather than rearming on native idle updates", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { engine, playlist } = fixture(1);
+  return engine.playTrack({ id: "song", title: "Song" }).then(async () => {
+    const idle = { currentIndex: 0, currentTime: 0, duration: 0, playing: false, isBuffering: false, isLoaded: false };
+    engine.onStatus(idle);
+    t.mock.timers.tick(30_000);
+    assert.match(engine.state.error!, /could not load in 30 seconds/);
+    engine.onStatus(idle);
+    assert.equal(engine.state.loading, false);
+    assert.equal(playlist.playing, false);
+    await engine.reloadSources();
+    engine.onStatus({ ...idle, isBuffering: true });
+    assert.equal(engine.state.error, null);
+    assert.equal(engine.state.loading, true);
+    engine.dispose();
+  });
+});
+
+test("next and previous rebuild failed sources before selecting another occurrence", async () => {
+  for (const direction of ["next", "previous"] as const) {
+    const { engine, playlist } = fixture(3);
+    await engine.playCollection({ kind: "library" });
+    playlist.currentIndex = 1;
+    engine.onStatus({ currentIndex: 1, currentTime: 0, duration: 0, playing: false,
+      isBuffering: false, isLoaded: false, error: { message: "Source error", code: 2004 } });
+    await engine[direction]();
+    assert.equal(playlist.clears, 2);
+    assert.equal(playlist.currentIndex, direction === "next" ? 2 : 0);
+    assert.equal(engine.state.error, null);
+    engine.dispose();
+  }
+});
+
+test("a retry navigation cannot advance a new song selected while failed sources are rebuilding", async () => {
+  for (const direction of ["next", "previous", "toggle"] as const) {
+    const { engine, playlist, api } = fixture(3);
+    await engine.playCollection({ kind: "library" });
+    engine.onStatus({ currentIndex: 0, currentTime: 0, duration: 0, playing: false,
+      isBuffering: false, isLoaded: false, error: { message: "Source error" } });
+    const source = api.source;
+    let finish: (() => void) | undefined, calls = 0;
+    api.source = async (track) => {
+      if (++calls === 1) await new Promise<void>((resolve) => { finish = resolve; });
+      return source(track);
+    };
+    const retrying = engine[direction]();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(finish, "retry has started rebuilding its failed source");
+    await engine.playTrack({ id: "new-song", title: "New song" });
+    const metadata = playlist.lockMetadata.at(-1);
+    finish!();
+    await retrying;
+    assert.equal(engine.state.track?.id, "new-song");
+    assert.equal(playlist.currentIndex, 0);
+    assert.equal(playlist.lockMetadata.at(-1), metadata);
+    engine.dispose();
+  }
+});
+
 test("native media errors confirm session validity through the authenticated API cleanup path", async () => {
   const { engine, playlist, api, saved } = fixture(2);
   await engine.playCollection({ kind: "library" });

@@ -741,8 +741,8 @@ Native development/build prerequisites are in [mobile setup](mobile.md).
 
 ## CI/CD
 
-- **`ci.yml`** runs on every push and PR: typecheck, lint, test and build.
-- **`release.yml`** runs on `main` and `v*` tags. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent,analysis}` for amd64 and arm64, with provenance and an SBOM.
+- **`ci.yml`** runs on every `main` push and PR, including mobile-only changes: typecheck, lint, test and build.
+- **`release.yml`** runs on `main`, `v*` tags and manual dispatch. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent,analysis,chart-source}` for amd64 and arm64, with provenance and an SBOM. A `main` push changing **only** `apps/mobile/**`, `deploy/mobile/**`, `docs/mobile.md`, `docs/mobile-design.md`, `docs/mobile-playback.md`, `docs/android-builds.md` or `.github/workflows/android-apk.yml` skips Docker publication and optional server deployment. Any other changed path, including shared `packages/client/**`, `packages/core/**`, native server APIs, root manifests/lockfile, Docker configuration or a mixed mobile/backend change, still triggers Release. Tag pushes and manual releases bypass this path filter; mobile-only commits do not update the server's `latest` images.
 - **`android-apk.yml`** coordinates EAS Build/Update on the default branch: a finished matching native APK baseline gates compatible production JavaScript updates. Stable signing and APK/runtime validation are mandatory. See [Android distribution](android-builds.md); this does not deploy the backend or prove physical-device behavior.
 - **Auto‑deploy (optional).** Set the repository variable `DEPLOY_ENABLED=true` (and optionally `DEPLOY_PATH`), plus these secrets:
   - `DEPLOY_HOST`

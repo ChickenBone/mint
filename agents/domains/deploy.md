@@ -14,6 +14,7 @@
 - Upgrade order: update the pipeline worker first, wait for migrations and health, then update web.
 - Never use volume or data deletion, host or none network modes, or static container IPs as generic fixes.
 - A successful push does not prove CI passed or images were published. Verify the Release workflow before claiming GHCR availability.
+- Mobile-only `main` pushes skip Docker publication and optional server deployment; shared/client/core, backend or mixed changes still release. Tags and manual releases remain unfiltered, and required CI still runs for mobile changes. Keep exclusions limited to the mobile paths in `release.yml`, not global handbook/docs paths.
 - Android distribution uses EAS Build and EAS Update. Compare the native fingerprint with a successfully built APK, not the previous commit; compatible JavaScript changes only publish an update, and missing native history builds conservatively.
 - EAS baselines must be finished builds with the exact runtime/channel/fingerprint and validated signer; submitted or queued builds authorize no update. Do not restore the retired self-hosted OTA API/volume. EAS hosts application assets, not private media or backend secrets.
 - Preserve stable APK signing, exact native runtimes, default-branch publication and embedded/offline recovery. Never distribute Expo's debug-signed release default or claim an APK/device check from prebuild alone. EAS quotas still apply. See [Android builds](../../docs/android-builds.md).

@@ -4,6 +4,16 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # Skip only native-client-only pushes; mixed/shared changes still publish.
+    # GitHub does not apply path filters to tags or workflow_dispatch.
+    paths-ignore:
+      - "apps/mobile/**"
+      - "deploy/mobile/**"
+      - "docs/mobile.md"
+      - "docs/mobile-design.md"
+      - "docs/mobile-playback.md"
+      - "docs/android-builds.md"
+      - ".github/workflows/android-apk.yml"
   workflow_dispatch:
 
 concurrency:

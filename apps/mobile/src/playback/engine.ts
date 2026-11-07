@@ -68,6 +68,7 @@ export class PlaybackEngine {
   private transportValidation: Promise<void> | null = null;
   private lastTransportValidation = 0;
   private editing = false;
+  private failed = false;
 
   constructor(
     private playlist: PlaylistPort,
@@ -89,6 +90,8 @@ export class PlaybackEngine {
   }
   fail(error: unknown) {
     if (this.disposed) return;
+    this.failed = true;
+    this.clearBufferingTimeout();
     this.playlist.pause();
     this.publish({ error: error instanceof Error ? error.message : "Playback failed. Try again.", loading: false, playing: false });
   }
@@ -96,9 +99,7 @@ export class PlaybackEngine {
     this.publish({ error: error instanceof Error ? error.message : "This action failed. Try again.", loading: false });
   }
   private begin() {
-    if (this.bufferingTimeout) clearTimeout(this.bufferingTimeout);
-    this.bufferingTimeout = null;
-    this.bufferingSince = 0;
+    this.clearBufferingTimeout();
     this.request.abort();
     this.request = new AbortController();
     this.generation++;
@@ -171,6 +172,8 @@ export class PlaybackEngine {
     }
     this.playlist.pause();
     this.playlist.clear();
+    this.failed = false;
+    this.clearBufferingTimeout();
     this.entries = entries;
     this.identities = new Set(entries.map((entry) => entry.occurrenceId));
     this.originalOrder = [...entries];
@@ -255,16 +258,22 @@ export class PlaybackEngine {
     this.persist();
   }
   onStatus(status: PlaylistStatus) {
-    if (this.disposed) return;
+    if (this.disposed || this.failed) return;
     if (status.error) {
       const detail = typeof status.error === "object" && status.error !== null && "message" in status.error
         ? String(status.error.message) : String(status.error);
-      this.fail(new Error(`Audio could not play: ${detail}. Check your connection or sign in again.`));
+      const native = typeof status.error === "object" && status.error !== null ? status.error : {};
+      const code = "codeName" in native && typeof native.codeName === "string" ? native.codeName
+        : "code" in native && typeof native.code === "number" ? `Native code ${native.code}` : "";
+      const http = "responseCode" in native && typeof native.responseCode === "number" ? `HTTP ${native.responseCode}` : "";
+      const diagnostics = [code, http].filter(Boolean).join(", ");
+      this.fail(new Error(`Audio could not play: ${detail}${diagnostics ? ` (${diagnostics})` : ""}. Check your connection or sign in again.`));
       this.validateTransportFailure();
       return;
     }
     this.publish({ playing: status.playing, time: Number.isFinite(status.currentTime) ? status.currentTime : 0,
-      duration: Number.isFinite(status.duration) ? status.duration : 0, loading: status.isBuffering || !status.isLoaded && this.entries.length > 0 });
+      duration: Number.isFinite(status.duration) ? status.duration : 0,
+      loading: this.entries.length > 0 && (status.isBuffering || !status.isLoaded) });
     if (this.state.loading) {
       if (!this.bufferingSince) {
         this.bufferingSince = Date.now();
@@ -281,9 +290,7 @@ export class PlaybackEngine {
         return;
       }
     } else {
-      this.bufferingSince = 0;
-      if (this.bufferingTimeout) clearTimeout(this.bufferingTimeout);
-      this.bufferingTimeout = null;
+      this.clearBufferingTimeout();
     }
     const oldId = this.state.track?.occurrenceId;
     this.updateQueue();
@@ -291,6 +298,11 @@ export class PlaybackEngine {
       void this.refreshCurrentMetadata();
     }
     if (Date.now() - this.lastSaved >= 5000) this.persist();
+  }
+  private clearBufferingTimeout() {
+    if (this.bufferingTimeout) clearTimeout(this.bufferingTimeout);
+    this.bufferingTimeout = null;
+    this.bufferingSince = 0;
   }
   private validateTransportFailure() {
     if (this.disposed || this.transportValidation || Date.now() - this.lastTransportValidation < 5000) return;
@@ -340,6 +352,7 @@ export class PlaybackEngine {
       await this.api.validate(this.request.signal);
       if (generation === this.generation && !this.disposed) {
         if (this.state.error) await this.reloadSources();
+        if (generation !== this.generation || this.disposed) return;
         this.publish({ error: null });
         this.playlist.setActiveForLockScreen(true, this.lockMetadata(this.state.track!));
         this.playlist.play();
@@ -363,6 +376,9 @@ export class PlaybackEngine {
     this.publish({ error: null });
   }
   async next() {
+    const generation = this.generation;
+    if (this.failed) await this.reloadSources();
+    if (generation !== this.generation || this.disposed) return;
     const oldId = this.state.track?.occurrenceId;
     this.playlist.next();
     this.updateQueue();
@@ -370,6 +386,9 @@ export class PlaybackEngine {
     this.persist();
   }
   async previous() {
+    const generation = this.generation;
+    if (this.failed) await this.reloadSources();
+    if (generation !== this.generation || this.disposed) return;
     const oldId = this.state.track?.occurrenceId;
     if (this.playlist.currentTime > 3) await this.playlist.seekTo(0);
     else this.playlist.previous();

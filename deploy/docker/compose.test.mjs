@@ -16,6 +16,84 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("Docker release ignores only mobile-only branch pushes, preserving shared and mixed changes", () => {
+  const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
+  const triggers = release.match(/^on:\n([\s\S]*?)^\S/m)?.[1];
+  assert.ok(triggers);
+  assert.match(triggers, /^  push:\n    branches: \[main\]\n    tags: \["v\*"\]/m);
+  assert.match(triggers, /^  workflow_dispatch:\s*$/m);
+  assert.doesNotMatch(triggers, /^  workflow_run:|^    paths:/m);
+  const ignored = [...triggers.matchAll(/^      - "([^"]+)"$/gm)].map(match => match[1]);
+  assert.deepEqual(ignored, [
+    "apps/mobile/**",
+    "deploy/mobile/**",
+    "docs/mobile.md",
+    "docs/mobile-design.md",
+    "docs/mobile-playback.md",
+    "docs/android-builds.md",
+    ".github/workflows/android-apk.yml",
+  ]);
+  // This allowlist uses only literal files and directory prefixes, not ordered negations.
+  const mobileOnly = paths => paths.length > 0 && paths.every(file => ignored.some(pattern =>
+    pattern.endsWith("/**") ? file.startsWith(pattern.slice(0, -2)) : file === pattern));
+  const mobile = [
+    "apps/mobile/src/playback/engine.ts",
+    "apps/mobile/src/screens/settings.tsx",
+    "apps/mobile/plugins/with-android-audio.js",
+    "apps/mobile/package.json",
+    "deploy/mobile/eas-distribution.mjs",
+    "docs/mobile.md",
+    "docs/mobile-design.md",
+    "docs/mobile-playback.md",
+    "docs/android-builds.md",
+    ".github/workflows/android-apk.yml",
+  ];
+  assert.equal(mobileOnly(mobile), true);
+  for (const file of [
+    "packages/client/src/index.ts",
+    "packages/client/package.json",
+    "packages/core/src/playback.ts",
+    "packages/core/migrations/0020_example.sql",
+    "apps/web/src/app/api/native/route.ts",
+    "apps/web/src/components/app/player.tsx",
+    "apps/worker/src/index.ts",
+    "apps/realtime/src/index.ts",
+    "apps/agent/src/index.ts",
+    "services/chart-source/main.mts",
+    "package.json",
+    "package-lock.json",
+    "tsconfig.base.json",
+    ".npmrc",
+    "patches/shared.patch",
+    "Dockerfile",
+    ".dockerignore",
+    "docker-compose.yml",
+    "deploy/docker/entrypoint.sh",
+    ".github/workflows/ci.yml",
+    ".github/workflows/release.yml",
+    "docs/self-hosting.md",
+    "docs/mobile-api.md",
+    "apps/mobile-other/index.ts",
+  ]) {
+    assert.equal(mobileOnly([file]), false, file);
+    assert.equal(mobileOnly([...mobile, file]), false, `mixed change: ${file}`);
+  }
+  // GitHub compares changed paths, including deleted files and both sides of renames.
+  assert.equal(mobileOnly(["apps/mobile/src/deleted.ts"]), true);
+  assert.equal(mobileOnly(["apps/web/src/deleted.ts"]), false);
+  assert.equal(mobileOnly(["apps/mobile/src/moved.ts", "packages/client/src/moved.ts"]), false);
+
+  const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  const ciTriggers = ci.match(/^on:\n([\s\S]*?)^\S/m)?.[1];
+  assert.ok(ciTriggers);
+  assert.match(ciTriggers, /^  pull_request:\s*$/m);
+  assert.match(ciTriggers, /^  push:\n    branches: \[main\]/m);
+  assert.doesNotMatch(ciTriggers, /paths(?:-ignore)?:/);
+  for (const command of ["npm run agents:check", "npm run typecheck", "npm run lint", "npm test", "npm run build"]) {
+    assert.ok(ci.includes(`- run: ${command}\n`), command);
+  }
+});
+
 test("Expo web exact-origin allowlist reaches CLI and self-contained NAS web services", () => {
   const origin = "https://app.example.com,http://localhost:8081";
   const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");

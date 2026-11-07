@@ -46,6 +46,11 @@ removal of that account's queue and downloads, including active transfers.
 The source adapter always reads the latest account API rather than retaining an
 old credential after account refresh.
 
+Fatal native errors and the existing load timeout remain stopped, with a visible
+error, until an explicit retry, source change or song selection. Later idle/pause
+status events cannot restart the spinner or overwrite the failure. Original and
+MP3 failing alike does not establish a codec problem.
+
 Original audio is the default. The optional MP3 compatibility setting selects the
 existing private conversion proxy and reloads sources while preserving the queue,
 position and paused/playing intent. It does not alter original files. Offline
@@ -70,6 +75,25 @@ including empty headers; unknown URIs get none. Clear and destroy erase the map.
 `DataSpec.withRequestHeaders` preserves byte position and length, so Media3 still
 constructs ordinary range requests. The HTTP client disables redirects rather
 than forwarding bearer credentials to another host.
+
+The plugin also repairs recovery after an Android source error: Media3 enters
+`STATE_IDLE`, and adding media items alone does not prepare an idle player.
+Adding/inserting a source prepares only that idle state, leaving ready/buffering
+queues and their current item untouched. Native failures include Media3's error
+name and HTTP response status when available, not request URLs, headers or bodies.
+The plugin accepts the exact previously audited header-only patch and upgrades it
+deterministically; unknown changes still fail the original checksum guard.
+These additional native repairs require a new APK, not just an OTA update.
+An OTA alone can retain the error instead of indefinite loading, but cannot fix
+the installed native idle-recovery path. Passing source tests does not identify
+the first failed request on a physical device.
+
+Preparing the initial empty playlist is not itself a demonstrated first-play
+failure: Media3 1.9.1 changes an empty prepared player to `STATE_ENDED`, then its
+first media addition uses `setMediaSourcesInternal` and returns to buffering.
+`prepare()` itself is a no-op outside `STATE_IDLE`, so broadening the recovery
+guard to ended/ready states does not fix that path. Empty startup status events
+do not start the client audio timeout before any song has been selected.
 
 Expo Go ships stock native modules and never runs this plugin, so its Android
 playlist would drop per-item Authorization headers. `playlist.native.ts` detects
