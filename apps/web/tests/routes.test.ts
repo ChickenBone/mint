@@ -35,13 +35,14 @@ test("legacy library tabs map to canonical catalog types", () => {
   assert.equal(legacyLibraryHref(new URLSearchParams("tab=unknown")), "/app/library");
 });
 
-test("legacy discover tabs map to real subroutes", () => {
+test("legacy discover links retain chart and mix destinations", () => {
   assert.equal(legacyDiscoverHref(new URLSearchParams("chart=apple-us")), "/app/discover/charts/apple-us");
-  assert.equal(legacyDiscoverHref(new URLSearchParams("tab=charts")), "/app/discover/charts");
+  assert.equal(legacyDiscoverHref(new URLSearchParams("tab=charts")), "/app/search#charts");
   assert.equal(legacyDiscoverHref(new URLSearchParams("tab=mixes&mode=recent")), "/app/discover/mixes?mode=recent");
   assert.equal(legacyDiscoverHref(new URLSearchParams()), null);
   assert.equal(legacyDiscoverDestination(new URLSearchParams()), "/app/search");
   assert.equal(legacyDiscoverDestination(new URLSearchParams("chart=apple-us")), "/app/discover/charts/apple-us");
+  assert.equal(legacyDiscoverDestination(new URLSearchParams("tab=charts")), "/app/search#charts");
   assert.equal(legacyDiscoverDestination(new URLSearchParams("tab=mixes&mode=recent")), "/app/discover/mixes?mode=recent");
 });
 
@@ -101,7 +102,7 @@ test("Your music, Settings and Management tab/section resolvers normalize query 
 
 test("primary navigation active state includes nested detail, Your music, Settings and Management routes", () => {
   assert.equal(isAppDestinationActive("/app", "/app"), true);
-  assert.equal(isAppDestinationActive("/app/discover/charts/apple-us", "/app/discover"), true);
+  assert.equal(isAppDestinationActive("/app/discover/charts/apple-us", "/app/search"), true);
   assert.equal(isAppDestinationActive("/app/library/albums/abc", "/app/library"), true);
   assert.equal(isAppDestinationActive("/app/collection", "/app/collection"), true);
   assert.equal(isAppDestinationActive("/app/collection/abc", "/app/collection"), true);

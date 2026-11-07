@@ -19,7 +19,7 @@ export default async function Charts() {
           </p>
         </div>
         <Link
-          href={user ? "/app/discover/charts" : "/request-access"}
+          href={user ? "/app/search#charts" : "/request-access"}
           className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong"
         >
           {user ? "Open member charts" : "Request access to listen"}

@@ -130,10 +130,12 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
       {collection.kind === "album" && <div className="collection-hero-art">
         <Artwork track={{ artworkUrl: first?.thumb ?? "" }} eager className="h-full w-full rounded-none" />
       </div>}
-      {collection.kind === "artist" && <div className="artist-hero-art" aria-hidden="true">
-        <Artwork track={{ artworkUrl: detail?.items[0]?.thumb ?? "" }} eager className="h-full w-full rounded-none" />
-        <div className="absolute inset-0 bg-gradient-to-t from-bg via-bg/65 to-transparent" />
-      </div>}
+      {collection.kind === "artist" && <>
+        <ArtworkAtmosphere src={detail?.items[0]?.thumb} />
+        <div className="artist-hero-portrait" aria-hidden="true">
+          <Artwork track={{ artworkUrl: detail?.items[0]?.thumb ?? "" }} eager className="h-full w-full rounded-full" />
+        </div>
+      </>}
       <div className="min-w-0">
         <h1 className="break-words text-4xl font-extrabold tracking-tight sm:text-6xl">{title}</h1>
         <p className={`mt-4 flex flex-wrap items-center gap-x-1.5 text-sm tabular ${collection.kind === "artist" ? "text-fg/80" : "text-muted"}`}>

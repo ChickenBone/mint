@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ListMusic } from "lucide-react";
-import { Artwork } from "@/components/artwork";
+import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
 import { getDb } from "@mint/core/db";
 import { MusicError } from "@mint/core/music";
 import { UUID } from "@mint/core/playback";
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/primitives";
 import { CollectionActions } from "@/components/app/collection-actions";
 import { LiveTrackList } from "@/components/app/live-track-list";
 import { NativeCollectionEditor } from "@/components/app/native-collection-editor";
-import { firstCover, PageHeader } from "@/components/app/page-header";
+import { firstCover } from "@/components/app/page-header";
 import { SpotifyCopyButton, YouTubeCopyButton } from "@/components/app/spotify-controls";
 import { requireUser } from "@/lib/auth";
 import { getPlaylist } from "@/lib/data";
@@ -19,6 +19,48 @@ import { formatCount, timeAgo } from "@/lib/format";
 import { collectionDetail } from "@/lib/music-store";
 
 export const dynamic = "force-dynamic";
+
+function ImportedPlaylistHeader({
+  title,
+  artwork,
+  backdrop,
+  label,
+  metadata,
+  explanation,
+}: {
+  title: string;
+  artwork?: string | null;
+  backdrop?: string | null;
+  label: string;
+  metadata: string;
+  explanation: string;
+}) {
+  return (
+    <header className="playlist-heading collection-hero music-atmosphere mb-6">
+      {backdrop && <ArtworkAtmosphere src={backdrop} />}
+      <div className="collection-hero-art grid place-items-center bg-elevated">
+        {artwork ? (
+          <Artwork track={{ artworkUrl: artwork }} eager className="size-full rounded-none" />
+        ) : (
+          <ListMusic className="size-10 text-faint" aria-hidden />
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <Badge tone="neutral">{label}</Badge>
+          <span className="text-sm text-muted tabular">{metadata}</span>
+        </div>
+        <h1 className="break-words text-3xl font-extrabold tracking-tight sm:text-5xl">{title}</h1>
+        <details className="mt-2 max-w-prose">
+          <summary className="flex min-h-11 cursor-pointer items-center text-sm text-muted hover:text-fg">
+            About this import
+          </summary>
+          <p className="pb-2 text-sm leading-relaxed text-muted">{explanation}</p>
+        </details>
+      </div>
+    </header>
+  );
+}
 
 export default async function CollectionDetailPage({
   params,
@@ -56,31 +98,13 @@ export default async function CollectionDetailPage({
         <Link href="/app/collection" className="mb-5 inline-flex min-h-11 items-center text-sm text-muted hover:text-fg">
           ← Your Library
         </Link>
-        <PageHeader
+        <ImportedPlaylistHeader
           title={playlist.title}
+          label="Source-managed import"
+          metadata={`${formatCount(ready)} of ${formatCount(playlist.itemCount)} playable`}
+          explanation="This saved import is read-only. Make a separate editable copy to reorder or customize its songs."
+          artwork={playlist.artworkUrl}
           backdrop={playlist.artworkUrl ?? firstCover(tracks)}
-          art={
-            <div className="relative size-40 shrink-0 overflow-hidden rounded-lg bg-elevated sm:size-52">
-              {playlist.artworkUrl ? (
-                <Artwork track={{ artworkUrl: playlist.artworkUrl }} eager className="size-full rounded-none" />
-              ) : (
-                <ListMusic className="absolute inset-0 m-auto size-16 text-faint" aria-hidden />
-              )}
-            </div>
-          }
-          sub={
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone="neutral">Source-managed import</Badge>
-                <span className="text-sm text-muted tabular">
-                  {formatCount(ready)} of {formatCount(playlist.itemCount)} playable
-                </span>
-              </div>
-              <p className="max-w-prose text-sm text-muted">
-                This saved import is read-only. Make a separate editable copy to reorder or customize its songs.
-              </p>
-            </div>
-          }
         />
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <CollectionActions collection={{ kind: "playlist", id }} empty={!ready} label="playlist" title={playlist.title} />
@@ -111,32 +135,25 @@ export default async function CollectionDetailPage({
       <Link href="/app/collection" className="mb-5 inline-flex min-h-11 items-center text-sm text-muted hover:text-fg">
         ← Your Library
       </Link>
-      <PageHeader
-        className="[&_h1]:break-words"
+      <ImportedPlaylistHeader
         title={playlist.title}
-        sub={
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="neutral">Read-only import</Badge>
-              <span className="text-sm text-muted tabular">
-                {playback.total} locally playable · {playlist.sourceTotal} source items · Saved {timeAgo(playlist.lastSyncedAt)}
-              </span>
-            </div>
-            <p className="max-w-prose text-sm text-muted">
-              Source order and repeated songs are preserved. Make an editable copy to edit local matches.
-              Play and Shuffle skip missing, ambiguous and unavailable items; nothing is downloaded automatically.
-            </p>
-          </div>
-        }
-      >
+        label="Read-only import"
+        metadata={`${formatCount(playback.total)} locally playable · ${formatCount(playlist.sourceTotal)} source items · Saved ${timeAgo(playlist.lastSyncedAt)}`}
+        explanation="Source order and repeated songs are preserved. Make an editable copy to edit local matches. Play and Shuffle skip missing, ambiguous and unavailable items; nothing is downloaded automatically."
+      />
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <CollectionActions collection={{ kind: "spotify", id }} empty={!playback.total} label="local matches" title={playlist.title} />
-      </PageHeader>
-      <div className="mb-7 flex flex-wrap items-center gap-3">
-        <SpotifyCopyButton id={id} empty={!playback.total} />
-        <a href={playlist.providerUrl} target="_blank" rel="noopener noreferrer"
-          className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 text-sm font-semibold text-fg hover:bg-hover">
-          Open original playlist
-        </a>
+        <div className="flex flex-wrap items-center gap-3">
+          <SpotifyCopyButton id={id} empty={!playback.total} />
+          <a
+            href={playlist.providerUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex min-h-11 items-center text-sm font-semibold text-muted underline-offset-4 hover:text-fg hover:underline"
+          >
+            Open original playlist
+          </a>
+        </div>
       </div>
       {playlist.error && (
         <p className="mb-6 text-sm text-danger" role="alert">

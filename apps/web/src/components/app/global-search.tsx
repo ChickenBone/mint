@@ -22,7 +22,7 @@ const browseTiles = [
   { label: "All music", href: "/app/library", icon: ListMusic, className: "bg-mint/25" },
   { label: "Albums", href: "/app/library?type=album", icon: Disc3, className: "bg-elevated" },
   { label: "Artists", href: "/app/library?type=artist", icon: MicVocal, className: "bg-hover" },
-  { label: "Charts", href: "/app/discover/charts", icon: TrendingUp, className: "bg-warn/20" },
+  { label: "Charts", href: "#charts", icon: TrendingUp, className: "bg-warn/20" },
 ];
 const emptyRecent: string[] = [];
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };

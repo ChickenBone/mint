@@ -115,8 +115,7 @@ export function legacyDiscoverHref(params: URLSearchParams) {
   }
   const tab = next.get("tab");
   if (tab === "charts") {
-    next.delete("tab");
-    return withQuery("/app/discover/charts", next);
+    return "/app/search#charts";
   }
   if (tab === "mixes" || next.has("mode") || next.has("seed")) {
     next.delete("tab");
@@ -194,6 +193,7 @@ export function legacyManageHref(
 }
 
 export function isAppDestinationActive(pathname: string, href: string) {
+  if (href === "/app/search" && pathname.startsWith("/app/discover/charts/")) return true;
   if (href === "/app/collection" || href === "/app/collections") {
     return [
       "/app/collection",

@@ -9,7 +9,7 @@ export default async function ChartDetailPage({ params }: { params: Promise<{ ch
   const user = await requireUser(), { chart } = await params;
   if (!CHARTS.some((definition) => definition.id === chart)) notFound();
   return <>
-    <Link href="/app/discover/charts" className="mb-5 inline-flex min-h-11 items-center gap-2 text-sm text-muted hover:text-fg">← All charts</Link>
+    <Link href="/app/search#charts" className="mb-5 inline-flex min-h-11 items-center gap-2 text-sm text-muted hover:text-fg">← All charts</Link>
     <ChartBrowser key={chart} initial={await chartPage(chart, user.id)} member />
   </>;
 }

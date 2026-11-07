@@ -131,9 +131,6 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               : []),
           ]}
         />
-        <button type="button" className={button} disabled={busy} onClick={duplicatePlaylist}>
-          Duplicate as editable playlist
-        </button>
       </div>
 
       {error && (
@@ -144,9 +141,81 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
           </button>
         </div>
       )}
-      <p role="status" className="mb-4 text-sm text-muted">
-        {busy ? activity : notice}
-      </p>
+      {(busy || notice) && (
+        <p role="status" className="mb-4 text-sm text-muted">
+          {busy ? activity : notice}
+        </p>
+      )}
+
+      {!data.entries.length ? (
+        <p className="max-w-prose py-10 text-muted">
+          {data.rules
+            ? "No playable songs match these rules. Adjust the filters below."
+            : "This playlist is ready for its first song. Search your library below."}
+        </p>
+      ) : (
+        <MusicTrackList
+          playAsQueue
+          entries={data.entries.map((e) => ({ key: e.entryId, track: e.track }))}
+          actions={(key, track, index) => (
+            <>
+              <button
+                type="button"
+                className={button}
+                disabled={busy}
+                aria-label={`Like ${track.title}`}
+                onClick={() =>
+                  void run(async () => {
+                    await musicRequest(`likes/${track.id}`, "PUT");
+                    setNotice("Added to Liked songs.");
+                  })
+                }
+              >
+                <Heart className="size-4" aria-hidden />
+              </button>
+              {!data.rules && (
+                <>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy || index === 0}
+                    aria-label={`Move entry ${index + 1} up`}
+                    onClick={() =>
+                      void run(async () => {
+                        await reorder(index, -1);
+                      })
+                    }
+                  >
+                    <ArrowUp className="size-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className={button}
+                    disabled={busy || index === data.entries.length - 1}
+                    aria-label={`Move entry ${index + 1} down`}
+                    onClick={() =>
+                      void run(async () => {
+                        await reorder(index, 1);
+                      })
+                    }
+                  >
+                    <ArrowDown className="size-4" aria-hidden />
+                  </button>
+                  <button
+                    type="button"
+                    className={`${button} text-danger`}
+                    disabled={busy}
+                    aria-label={`Remove entry ${index + 1}: ${track.title}`}
+                    onClick={() => void run(() => mutate({ action: "remove", entryId: key }))}
+                  >
+                    <Trash2 className="size-4" aria-hidden />
+                  </button>
+                </>
+              )}
+            </>
+          )}
+        />
+      )}
 
       <details className="mb-7 border-y border-line py-5">
         <summary className="cursor-pointer font-semibold">Edit playlist{data.rules ? " and smart rules" : ""}</summary>
@@ -390,76 +459,6 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
         </details>
       )}
 
-      {!data.entries.length ? (
-        <p className="max-w-prose py-10 text-muted">
-          {data.rules
-            ? "No playable songs match these rules. Adjust the filters above."
-            : "This playlist is ready for its first song. Search your library above."}
-        </p>
-      ) : (
-        <MusicTrackList
-          playAsQueue
-          entries={data.entries.map((e) => ({ key: e.entryId, track: e.track }))}
-          actions={(key, track, index) => (
-            <>
-              <button
-                type="button"
-                className={button}
-                disabled={busy}
-                aria-label={`Like ${track.title}`}
-                onClick={() =>
-                  void run(async () => {
-                    await musicRequest(`likes/${track.id}`, "PUT");
-                    setNotice("Added to Liked songs.");
-                  })
-                }
-              >
-                <Heart className="size-4" aria-hidden />
-              </button>
-              {!data.rules && (
-                <>
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={busy || index === 0}
-                    aria-label={`Move entry ${index + 1} up`}
-                    onClick={() =>
-                      void run(async () => {
-                        await reorder(index, -1);
-                      })
-                    }
-                  >
-                    <ArrowUp className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={button}
-                    disabled={busy || index === data.entries.length - 1}
-                    aria-label={`Move entry ${index + 1} down`}
-                    onClick={() =>
-                      void run(async () => {
-                        await reorder(index, 1);
-                      })
-                    }
-                  >
-                    <ArrowDown className="size-4" aria-hidden />
-                  </button>
-                  <button
-                    type="button"
-                    className={`${button} text-danger`}
-                    disabled={busy}
-                    aria-label={`Remove entry ${index + 1}: ${track.title}`}
-                    onClick={() => void run(() => mutate({ action: "remove", entryId: key }))}
-                  >
-                    <Trash2 className="size-4" aria-hidden />
-                  </button>
-                </>
-              )}
-            </>
-          )}
-        />
-      )}
-
       {data.role === "owner" && (
         <section className="mt-10 border-t border-line pt-7">
           <h2 className="text-2xl font-bold">Collaborators</h2>
@@ -500,14 +499,6 @@ export function NativeCollectionEditor({ initial }: { initial: CollectionDetail 
               </li>
             ))}
           </ul>
-          <button
-            type="button"
-            className={`${button} mt-8 text-danger`}
-            disabled={busy}
-            onClick={() => setConfirmDeleteOpen(true)}
-          >
-            Delete playlist
-          </button>
         </section>
       )}
 

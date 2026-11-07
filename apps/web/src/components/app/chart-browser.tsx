@@ -117,24 +117,25 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
     finally { setBusy(false); }
   };
   return <section aria-label="Music charts" aria-busy={busy} className="chart-browser">
-    <div className="mb-5 grid gap-5 sm:grid-cols-2">
-      <label className="text-sm font-semibold">Chart
-        <select value={page.chart.id} disabled={busy} onChange={(event) => void load(event.target.value)} className="mt-2 min-h-12 w-full rounded-xl bg-elevated px-4 text-fg ring-1 ring-line">
+    <header className="mb-5 grid gap-4 border-b border-line pb-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="min-w-0">
+        <h1 className="truncate text-2xl font-bold tracking-tight sm:text-3xl">{page.chart.title}</h1>
+        <p className="mt-1 text-xs text-faint">
+          {page.chart.territory}{page.period ? ` · ${page.period}` : ""}
+          {" · "}<a href={page.chart.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 underline underline-offset-4 hover:text-fg">{page.chart.providerName}<ExternalLink className="size-3" aria-hidden /></a>
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+        <label className="sr-only" htmlFor="chart-select">Choose a chart</label>
+        <select id="chart-select" value={page.chart.id} disabled={busy} onChange={(event) => void load(event.target.value)} className="min-h-11 max-w-full rounded-xl bg-elevated px-3 text-sm text-fg ring-1 ring-line">
           {(["apple", "listenbrainz", "audius"] as const).map((provider) => <optgroup key={provider} label={CHARTS.find((chart) => chart.provider === provider)!.providerName}>
             {CHARTS.filter((chart) => chart.provider === provider).map((chart) => <option key={chart.id} value={chart.id}>{chart.title}</option>)}
           </optgroup>)}
         </select>
-      </label>
-      <div className="flex items-end gap-3">
         {member ? <button className={`${action} bg-mint text-mint-ink ring-0 hover:bg-mint-strong`} disabled={busy || !player?.ready || player.busy || !page.total} onClick={() => void play()}><Play className="size-4" fill="currentColor" />Play</button>
           : <Link className={action} href="/login">Sign in to listen</Link>}
-        <button className={action} disabled={busy} aria-label="Refresh chart" onClick={() => void load(page.chart.id, page.offset)}><RefreshCw className="size-4" /><span className="hidden sm:inline">Refresh</span></button>
+        <button className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg disabled:opacity-40" disabled={busy} aria-label="Refresh chart" onClick={() => void load(page.chart.id, page.offset)}><RefreshCw className="size-4" /></button>
       </div>
-    </div>
-    <header className="mb-5 border-b border-line pb-5">
-      <h2 className="text-2xl font-bold">{page.chart.title}</h2>
-      <p className="mt-1 text-sm text-muted">{page.chart.territory}{page.period ? ` · ${page.period}` : ""}
-        {" · "}<a href={page.chart.url} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1 underline underline-offset-4">{page.chart.providerName}<ExternalLink className="size-3" aria-hidden /></a></p>
     </header>
     {page.total > 0 && page.status === "error" && <p role="status" className="mb-5 text-sm text-muted">Couldn’t refresh this chart. <button className="min-h-11 underline" onClick={() => void load(page.chart.id)}>Try again</button></p>}
     {page.total > 0 && page.status === "stale" && <p role="status" className="mb-5 text-sm text-muted">This chart may be out of date. <button className="min-h-11 underline" onClick={() => void load(page.chart.id)}>Refresh</button></p>}

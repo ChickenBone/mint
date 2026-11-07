@@ -26,7 +26,7 @@ function chartCollection(chart: ChartDefinition, index: number): Collection {
   const country = chart.country?.toUpperCase();
   return { id: chart.id, title: chart.title,
     cover: country ? `Top 50\n${country}` : chart.genre ? chart.genre.replace("Hip-Hop/Rap", "Hip-hop\nrotation").replace("Electronic", "Electro\npulse") : chart.provider === "listenbrainz" ? "World\nof listens\n50" : "Indie\nrotation",
-    description: chart.genre ? `${chart.genre}, finding its moment on Audius.` : chart.description,
+    description: chart.territory,
     href: `/app/discover/charts/${encodeURIComponent(chart.id)}`, color: index % colors.length,
     caption: chart.providerName };
 }
@@ -53,16 +53,6 @@ export function DiscoveryShelves({ seeds }: { seeds: TrackView[] }) {
       description: `${track.artist} and more from that corner of your collection.`, href: mix("radio", track.id), mode: "radio", seed: track.id,
       color: i + 3, artwork: track.artworkUrl, caption: "Library radio" })),
   ];
-  const charts = (ids: string[]) => ids.map((id, i) => chartCollection(CHARTS.find((chart) => chart.id === id)!, i + 3));
-  const sections = [
-    { title: "Your daily soundtrack", description: "Made by Mint. Shaped by your collection.", items: daily },
-    { title: "In heavy rotation", description: "Different listening worlds. One place to find your next favorite.",
-      items: charts(["apple-us", "listenbrainz-week", "audius-week", "apple-gb", "apple-ca", "apple-au"]) },
-    { title: "Find your frequency", description: "Pick a sound. See what’s moving on Audius.",
-      items: CHARTS.filter((chart) => chart.genre).map((chart, i) => chartCollection(chart, i)) },
-    { title: "A change of scenery", description: "Country Top 50s, straight from Apple Music.",
-      items: charts(["apple-jp", "apple-fr", "apple-de", "apple-gb", "apple-ca", "apple-au"]) },
-  ];
   const play = async (collection: Collection) => {
     if (!collection.mode || !player) return;
     setBusy(collection.id); setError(""); setNotice("");
@@ -75,21 +65,18 @@ export function DiscoveryShelves({ seeds }: { seeds: TrackView[] }) {
     finally { setBusy(null); }
   };
   return <div className="discovery-shelves">
-    <header className="mb-8 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3">
+    <header className="mb-8">
       <div>
         <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">Explore</h2>
-        <p className="mt-2 text-sm text-muted">Mixes, radio and charts for what to play next.</p>
+        <p className="mt-2 text-sm text-muted">Mixes and radio from your library.</p>
       </div>
-      <nav aria-label="Explore more" className="flex flex-wrap items-center justify-end gap-x-3">
-        <Link href="/app/discover/mixes" className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">Your mixes<ArrowUpRight className="size-4" /></Link>
-        <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-sm font-semibold text-muted hover:text-fg">All charts</Link>
-      </nav>
+      <Link href="/app/discover/mixes" className="mt-2 inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-muted hover:text-fg">Your mixes<ArrowUpRight className="size-4" /></Link>
     </header>
     {error && <p role="alert" className="mb-5 text-sm text-danger">{error}</p>}
     <p role="status" className={notice ? "mb-5 text-sm text-mint" : "sr-only"}>{notice}</p>
-    {sections.map((section) => <section key={section.title} aria-label={section.title} className="discovery-shelf">
-      <h2 className="text-2xl font-bold tracking-tight">{section.title}</h2><p className="mt-2 text-sm text-muted">{section.description}</p>
-      <ul className="discovery-shelf-rail scrollbar-thin">{section.items.map((collection) => <li key={collection.id} className="discovery-playlist group">
+    <section aria-label="Your daily soundtrack" className="discovery-shelf">
+      <h2 className="text-2xl font-bold tracking-tight">Your daily soundtrack</h2><p className="mt-2 text-sm text-muted">Made by Mint. Shaped by your collection.</p>
+      <ul className="discovery-shelf-rail scrollbar-thin">{daily.map((collection) => <li key={collection.id} className="discovery-playlist group">
         <div className="relative">
           <Link href={collection.href} aria-label={`Open ${collection.title}`} className="block rounded-lg"><PlaylistCover collection={collection} /></Link>
           {collection.mode && <button aria-label={`Play ${collection.title}`} disabled={busy !== null || !player?.ready || player.busy}
@@ -98,6 +85,22 @@ export function DiscoveryShelves({ seeds }: { seeds: TrackView[] }) {
         <Link href={collection.href} className="mt-4 block truncate font-semibold hover:underline">{collection.title}</Link>
         <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-muted">{collection.description}</p>
       </li>)}</ul>
-    </section>)}
+    </section>
+    <section id="charts" aria-labelledby="charts-heading" className="discovery-shelf scroll-mt-8">
+      <h2 id="charts-heading" className="text-2xl font-bold tracking-tight">Charts</h2>
+      <p className="mt-2 text-sm text-muted">Rankings and trending collections, with their source and scope in view.</p>
+      <ul className="mt-5 grid grid-cols-2 gap-x-4 gap-y-7 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        {CHARTS.map((chart, index) => {
+          const collection = chartCollection(chart, index);
+          return <li key={collection.id} className="discovery-playlist group">
+            <Link href={collection.href} aria-label={`Open ${collection.title}`} className="block rounded-lg">
+              <PlaylistCover collection={collection} />
+            </Link>
+            <Link href={collection.href} className="mt-3 block truncate font-semibold hover:underline">{collection.title}</Link>
+            <p className="mt-1 truncate text-sm text-muted">{collection.description}</p>
+          </li>;
+        })}
+      </ul>
+    </section>
   </div>;
 }

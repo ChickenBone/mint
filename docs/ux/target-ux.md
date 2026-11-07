@@ -4,19 +4,19 @@
 
 ## 1. Information architecture
 
-Primary destinations are Home (`/app`), Discover (`/app/discover`), Library (`/app/library`) and Your music (`/app/collection`). Desktop uses a full navigation rail (`lg`); tablet uses a collapsed icon rail (`md`); phone (`<md`) uses four bottom destinations and an avatar entry to Settings (`/app/settings`). Admins additionally see an admin-only Management (`/app/manage`) destination with a pending-count badge. Search is a persistent top-bar action and a desktop `/` shortcut. The player provider remains above routed content so navigation cannot recreate the audio engine.
+Primary destinations are Home (`/app`), Search (`/app/search`), Library (`/app/library`) and Your music (`/app/collection`). Desktop uses a full navigation rail (`lg`); tablet uses a collapsed icon rail (`md`); phone (`<md`) keeps the same primary destinations and an account entry to Settings (`/app/settings`). Admins additionally see an admin-only Management (`/app/manage`) destination with a pending-count badge. Search combines query lookup and discovery; the player provider remains above routed content so navigation cannot recreate the audio engine.
 
 | Area | Destination | Canonical route | Legacy redirects |
 | --- | --- | --- | --- |
 | Home | Home & first-run welcome | `/app` | — |
-| Discover | Discover home | `/app/discover` | — |
-| Discover | Mixes | `/app/discover/mixes` | `/app/discover?tab=mixes`, `/app/discover?mode=…` |
-| Discover | Charts | `/app/discover/charts` | `/app/discover?tab=charts` |
-| Discover | Chart detail | `/app/discover/charts/[chart]` | `/app/discover?chart=…` |
+| Search | Search and discovery | `/app/search` | `/app/discover` |
+| Search | Chart catalog | `/app/search#charts` | `/app/discover/charts`, `/app/discover?tab=charts` |
+| Search | Mixes | `/app/discover/mixes` | `/app/discover?tab=mixes`, `/app/discover?mode=…` |
+| Search | Chart detail | `/app/discover/charts/[chart]` | `/app/discover?chart=…` |
 | Library | Library catalog | `/app/library` | `/app/music`, `/app/library?tab=…` |
 | Library | Album detail | `/app/library/albums/[id]` | `/app/music?kind=album&id=…` |
 | Library | Artist detail | `/app/library/artists/[id]` | `/app/music?kind=artist&id=…` |
-| Search | Search overlay & fallback | `/app/search` | `/app/music?view=search&q=…` |
+| Search | Query results | `/app/search` | `/app/music?view=search&q=…` |
 | Now Playing | Record-sleeve workspace | `/app/now-playing` | `/app/music?view=now-playing` |
 | Your music | Playlists, Likes, Downloads, History | `/app/collection` (`?tab=playlists\|likes\|downloads\|history`, `?source=all\|mint\|youtube\|spotify\|smart`) | `/app/collections`, `/app/liked`, `/app/spotify`, `/app/downloads`, `/app/history` |
 | Your music | Unified collection detail (Mint, Smart, YouTube, Spotify) | `/app/collection/[id]` | `/app/collections/[id]`, `/app/playlists/[id]`, `/app/spotify/[id]` |

@@ -35,7 +35,7 @@ export function MusicDiscovery({ initial, initialMode, initialSeeds, initialLike
     <nav aria-label="Mix navigation" className="mb-6 flex flex-wrap gap-4 text-sm font-semibold">
       <Link href="/app/search" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Search</Link>
       <Link href="/app/discover/mixes" aria-current="page" className="inline-flex min-h-11 items-center text-fg">Your mixes</Link>
-      <Link href="/app/discover/charts" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Charts</Link>
+      <Link href="/app/search#charts" className="inline-flex min-h-11 items-center text-muted hover:text-fg">Charts</Link>
     </nav>
     <header className="grid grid-cols-[7rem_minmax(0,1fr)] items-end gap-5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-8">
       <PlaylistCover collection={collection} />
