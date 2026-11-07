@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compatibleBuild, runtimeFromResolution, selectBuild, validateLink, verifyArm64Elf, verifyManifest } from "./eas-distribution.mjs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { modifyConfigAsync } from "@expo/config";
+import { compatibleBuild, resolvedAppConfig, runtimeFromResolution, selectBuild, validateLink, verifyArm64Elf, verifyManifest } from "./eas-distribution.mjs";
 
 const hash = "a".repeat(40);
 const build = {
@@ -55,6 +59,28 @@ test("initialization may align only owner and slug with the authorized project",
   assert.doesNotThrow(() => validateLink(original, initialized, result));
   assert.throws(() => validateLink(original, initialized, { ...result, projectId: "different" }));
   assert.throws(() => validateLink(original, { expo: { ...initialized.expo, android: { package: "org.other.mobile" } } }, result));
+});
+
+test("actual Expo config writer preserves resolved audio permissions during linking", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "mint-eas-link-"));
+  try {
+    for (const name of ["app.json", "package.json"]) {
+      copyFileSync(new URL(`../../apps/mobile/${name}`, import.meta.url), join(directory, name));
+    }
+    symlinkSync(new URL("../../node_modules", import.meta.url), join(directory, "node_modules"));
+    symlinkSync(new URL("../../apps/mobile/src", import.meta.url), join(directory, "src"));
+    const original = resolvedAppConfig(directory);
+    await modifyConfigAsync(directory, { owner: "fixture-owner", slug: "mint" });
+    const initialized = resolvedAppConfig(directory);
+    const raw = JSON.parse(readFileSync(join(directory, "app.json"), "utf8"));
+    assert.ok(raw.expo.android.permissions.includes("android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"));
+    const result = { projectId: original.expo.extra.eas.projectId, owner: "fixture-owner", slug: "mint" };
+    assert.doesNotThrow(() => validateLink(original, initialized, result));
+    await modifyConfigAsync(directory, { android: { package: "org.other.mobile" } });
+    assert.throws(() => validateLink(original, resolvedAppConfig(directory), result), /beyond/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("APK manifest must enable the intended endpoint, channel and recovery", () => {

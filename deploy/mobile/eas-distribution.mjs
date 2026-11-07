@@ -5,6 +5,12 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { getConfig } from "@expo/config";
+
+export function resolvedAppConfig(projectDir) {
+  const { _internal, ...expo } = getConfig(projectDir).exp;
+  return { expo };
+}
 
 export function runtimeFromResolution(result) {
   if (!/^[a-f0-9]{40,64}$/.test(result?.runtimeVersion ?? "") ||
@@ -169,8 +175,9 @@ function main(command) {
       throw new Error("Refusing to overwrite a different EAS project ID.");
     }
     writeFileSync(".android-ci/app-config-before-init.json", readFileSync("apps/mobile/app.json"));
+    writeFileSync(".android-ci/resolved-config-before-init.json", JSON.stringify(resolvedAppConfig("apps/mobile")));
   } else if (command === "validate-link") {
-    validateLink(read(".android-ci/app-config-before-init.json"), read("apps/mobile/app.json"),
+    validateLink(read(".android-ci/resolved-config-before-init.json"), resolvedAppConfig("apps/mobile"),
       read(".android-ci/link.json"));
   } else if (command === "credentials") prepareCredentials(process.env);
   else if (command === "verify-apk") verifyApk(process.env);
