@@ -8,6 +8,10 @@ not EAS builds, an Expo account, or Play Store submission. GitHub's normal
 Actions/storage allowance still applies; this is not a promise of unlimited
 free usage. Existing web CI/release workflows are unchanged.
 
+Android setup installs `platform-tools` explicitly rather than the retired
+`tools` package. The build then installs the SDK, build tools and NDK selected
+by the generated native project.
+
 Ordinary mobile JavaScript, TypeScript, styles and bundled content export as
 signed self-hosted OTA updates without recompiling Android. Native changes
 produce a new APK first, then publish the matching runtime update. Downloading

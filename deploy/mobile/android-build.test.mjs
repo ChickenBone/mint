@@ -11,6 +11,12 @@ const state = { schema: 1, runtime, signingCertificate: "b".repeat(64), versionC
 const run = { id: 42, head_sha: "commit" };
 const artifacts = [{ id: 7, name: APK_ARTIFACT, expired: false }];
 
+test("Android setup installs supported packages instead of the retired tools default", async () => {
+  const workflow = await readFile(new URL("../../.github/workflows/android-apk.yml", import.meta.url), "utf8");
+  assert.match(workflow, /uses: android-actions\/setup-android@[^\n]+\n\s+with:\n\s+packages: platform-tools\s*\n/);
+  assert.match(workflow, /run: sdkmanager "platforms;android-\$COMPILE_SDK" "build-tools;\$BUILD_TOOLS" "ndk;\$NDK" "cmake;3\.22\.1"/);
+});
+
 test("bootstrap, manual force, native change and compatible JS changes", () => {
   assert.equal(buildDecision({ runtime }, null).build, true);
   assert.equal(buildDecision({ runtime }, state, true).build, true);
