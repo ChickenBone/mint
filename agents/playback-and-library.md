@@ -17,6 +17,8 @@ See `apps/web/src/lib/native-player.ts`, browser/catalog helpers and native-play
 
 Preserve one native two-deck HTMLAudio/Web Audio engine across member navigation. Reload restores account-scoped queues paused, not autoplaying. Signing out, account changes and revocation must not leak playback or private state.
 
+The mini-player and Now Playing are one presentation surface. Expansion/collapse only changes presentation; it must not issue playback commands or remount the engine. Pointer gestures track the finger/mouse continuously, settle by recent release velocity or distance, and remain interruptible/reversible. Keep transport, seek, volume and menu targets outside drag activation. Queue and lyrics retain native scrolling; downward collapse from their content is available only at scroll top, with the visible handle as the reliable drag region. Reduced motion keeps direct tracking and skips spring settling. The `/app/now-playing` deep link remains supported; Back and Escape dismiss without losing the underlying route or its scroll position.
+
 Original browser-supported audio streams unchanged. MP3 compatibility is an explicit private conversion cache; it must not replace original files. Codec/autoplay/background limitations need truthful messages, not hidden failure or guaranteed seamlessness claims.
 
 Keep same-origin/blob media allowed by the initial document CSP so navigating from a public page does not retain a media-blocking policy. Authorization still belongs on private media endpoints.

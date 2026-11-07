@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
 import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Settings2, Volume2 } from "lucide-react";
 import { Artwork, ArtworkAtmosphere } from "../artwork";
@@ -17,13 +17,25 @@ const tabs = [
   { id: "lyrics", label: "Lyrics", icon: Mic2 },
 ] as const;
 
-export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, onMore }: {
+export function NowPlaying({
+  state, ready, command, panel, setPanel, active, interactive, onCollapse, onPointerDown, onPointerMove, onPointerUp, onPointerCancel,
+  onLostPointerCapture, onClickCapture, onMore,
+}: {
   state: PlayerState; ready: boolean; command: (command: PlayerCommand) => Promise<boolean>;
   panel: Panel | null; setPanel: (panel: Panel) => void;
-  returnTo: string;
+  active: boolean;
+  interactive: boolean;
+  onCollapse: () => void;
+  onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp: (event: ReactPointerEvent<HTMLElement>) => void;
+  onPointerCancel: (event: ReactPointerEvent<HTMLElement>) => void;
+  onLostPointerCapture: (event: ReactPointerEvent<HTMLElement>) => void;
+  onClickCapture: (event: ReactMouseEvent<HTMLElement>) => void;
   onMore: (track: PlayerItem, button: HTMLButtonElement) => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
   const selected = panel ?? "queue";
   const [visited, setVisited] = useState<Panel[]>([selected]);
   const select = (next: Panel) => {
@@ -31,19 +43,62 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
     setVisited((previous) => previous.includes(next) ? previous : [...previous, next]);
   };
   const track = state.track;
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); }, []);
-  return <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing music-atmosphere absolute inset-0 flex flex-col overflow-hidden">
+  useEffect(() => {
+    if (!interactive) return;
+    heading.current?.focus({ preventScroll: true });
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !dialog.current) return;
+      const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>(
+        'a[href],button:not(:disabled),input:not(:disabled),[tabindex]:not([tabindex="-1"])',
+      ));
+      if (!focusable.length) { event.preventDefault(); dialog.current.focus(); return; }
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && (activeIndex === 0 || activeIndex < 0)) {
+        event.preventDefault(); last?.focus();
+      } else if (!event.shiftKey && (activeIndex === focusable.length - 1 || activeIndex < 0)) {
+        event.preventDefault(); first?.focus();
+      }
+    };
+    document.addEventListener("keydown", trap);
+    return () => document.removeEventListener("keydown", trap);
+  }, [interactive]);
+  return <div
+    ref={dialog}
+    role="dialog"
+    aria-modal={interactive}
+    aria-label="Now Playing"
+    aria-hidden={!interactive}
+    tabIndex={-1}
+    className="player-sheet"
+    onPointerDown={onPointerDown}
+    onPointerMove={onPointerMove}
+    onPointerUp={onPointerUp}
+    onPointerCancel={onPointerCancel}
+    onLostPointerCapture={onLostPointerCapture}
+    onClickCapture={onClickCapture}
+  >
+    {active && <button type="button" aria-label="Collapse now playing" data-player-drag-handle data-player-drag-region
+      tabIndex={interactive ? 0 : -1}
+      onClick={onCollapse}
+      onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); onCollapse(); } }}
+      className="player-sheet-grab player-drag-region grid place-items-center rounded-full focus-visible:text-fg">
+      <span aria-hidden className="player-sheet-grip" />
+    </button>}
+    <div className="player-sheet-content" inert={!interactive}>
+    <main id="listening-content" tabIndex={-1} aria-label="Now playing" className="now-playing music-atmosphere relative flex flex-col overflow-hidden">
     <ArtworkAtmosphere src={track?.thumb} />
-    <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
+    <header data-player-drag-region className="player-drag-region relative flex shrink-0 items-center justify-between gap-3 px-5 pt-4 sm:px-8">
       <h1 ref={heading} tabIndex={-1} className="rounded text-base font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-mint">Now Playing</h1>
       <div className="flex items-center gap-1">
         <Link href="/app/settings?section=playback" aria-label="Playback and sound settings" className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><Settings2 className="size-5" /></Link>
         <Link href="/app/settings?section=devices" aria-label="Devices" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
           <MonitorSpeaker className="size-4" /><span className="hidden sm:inline">Devices</span>
         </Link>
-        <Link href={returnTo} aria-label="Close now playing" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
-          <ArrowDown className="size-4" /><span className="hidden sm:inline">Back</span>
-        </Link>
+        <button type="button" onClick={onCollapse} aria-label="Collapse now playing" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
+          <ArrowDown className="size-4" /><span className="hidden sm:inline">Collapse</span>
+        </button>
       </div>
     </header>
     {!track ? <div className="mx-auto max-w-md px-6 py-20 text-center">
@@ -92,7 +147,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
           </button>)}
         </div>
         {tabs.map(({ id, label }) => <div key={id} id={`listening-panel-${id}`} role="tabpanel" aria-labelledby={`listening-${id}`} hidden={selected !== id}
-          tabIndex={0} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 scrollbar-thin sm:px-8" aria-label={label}>
+          tabIndex={0} data-player-sheet-scroll className="player-sheet-scroll min-h-0 flex-1 overflow-y-auto px-5 py-5 scrollbar-thin sm:px-8" aria-label={label}>
           {(visited.includes(id) || selected === id) && (id === "queue" ? <QueueContents state={state} command={command} /> : <LyricsPanel state={state} command={command} />)}
         </div>)}
       </section>
@@ -101,5 +156,7 @@ export function NowPlaying({ state, ready, command, panel, setPanel, returnTo, o
       <SeekControl key={track.queueId ?? track.id} state={state} ready={ready} command={command} />
       <PlaybackControls state={state} ready={ready} command={command} expanded />
     </footer>}
-  </main>;
+    </main>
+    </div>
+  </div>;
 }

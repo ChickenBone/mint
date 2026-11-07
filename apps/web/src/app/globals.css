@@ -410,20 +410,138 @@
   from { clip-path: inset(8% 0 0); opacity: 0.6; transform: translateY(12px); }
   to { clip-path: inset(0); opacity: 1; transform: none; }
 }
-.now-playing {
-  animation: player-reveal 260ms var(--ease-out-expo);
+.player-dock {
+  background-image: var(--gradient-atmosphere);
+  opacity: calc(1 - var(--player-progress, 0));
 }
-.now-playing.music-atmosphere { position: absolute; border-radius: 0; }
-.now-playing-grid > section:first-child { padding-block: var(--space-panel); }
-.now-playing-art { box-shadow: var(--shadow-floating); }
-.player-dock { background-image: linear-gradient(100deg, var(--color-surface), #1d2829 55%, var(--color-surface)); }
+.player-sheet {
+  position: fixed;
+  z-index: var(--z-overlay);
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--safe-area-top) var(--safe-area-right) var(--safe-area-bottom) var(--safe-area-left);
+  border-radius: calc(clamp(0, 1 - var(--player-progress, 0), 1) * var(--radius-surface));
+  background-color: rgb(17 19 20 / clamp(0, var(--player-progress, 0), 1));
+  background-image: linear-gradient(
+    120deg,
+    rgb(28 48 52 / clamp(0, var(--player-progress, 0), 1)),
+    rgb(32 40 51 / clamp(0, var(--player-progress, 0), 1)) 48%,
+    rgb(17 19 20 / clamp(0, var(--player-progress, 0), 1)) 90%
+  );
+  color: var(--color-fg);
+  isolation: isolate;
+  transform: translate3d(0, calc((1 - var(--player-progress, 0)) * var(--player-collapse-offset, 0px)), 0);
+  transform-origin: top center;
+}
+.player-sheet[aria-hidden="true"] .player-sheet-content { pointer-events: none; }
+.player-grab-handle { touch-action: none; }
+.player-sheet-grab {
+  position: absolute;
+  z-index: 2;
+  top: var(--safe-area-top);
+  left: 50%;
+  display: grid;
+  width: 3.5rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  opacity: clamp(0, var(--player-progress, 0), 1);
+  transform: translateX(-50%);
+}
+.player-sheet-grip {
+  display: block;
+  width: 2rem;
+  height: 0.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-muted);
+  opacity: 0.8;
+}
+.player-sheet-grab:hover .player-sheet-grip,
+.player-sheet-grab:focus-visible .player-sheet-grip { background: var(--color-fg); }
+.player-sheet .artwork-atmosphere {
+  max-height: min(56dvh, 36rem);
+  opacity: clamp(0, calc(var(--player-progress, 0) * 0.7), 0.7);
+}
+.player-sheet-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  opacity: var(--player-progress, 0);
+}
+.player-sheet-content > .now-playing {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 0;
+  background: transparent;
+  animation: none;
+}
+.player-sheet-content .now-playing :is(header, footer, .now-playing-grid > section:first-child > :not(:first-child), .now-playing-grid > section:nth-child(2)) {
+  opacity: clamp(0, calc((var(--player-progress, 0) - 0.24) * 1.32), 1);
+  transform: translate3d(0, calc((1 - var(--player-progress, 0)) * 0.45rem), 0);
+}
+.player-sheet-content .now-playing-grid > section:first-child > :first-child {
+  transform: scale(calc(0.18 + var(--player-progress, 0) * 0.82));
+  transform-origin: center;
+}
+.player-sheet-content .now-playing-art {
+  border-radius: calc((1 - var(--player-progress, 0)) * var(--radius-control));
+  box-shadow: var(--shadow-floating);
+}
 .now-playing-grid {
   display: grid;
   flex: 1;
   min-height: 0;
-  align-content: start;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.now-playing-grid > section:first-child {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding-block: var(--space-panel);
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hover) transparent;
+}
+.now-playing-grid > section:nth-child(2) {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.player-sheet-scroll {
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hover) transparent;
+  touch-action: pan-y;
+}
+.player-drag-region {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.now-playing-grid,
+.player-sheet-scroll {
   scrollbar-width: thin;
   scrollbar-color: var(--color-hover) transparent;
 }
@@ -442,25 +560,50 @@
   }
 }
 @media (min-width: 1280px) {
-  .now-playing {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
   .now-playing-grid {
-    align-content: normal;
-    overflow: hidden;
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-    margin-top: 1rem;
+    width: min(100%, var(--content-max));
+    margin-inline: auto;
+    padding: clamp(1.25rem, 3vh, 2.5rem) var(--space-page-gutter);
+    gap: clamp(2rem, 4vw, 4rem);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
   }
   .now-playing-grid > section:first-child {
+    width: 100%;
+    max-width: 42rem;
     overflow-y: auto;
-    scrollbar-width: thin;
+    margin-inline: auto;
+    padding-inline: 0;
+  }
+  .now-playing-grid > section:first-child > :first-child {
+    max-width: min(54dvh, 34rem);
+  }
+  .now-playing-grid > section:nth-child(2) {
+    border-top: 0;
+    border-left: 1px solid var(--color-line);
+  }
+}
+@media (max-width: 639px) and (orientation: landscape) {
+  .now-playing-grid {
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .now-playing-grid > section:first-child {
+    padding-block: 0.75rem;
+  }
+  .now-playing-grid > section:nth-child(2) {
+    border-top: 0;
+    border-left: 1px solid var(--color-line);
+  }
+  .player-sheet-content .now-playing-art {
+    max-height: 42dvh;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .stage-flash, .drift, .land, .rise, .now-playing, .player-panel { animation: none; }
+  .player-sheet .artwork-atmosphere { opacity: 0; }
+  .player-sheet-content .now-playing-art { box-shadow: none; }
   *, *::before, *::after {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;

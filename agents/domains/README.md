@@ -7,7 +7,7 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 | Domain | Scope | Files | Imports from |
 | --- | --- | ---: | --- |
 | [`platform`](platform.md) | Shared schemas, database, migrations, queues, crypto, env and worker runtime plumbing | 34 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
-| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 52 | `analysis` `collections` `devices` `library` `platform` `providers` `realtime` `web-shell` |
+| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `platform` `providers` `realtime` `web-shell` |
 | [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 41 | `acquisition` `collections` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`collections`](collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves | 29 | `acquisition` `analysis` `library` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`providers`](providers.md) | Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth | 41 | `acquisition` `collections` `library` `platform` `playback` `realtime` `web-shell` |
