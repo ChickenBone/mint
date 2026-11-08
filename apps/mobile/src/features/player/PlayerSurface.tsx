@@ -238,28 +238,27 @@ export function PlayerSurface({ bottomInset = 0, onPresentationChange }: { botto
   return <>
     <Animated.View style={[s.mini, { marginBottom: bottomInset }, miniStyle]}
       accessibilityElementsHidden={presented} importantForAccessibility={presented ? "no-hide-descendants" : "auto"}>
-      <LinearGradient colors={[oldPalette.primary, oldPalette.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+      <LinearGradient pointerEvents="none" colors={[oldPalette.primary, oldPalette.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, tintStyle]}>
         <LinearGradient colors={[palette.primary, palette.secondary]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
       </Animated.View>
-      <View style={s.miniTrack}>
-        <View ref={miniArtwork} collapsable={false} onLayout={measureFrames} style={s.miniArtwork} />
-        <View style={s.miniText}>
+      <Pressable accessible={false} onPress={player.open}
+        style={({ pressed }) => [StyleSheet.absoluteFill, pressed && s.miniBackgroundPressed]} />
+      <View pointerEvents="box-none" style={s.miniTrack}>
+        <View pointerEvents="none" ref={miniArtwork} collapsable={false} onLayout={measureFrames} style={s.miniArtwork} />
+        <View pointerEvents="box-none" style={s.miniText}>
           <GestureDetector gesture={pans.mini}><Animated.View style={swipeStyle}>
             <Pressable ref={miniTitle} accessibilityRole="button" accessibilityLabel={`Open Now Playing: ${track.title || "current song"}`}
               accessibilityActions={[{ name: "activate", label: "Open Now Playing" }, { name: "increment", label: "Next song" }, { name: "decrement", label: "Previous song" }]}
               onAccessibilityAction={(event) => event.nativeEvent.actionName === "increment" ? skip("next") : event.nativeEvent.actionName === "decrement" ? skip("previous") : player.open()}
               onPress={player.open} style={({ pressed }) => [s.miniTitleTarget, pressed && s.pressed]}>
               <Text numberOfLines={1} style={s.miniTitle}>{track.title || "Loading song"}</Text>
+              <Text numberOfLines={1} style={s.onColorSecondary}>{track.artist || "Mint"}</Text>
             </Pressable>
           </Animated.View></GestureDetector>
-          <Pressable accessibilityRole="link" accessibilityLabel={`Open artist ${track.artist || "unavailable"}`} disabled={!artistId}
-            onPress={() => navigate("artist")} style={({ pressed }) => [s.artistTarget, pressed && s.pressed]}>
-            <Text numberOfLines={1} style={s.onColorSecondary}>{track.artist || "Mint"}</Text>
-          </Pressable>
         </View>
       </View>
-      <View style={s.miniControls}>
+      <View pointerEvents="box-none" style={s.miniControls}>
         <Action label={player.state.shuffle ? "Turn shuffle off" : "Turn shuffle on"} icon="shuffle" active={player.state.shuffle}
           disabled={player.state.queueLoading} onPress={() => run(() => player.setShuffle(!player.state.shuffle))} />
         <Action label={player.state.playing ? "Pause" : "Play"} icon={player.state.playing ? "pause" : "play"} onPress={() => run(player.toggle)} />
@@ -365,7 +364,8 @@ export function PlayerSurface({ bottomInset = 0, onPresentationChange }: { botto
 const s = StyleSheet.create({
   mini: { minHeight: 72, marginHorizontal: 8, marginTop: 4, borderRadius: 8, overflow: "hidden", flexDirection: "row", alignItems: "center", paddingHorizontal: 8 },
   miniTrack: { flex: 1, flexDirection: "row", gap: 8, alignItems: "center", minHeight: Platform.OS === "android" ? 96 : 88 }, miniText: { flex: 1, minWidth: 0 },
-  miniArtwork: { width: 48, height: 48 }, miniTitleTarget: { minHeight: Platform.OS === "android" ? 48 : 44, justifyContent: "center" },
+  miniArtwork: { width: 48, height: 48 }, miniTitleTarget: { minHeight: Platform.OS === "android" ? 96 : 88, justifyContent: "center" },
+  miniBackgroundPressed: { backgroundColor: "#ffffff18" },
   artistTarget: { minHeight: Platform.OS === "android" ? 48 : 44, justifyContent: "center" },
   titleTarget: { minHeight: 48, justifyContent: "center" }, miniControls: { flexDirection: "row", alignItems: "center" },
   miniTitle: { color: colors.text, fontSize: 15, fontWeight: "700" }, onColorSecondary: { color: "#d0dbd5", fontSize: 13, lineHeight: 20 },

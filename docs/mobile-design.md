@@ -54,8 +54,9 @@ lyrics/queue scrolling independent. Explicit transport, open/close, Back/Escape
 and accessibility actions preserve non-gesture access. UI-thread worklets and
 reduced-motion handling are implementation choices, not measured device FPS.
 The mini-player keeps Shuffle, Play/Pause and Next together in one control row,
-including narrow phones. Title/open and artist navigation have separate
-nonoverlapping touch targets; the loading indicator overlays artwork instead of
+including narrow phones. Tapping artwork, song/artist text or empty mini-player
+space opens Now Playing; transport buttons remain independent. Artist navigation
+remains available from the expanded player. The loading indicator overlays artwork instead of
 consuming another control slot. Seek preview and commit are occurrence/account
 scoped so a previous track's slider event cannot seek the newly selected track.
 
