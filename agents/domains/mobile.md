@@ -17,6 +17,7 @@
 - Keep one player across routes, restore queues paused, isolate account/server state and clear media/offline state on logout/revocation. Disconnected downloaded audio cannot be remotely revoked.
 - Server-dependent and native background/device behavior requires actual integration/device evidence; a web export is not native production certification.
 - EAS Build produces Android APKs and EAS Update hosts compatible JavaScript updates. Keep project/channel/runtime configuration aligned, preserve embedded/offline recovery and stable Android signing, and never publish an update for an incompatible native runtime. Mint's server does not host application updates. See [distribution setup](../../docs/android-builds.md).
+- iOS device delivery uses the EAS-managed `ios-production` profile and production channel, not Android's local signing profile. Native fingerprints and finished signed baselines are platform-specific; preserve registered-device provisioning and recovery. See [iPhone distribution](../../docs/ios-builds.md).
 
 ## Contracts and validation
 

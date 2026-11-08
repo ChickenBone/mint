@@ -4,10 +4,14 @@ import { createServer } from "node:http";
 import path from "node:path";
 import test from "node:test";
 import pg from "pg";
+import { PublicReadCache } from "@mint/core/public-cache";
+import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 test("public covers proxy private Plex through signed worker requests and consistently hydrate catalogs", {
   skip: !process.env.MINT_LIBRARY_TEST_DATABASE_URL, timeout: 60_000,
 }, async (t) => {
+  const metadataCache = publicCacheFixture().cache;
+  t.mock.method(PublicReadCache.prototype, "read", metadataCache.read.bind(metadataCache));
   const url = new URL(process.env.MINT_LIBRARY_TEST_DATABASE_URL!);
   assert.match(url.pathname, /^\/mint_library_test/);
   const admin = new pg.Client({ connectionString: url.href });

@@ -58,3 +58,16 @@ test("web seek uses a focusable semantic range input and commits keyboard change
   assert.match(surface, /accessibilityLabel="Lyrics"/);
   assert.match(surface, /accessibilityLabel="Queue"/);
 });
+
+test("mini-player text and background expand while transport buttons stay independent", () => {
+  const source = readFileSync(resolve("src/features/player/PlayerSurface.tsx"), "utf8");
+  const mini = source.slice(source.indexOf("<Animated.View style={[s.mini,"), source.indexOf("<View ref={overlay}"));
+  assert.match(mini, /<Pressable accessible=\{false\} onPress=\{player\.open\}/);
+  assert.match(mini, /<View pointerEvents="box-none" style=\{s\.miniTrack\}/);
+  assert.match(mini, /<View pointerEvents="box-none" style=\{s\.miniControls\}/);
+  assert.match(mini, /onPress=\{player\.open\}[\s\S]*track\.title[\s\S]*track\.artist[\s\S]*<\/Pressable>/);
+  assert.doesNotMatch(mini, /navigate\("artist"\)/);
+  assert.match(mini, /onPress=\{\(\) => run\(player\.toggle\)\}/);
+  assert.match(mini, /onPress=\{\(\) => run\(player\.next\)\}/);
+  assert.match(source, /onPress=\{\(\) => navigate\("artist"\)\}/);
+});

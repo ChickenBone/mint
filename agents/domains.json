@@ -698,6 +698,9 @@
         "github actions",
         "eas build",
         "eas update",
+        "ios build",
+        "iphone build",
+        "ipa",
         "apk",
         "ota",
         "release",
@@ -710,7 +713,8 @@
         "agents/workers-and-operations.md",
         "agents/architecture.md",
         "docs/self-hosting.md",
-        "docs/android-builds.md"
+        "docs/android-builds.md",
+        "docs/ios-builds.md"
       ],
       "paths": [
         "Dockerfile",
@@ -722,7 +726,8 @@
         "deploy/**",
         ".github/workflows/**",
         "docs/self-hosting.md",
-        "docs/android-builds.md"
+        "docs/android-builds.md",
+        "docs/ios-builds.md"
       ],
       "validate": [
         "docker compose config --quiet",

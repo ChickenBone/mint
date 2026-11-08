@@ -13,7 +13,9 @@ on:
       - "docs/mobile-design.md"
       - "docs/mobile-playback.md"
       - "docs/android-builds.md"
+      - "docs/ios-builds.md"
       - ".github/workflows/android-apk.yml"
+      - ".github/workflows/ios-eas.yml"
   workflow_dispatch:
 
 concurrency:

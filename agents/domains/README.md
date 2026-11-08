@@ -28,7 +28,7 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 | [`devices`](devices.md) | Device registry, handoff, remote control and single-output listening parties | 16 | `library` `platform` `playback` `realtime` `web-shell` |
 | [`workers`](workers.md) | Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI | 21 | `acquisition` `platform` `realtime` `web-shell` |
 | [`realtime`](realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components | 9 | `acquisition` `library` `platform` `playback` `web-shell` `workers` |
-| [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 76 | `acquisition` `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `playback` `providers` `realtime` `workers` |
-| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 26 | — |
+| [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 75 | `acquisition` `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `playback` `providers` `realtime` `workers` |
+| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 30 | — |
 | [`agent-tooling`](agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory | 62 | — |
 | [`handbook`](handbook.md) | README, product/design decisions, curated engineering/topic guides, UX docs and screenshots | 44 | — |

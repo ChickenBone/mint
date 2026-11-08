@@ -31,7 +31,9 @@ test("Docker release ignores only mobile-only branch pushes, preserving shared a
     "docs/mobile-design.md",
     "docs/mobile-playback.md",
     "docs/android-builds.md",
+    "docs/ios-builds.md",
     ".github/workflows/android-apk.yml",
+    ".github/workflows/ios-eas.yml",
   ]);
   // This allowlist uses only literal files and directory prefixes, not ordered negations.
   const mobileOnly = paths => paths.length > 0 && paths.every(file => ignored.some(pattern =>

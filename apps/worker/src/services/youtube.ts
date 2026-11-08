@@ -90,7 +90,9 @@ export async function findRequestedVideo(userId: string, track: { title: string;
     log.info({ confidence: classified.confidence }, "OpenAI rejected all YouTube candidates");
     return null;
   }
-  log.info({ reason: classified.reason, title: track.title, artist: track.artist }, "OpenAI did not select a recording; using deterministic matching");
+  if (classified.status === "fallback") {
+    log.info({ reason: classified.reason, title: track.title, artist: track.artist }, "OpenAI did not select a recording; using deterministic matching");
+  }
   return selectRequestedVideo(track, candidates);
 }
 
