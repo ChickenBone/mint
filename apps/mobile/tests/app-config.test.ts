@@ -8,9 +8,11 @@ const eas = JSON.parse(readFileSync(resolve("eas.json"), "utf8"));
 
 test("production uses the EAS project, fingerprint runtime and embedded recovery", () => {
   const projectId = "5a1e1df0-825c-4b34-8f29-21747fb78b97";
+  assert.equal(app.slug, "mint");
   assert.equal(app.extra.eas.projectId, projectId);
   assert.equal(app.updates.url, `https://u.expo.dev/${projectId}`);
   assert.equal(app.android.package, "org.mintmusic.mobile");
+  assert.equal(app.ios.bundleIdentifier, "org.mintmusic.mobile");
   assert.deepEqual(app.runtimeVersion, { policy: "fingerprint" });
   assert.equal(app.updates.enabled, true);
   assert.equal(app.updates.checkAutomatically, "ON_LOAD");
@@ -18,6 +20,18 @@ test("production uses the EAS project, fingerprint runtime and embedded recovery
   assert.equal(app.updates.useEmbeddedUpdate, true);
   assert.notEqual(app.updates.disableAntiBrickingMeasures, true);
   assert.ok(app.plugins.includes("./src/playback/with-audio-playlist.cjs"));
+});
+
+test("iOS production is a standalone device build with EAS signing and production updates", () => {
+  const profile = eas.build["ios-production"];
+  assert.equal(profile.autoIncrement, true);
+  assert.equal(profile.distribution, "internal");
+  assert.equal(profile.channel, "production");
+  assert.equal(profile.environment, "production");
+  assert.equal(profile.credentialsSource, "remote");
+  assert.equal(profile.ios.simulator, false);
+  assert.equal(profile.ios.buildConfiguration, "Release");
+  assert.notEqual(profile.developmentClient, true);
 });
 
 test("EAS produces internal APKs using the existing local signing key", () => {

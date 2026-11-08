@@ -26,7 +26,7 @@ Use the smallest existing command covering the change; expand when results requi
 | Charts | Provider shape/rank semantics, cache/failure states, bounded DB matching, explicit request lifecycle and public/member separation |
 | UI | Desktop/mobile, keyboard/focus, reduced motion, overflow, state/error recovery and persistent playback |
 | Deployment | Compose validation, relevant `deploy/docker` tests, migration startup/order, private networks and secret separation |
-| Native distribution | Finished matching EAS APK baseline, exact production runtime/channel/fingerprint, stable signer and recovery; device lockscreen/background/offline/OTA testing remains separate |
+| Native distribution | Finished matching platform EAS APK/IPA baseline, exact production runtime/channel/fingerprint, verified signing/provisioning and recovery; device lockscreen/background/offline/OTA testing remains separate |
 | Documentation | Correct relative links/anchors, current screenshots, accurate commands, generic examples and honest limitations |
 
 Read-cache changes need evidence for coverage, freshness/stale expiry, failure
