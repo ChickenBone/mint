@@ -11,11 +11,15 @@ import { signToken } from "@mint/core/crypto";
 import { chartAcquisition, chartPage } from "../src/lib/chart-service";
 import { CHARTS, type ChartEntry, type ChartSnapshot } from "../src/lib/charts";
 import { chartCacheKey } from "../src/lib/chart-cache";
+import { PublicReadCache } from "@mint/core/public-cache";
+import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const database = process.env.MUSIC_TEST_DATABASE_URL, cache = process.env.CHART_TEST_REDIS_URL;
 test("chart → exact local playback / explicit acquisition → progress → playable, with ownership and edition isolation", {
   skip: (!database || !cache) && "Set MUSIC_TEST_DATABASE_URL and CHART_TEST_REDIS_URL",
 }, async (t) => {
+  const metadataCache = publicCacheFixture().cache;
+  t.mock.method(PublicReadCache.prototype, "read", metadataCache.read.bind(metadataCache));
   const namespace = `mint_charts_${randomUUID().replaceAll("-", "")}`, admin = new pg.Pool({ connectionString: database });
   await admin.query(`create database "${namespace}"`);
   const url = new URL(database!); url.pathname = `/${namespace}`;

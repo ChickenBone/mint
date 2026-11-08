@@ -9,6 +9,7 @@ import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
 import { readRequestRecording, requestRecording, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
 import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
+import { PublicReadCache } from "@mint/core/public-cache";
 
 const catalogFixture = () => ({ recordings: [{
   id: randomUUID(), title: "First Light", length: 90000, score: 100,
@@ -229,7 +230,9 @@ test("manual sources accept only HTTPS video identities", () => {
 });
 
 const url = process.env.MUSIC_TEST_DATABASE_URL;
-test("signed recording requests are account-bound, duplicate-safe, retriable and separate from YouTube likes", { skip: !url && "Set MUSIC_TEST_DATABASE_URL" }, async () => {
+test("signed recording requests are account-bound, duplicate-safe, retriable and separate from YouTube likes", { skip: !url && "Set MUSIC_TEST_DATABASE_URL" }, async (t) => {
+  const metadataCache = publicCacheFixture().cache;
+  t.mock.method(PublicReadCache.prototype, "read", metadataCache.read.bind(metadataCache));
   const namespace = `requests_${randomUUID().replaceAll("-", "")}`, admin = new pg.Pool({ connectionString: url, max: 1 });
   await admin.query(`create schema "${namespace}"`);
   const pool = new pg.Pool({ connectionString: url, max: 4, options: `-c search_path=${namespace},public` });
