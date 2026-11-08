@@ -71,7 +71,7 @@ export function verifyIpa(ipa, runtime, team) {
     const app = resolve(payload, apps[0]);
     run("codesign", ["--verify", "--deep", "--strict", app]);
     const prefix = resolve(directory, "signer-");
-    run("codesign", ["-d", "--extract-certificates", prefix, app]);
+    run("codesign", ["-d", `--extract-certificates=${prefix}`, app]);
     const der = readFileSync(`${prefix}0`);
     const cert = new X509Certificate(der);
     const entitlementsPath = resolve(directory, "entitlements.plist");
