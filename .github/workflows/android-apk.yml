@@ -57,6 +57,11 @@ jobs:
         run: test -n "$EXPO_TOKEN" || { echo '::error::Configure the EXPO_TOKEN GitHub Actions secret.'; exit 1; }
       - run: npm ci --no-audit --no-fund
       - run: npm install --global eas-cli@27.5.0 --no-audit --no-fund
+      - name: Validate mobile contracts before distribution
+        run: |
+          npm run typecheck -w @mint/mobile -w @mint/client
+          npm run lint -w @mint/mobile
+          npm test -w @mint/mobile -w @mint/client
       - name: Test distribution guards with compiled Android binary XML
         run: |
           AAPT2="$ANDROID_HOME/build-tools/36.0.0/aapt2" \

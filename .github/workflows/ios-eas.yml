@@ -1,0 +1,153 @@
+name: iOS EAS Build and Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/mobile/**"
+      - "packages/client/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.base.json"
+      - ".npmrc"
+      - "react-native.config.js"
+      - "patches/**"
+      - "deploy/mobile/**"
+      - ".github/workflows/ios-eas.yml"
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Build a new IPA, including newly registered devices, even if the fingerprint is unchanged
+        type: boolean
+        default: false
+
+concurrency:
+  group: ios-distribution-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CI: "1"
+  EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+  IOS_APPLE_TEAM_ID: ${{ vars.IOS_APPLE_TEAM_ID }}
+
+jobs:
+  distribute:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Require Expo access and Apple team
+        run: |
+          test -n "$EXPO_TOKEN" || { echo '::error::Configure EXPO_TOKEN.'; exit 1; }
+          test -n "$IOS_APPLE_TEAM_ID" || { echo '::error::Configure IOS_APPLE_TEAM_ID.'; exit 1; }
+      - run: npm ci --no-audit --no-fund
+      - run: npm install --global eas-cli@27.5.0 --no-audit --no-fund
+      - name: Validate mobile and distribution contracts
+        run: |
+          npm run typecheck -w @mint/mobile -w @mint/client
+          npm run lint -w @mint/mobile
+          npm test -w @mint/mobile -w @mint/client
+          node --test deploy/mobile/*.test.mjs
+      - name: Prepare reproducible native sources and linked Expo configuration
+        run: |
+          mkdir -p .ios-ci
+          node deploy/mobile/eas-distribution.mjs patch-audio
+          node deploy/mobile/ios-distribution.mjs prepare-link
+          (cd apps/mobile && eas init --id 5a1e1df0-825c-4b34-8f29-21747fb78b97 --force --non-interactive --no-icon --json > ../../.ios-ci/link.json)
+          node deploy/mobile/ios-distribution.mjs validate-link
+      - name: Resolve production iOS fingerprint
+        working-directory: apps/mobile
+        run: |
+          eas env:exec production 'EXPO_NO_DOTENV=1 node ../../node_modules/expo-updates/bin/cli.js runtimeversion:resolve --platform ios --workflow managed > ../../.ios-ci/runtime.json' --non-interactive
+      - name: Find a finished production iOS build for this fingerprint
+        working-directory: apps/mobile
+        run: |
+          runtime=$(node -e 'console.log(JSON.parse(require("fs").readFileSync("../../.ios-ci/runtime.json")).runtimeVersion)')
+          eas build:list --platform ios --status finished --distribution internal --channel production --build-profile ios-production --runtime-version "$runtime" --limit 50 --json --non-interactive > ../../.ios-ci/builds.json
+      - name: Gate build versus update against a verified IPA
+        id: gate
+        env:
+          FORCE_REBUILD: ${{ inputs.force_rebuild || false }}
+        run: |
+          node deploy/mobile/ios-distribution.mjs gate
+          if [ "$(cat .ios-ci/baseline.json)" = null ]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+          else
+            url=$(node deploy/mobile/ios-distribution.mjs artifact-url)
+            if curl --fail --location --silent --show-error --retry 2 "$url" -o .ios-ci/mint.ipa; then
+              node deploy/mobile/ios-distribution.mjs verify-ipa
+              echo 'build=false' >> "$GITHUB_OUTPUT"
+            else
+              echo 'EAS artifact unavailable; rebuilding conservatively.'
+              echo 'build=true' >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Prepare Apple API key for non-interactive provisioning
+        if: steps.gate.outputs.build == 'true'
+        env:
+          IOS_ASC_API_KEY_P8: ${{ secrets.IOS_ASC_API_KEY_P8 }}
+          EXPO_ASC_KEY_ID: ${{ secrets.IOS_ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.IOS_ASC_ISSUER_ID }}
+          IOS_APPLE_TEAM_TYPE: ${{ vars.IOS_APPLE_TEAM_TYPE }}
+        run: |
+          test -n "$IOS_ASC_API_KEY_P8" || { echo '::error::Configure IOS_ASC_API_KEY_P8.'; exit 1; }
+          test -n "$EXPO_ASC_KEY_ID" || { echo '::error::Configure IOS_ASC_KEY_ID.'; exit 1; }
+          test -n "$EXPO_ASC_ISSUER_ID" || { echo '::error::Configure IOS_ASC_ISSUER_ID.'; exit 1; }
+          test -n "$IOS_APPLE_TEAM_TYPE" || { echo '::error::Configure IOS_APPLE_TEAM_TYPE.'; exit 1; }
+          umask 077
+          printf '%s' "$IOS_ASC_API_KEY_P8" > .ios-ci/AuthKey.p8
+          echo "EXPO_ASC_API_KEY_PATH=$GITHUB_WORKSPACE/.ios-ci/AuthKey.p8" >> "$GITHUB_ENV"
+          echo "EXPO_ASC_KEY_ID=$EXPO_ASC_KEY_ID" >> "$GITHUB_ENV"
+          echo "EXPO_ASC_ISSUER_ID=$EXPO_ASC_ISSUER_ID" >> "$GITHUB_ENV"
+          echo "EXPO_APPLE_TEAM_ID=$IOS_APPLE_TEAM_ID" >> "$GITHUB_ENV"
+          echo "EXPO_APPLE_TEAM_TYPE=$IOS_APPLE_TEAM_TYPE" >> "$GITHUB_ENV"
+      - name: Build production IPA and refresh registered devices
+        if: steps.gate.outputs.build == 'true'
+        run: |
+          (cd apps/mobile && eas build --platform ios --profile ios-production --wait --refresh-ad-hoc-provisioning-profile --json --non-interactive > ../../.ios-ci/build-result.json)
+          node deploy/mobile/ios-distribution.mjs build-result
+          url=$(node deploy/mobile/ios-distribution.mjs artifact-url)
+          curl --fail --location --silent --show-error --retry 2 "$url" -o .ios-ci/mint.ipa
+          node deploy/mobile/ios-distribution.mjs verify-ipa
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.gate.outputs.build == 'true'
+        with:
+          name: mint-ios-ipa
+          path: .ios-ci/mint.ipa
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+      - name: Publish compatible production iOS update
+        if: steps.gate.outputs.build == 'false'
+        working-directory: apps/mobile
+        run: |
+          eas env:exec production 'EXPO_NO_DOTENV=1 node ../../node_modules/expo-updates/bin/cli.js runtimeversion:resolve --platform ios --workflow managed > ../../.ios-ci/update-runtime.json' --non-interactive
+          (cd ../.. && node deploy/mobile/ios-distribution.mjs validate-update-runtime)
+          eas update --platform ios --channel production --environment production --message "GitHub ${GITHUB_SHA}" --non-interactive
+      - name: Delivery summary
+        env:
+          BUILT: ${{ steps.gate.outputs.build }}
+        run: |
+          if [ "$BUILT" = true ]; then
+            echo 'A finished production IPA was verified for the Apple team, signing integrity, device provisioning, fingerprint, channel and embedded recovery. Install from the EAS build page. No OTA was published in this run.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'A matching finished and signed IPA was verified before publishing a production iOS update. Compatible updates download at launch and apply on a later cold launch or a confirmed paused restart.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Remove Apple key and restore local configuration
+        if: always()
+        run: |
+          rm -f .ios-ci/AuthKey.p8
+          if [ -f .ios-ci/app-config-before-init.json ]; then
+            cp .ios-ci/app-config-before-init.json apps/mobile/app.json
+          fi
