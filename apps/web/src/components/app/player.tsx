@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -618,9 +618,12 @@ function createPortalSafe(children: React.ReactNode) {
   return typeof document === "undefined" ? null : createPortal(children, document.body);
 }
 /** The sheet is fixed, so the first paint can stay in the tree and match the server. After mount it moves to the body so the app shell can be inert without freezing the player. */
+const subscribeToHydration = () => () => {};
+const clientHydrationSnapshot = () => true;
+const serverHydrationSnapshot = () => false;
+
 function PlayerSheetSlot({ active, children }: { active: boolean; children: React.ReactNode }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+  const mounted = useSyncExternalStore(subscribeToHydration, clientHydrationSnapshot, serverHydrationSnapshot);
   if (!active) return null;
   if (!mounted) return children;
   return createPortal(children, document.body);
