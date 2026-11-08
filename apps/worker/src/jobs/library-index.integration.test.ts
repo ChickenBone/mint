@@ -7,11 +7,16 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
+import { PublicReadCache } from "@mint/core/public-cache";
+import { publicCacheFixture } from "../../../../packages/core/src/public-cache-fixture";
 
 test("20,000-song Plex import, idempotence, reuse, upgrades and read-only boundaries", {
   skip: !process.env.MINT_LIBRARY_TEST_DATABASE_URL,
   timeout: 120_000,
 }, async (t) => {
+  let cacheTimeOffset = 0;
+  const metadataCache = publicCacheFixture(() => Date.now() + cacheTimeOffset).cache;
+  t.mock.method(PublicReadCache.prototype, "read", metadataCache.read.bind(metadataCache));
   const url = process.env.MINT_LIBRARY_TEST_DATABASE_URL!;
   assert.match(new URL(url).pathname, /^\/mint_library_test/);
   assert.ok(process.env.MINT_LIBRARY_TEST_REDIS_URL);
@@ -230,7 +235,7 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
     Array.from({ length: 2 }, (_, song) => ({
       title: `Artwork track ${song}`, artist: "Artwork Fixture",
       album: `Album ${String(album).padStart(2, "0")}`,
-      mbReleaseGroupId: "8e8a594f-2175-38c7-a871-abb68ec363e7",
+      mbReleaseGroupId: `8e8a594f-2175-38c7-a871-${String(album).padStart(12, "0")}`,
       filePath: "/existing-music/fixture.audio", stage: "ready" as const,
       artworkUrl: song === 0 && album === 0 ? savedCover : null,
     })),
@@ -258,16 +263,19 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   await backfillArtwork();
   assert.equal(lookups, 12, "cached cover must be reused for later tracks on an already matched album");
   await backfillArtwork();
-  await db.update(schema.tracks).set({ artworkUrl: null, album: "Transient" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Transient",
+    mbReleaseGroupId: "8e8a594f-2175-38c7-a871-000000000012" }).where(eq(schema.tracks.id, artRows[1]!.id));
   unavailable = true;
   await backfillArtwork();
   await backfillArtwork();
   unavailable = false;
+  cacheTimeOffset += 120_000;
   await backfillArtwork();
   assert.equal(lookups, 14, "transient API failure must be retried, not cached as no cover");
   assert.equal((await db.select().from(schema.tracks).where(eq(schema.tracks.id, artRows[1]!.id)))[0]!.artworkUrl?.endsWith("front-500.jpg"), true);
   await backfillArtwork();
-  await db.update(schema.tracks).set({ artworkUrl: null, album: "Missing" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Missing",
+    mbReleaseGroupId: "8e8a594f-2175-38c7-a871-000000000013" }).where(eq(schema.tracks.id, artRows[1]!.id));
   absent = true;
   await backfillArtwork();
   await backfillArtwork();
