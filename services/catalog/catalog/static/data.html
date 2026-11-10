@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+THESIS: Inspect stored records directly, not another telemetry dashboard.
+OWN-WORLD: Existing ink-blue console, mint selection, plain data tables and JSON.
+STORY: Choose PostgreSQL or Qdrant, browse a bounded page, inspect an exact record.
+FIRST VIEWPORT: Database switch and filters above a table with an adjacent raw inspector.
+FORM: Task-specified read-only data workbench extending the established Operate console.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Mint Catalog — Data browser</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/console/console.css">
+  <link rel="stylesheet" href="/console/data.css">
+  <script src="/console/data.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to data browser</a>
+  <header class="masthead">
+    <a class="brand" href="/">mint<span class="brand-sub">catalog</span></a>
+    <nav aria-label="Console"><a href="/">Observatory</a><a href="/#search">Search</a><a href="/data" class="selected" aria-current="page">Data browser</a><a href="/docs">API</a></nav>
+    <span class="read-only">Read-only access</span>
+  </header>
+  <main id="main">
+    <div class="page-title"><div><h1>Data browser<span class="title-dot">.</span></h1><p>Stored metadata, queue records and vectors. Nothing here changes the data.</p></div></div>
+    <form id="browse-form" class="browse-toolbar">
+      <label>Database<select id="database"><option value="postgres">PostgreSQL</option><option value="vectors">Qdrant</option></select></label>
+      <label id="table-field">Table<select id="dataset" disabled><option>Loading tables…</option></select></label>
+      <label class="exact-field"><span id="exact-label">Exact primary key</span><input id="exact" maxlength="300" placeholder="Leave empty to browse" autocomplete="off"></label>
+      <label>Rows<select id="page-size"><option>10</option><option selected>25</option><option>50</option></select></label>
+      <button type="submit" class="primary" id="browse">Load data</button>
+    </form>
+    <div id="browser-error" class="notice" role="alert" hidden></div>
+    <div class="dataset-heading"><div><h2 id="dataset-heading">PostgreSQL</h2><p id="dataset-note">Loading the standalone catalog schema…</p></div><button id="refresh-data" type="button">Refresh page</button></div>
+    <p id="browse-status" class="browse-status" role="status" aria-live="polite">Loading…</p>
+    <div class="data-workbench">
+      <section class="records-pane" aria-label="Stored records">
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Scrollable raw records">
+          <table id="records"><caption class="sr-only">Stored records; inspect a row to read every field</caption><thead id="record-head"></thead><tbody id="record-body"></tbody></table>
+        </div>
+        <p id="empty-data" class="data-empty" hidden>No records in this view. Clear the exact-key filter or choose another dataset.</p>
+        <div class="pagination"><button id="previous" type="button" disabled>Previous</button><span id="page-label">Page 1</span><button id="next" type="button" disabled>Next</button></div>
+      </section>
+      <section class="raw-pane" aria-labelledby="raw-heading">
+        <div class="raw-heading"><h2 id="raw-heading">Raw record</h2><button id="copy-json" type="button" disabled>Copy JSON</button></div>
+        <p id="raw-note" role="status">Inspect a row to see all stored fields. Vector values load only when you select a Qdrant point.</p>
+        <pre id="raw-record" tabindex="0" aria-label="Raw record JSON">No record selected.</pre>
+        <p id="copy-status" role="status" class="browse-status"></p>
+      </section>
+    </div>
+    <details class="queue-details"><summary>Schema and browsing limits</summary><div id="schema-detail"></div><p class="field-help">Pages are ordered by complete primary keys or Qdrant point ID, not popularity. Concurrent crawls can change records between pages; this is not a frozen export. No SQL editor, database writes or arbitrary collection access. Vectors are stored floating-point values, not the quantized search representation.</p></details>
+    <footer><span>Mint Catalog / Local data inspection</span><span>PostgreSQL owns metadata · Qdrant is a rebuildable index</span></footer>
+  </main>
+</body>
+</html>

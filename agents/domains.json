@@ -728,6 +728,37 @@
       ]
     },
     {
+      "id": "catalog",
+      "surface": "server",
+      "title": "Standalone metadata catalog",
+      "summary": "Isolated metadata aggregation, evidence-backed recording reconciliation, popularity graph and search",
+      "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "embedding atlas"],
+      "ui": true,
+      "guides": ["services/catalog/README.md"],
+      "paths": ["services/catalog/**"],
+      "validate": [
+        "python -m pytest services/catalog/tests",
+        "python -m ruff check services/catalog",
+        "node --test services/catalog/tests/*.test.cjs",
+        "docker compose --env-file services/catalog/.env.example -f services/catalog/compose.yml config --quiet"
+      ]
+    },
+    {
+      "id": "library-auditor",
+      "surface": "server",
+      "title": "Standalone library quality auditor",
+      "summary": "Read-only metadata manifest audits for duplicates, identifier conflicts and tag gaps with optional catalog matching",
+      "keywords": ["auditor", "library auditor", "library quality", "metadata audit", "duplicate audit", "tag gaps", "recording identifier conflicts"],
+      "guides": ["services/library-auditor/README.md"],
+      "paths": ["services/library-auditor/**"],
+      "validate": [
+        "python -m pytest services/library-auditor/tests",
+        "python -m ruff check services/library-auditor",
+        "docker compose -f services/library-auditor/compose.yml config --quiet",
+        "docker compose -f services/library-auditor/compose.yml -f services/library-auditor/compose.catalog.yml config --quiet"
+      ]
+    },
+    {
       "id": "agent-tooling",
       "title": "Agent routing and local memory",
       "summary": "Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory",

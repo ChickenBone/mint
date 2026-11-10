@@ -88,6 +88,49 @@ test("surface-aware routing defaults matching consumer features, not foundation 
   assert.deepEqual(new Set(plan("improve web search", "apps/mobile/src/features/search/new.ts")), new Set(["mobile-search", "library"]));
 });
 
+test("standalone catalog routing has its own scope without Mint runtime contracts", () => {
+  const current = compileManifest(JSON.parse(readFileSync(
+    new URL("../../agents/domains.json", import.meta.url), "utf8",
+  )));
+  const paths = [
+    "services/catalog/catalog/sources.py",
+    "services/catalog/catalog/api.py",
+    "services/catalog/compose.yml",
+    "services/catalog/tests/test_pipeline.py",
+  ];
+  const ownership = resolveOwnership(current, paths);
+  for (const file of paths) assert.equal(ownership.owners.get(file), "catalog");
+  for (const query of ["standalone catalog", "metadata crawler popularity graph", "catalog embeddings"]) {
+    const packet = routingPlan(current, ownership.owners, [query]);
+    assert.equal(packet.domains[0].id, "catalog", query);
+    assert.ok(packet.read.includes("services/catalog/README.md"));
+  }
+  const packet = routingPlan(current, ownership.owners, [paths[0]]);
+  assert.deepEqual(packet.domains.map((domain) => domain.id), ["catalog"]);
+  assert.ok(!packet.read.includes("agents/architecture.md"));
+});
+
+test("standalone library quality audits route separately from Mint library runtime", () => {
+  const current = compileManifest(JSON.parse(readFileSync(
+    new URL("../../agents/domains.json", import.meta.url), "utf8",
+  )));
+  const paths = [
+    "services/library-auditor/auditor/api.py",
+    "services/library-auditor/compose.yml",
+    "services/library-auditor/tests/test_audit.py",
+  ];
+  const ownership = resolveOwnership(current, paths);
+  for (const file of paths) assert.equal(ownership.owners.get(file), "library-auditor");
+  for (const query of ["library auditor", "library quality metadata audit"]) {
+    const packet = routingPlan(current, ownership.owners, [query]);
+    assert.equal(packet.domains[0].id, "library-auditor", query);
+    assert.ok(packet.read.includes("services/library-auditor/README.md"));
+  }
+  const packet = routingPlan(current, ownership.owners, [paths[0]]);
+  assert.deepEqual(packet.domains.map((domain) => domain.id), ["library-auditor"]);
+  assert.ok(!packet.read.includes("agents/architecture.md"));
+});
+
 test("importSpecifiers finds static, type, re-export, side-effect and dynamic imports", () => {
   // Built from parts so the repository's own import scanner does not see a real cross-domain edge here.
   const im = "import";

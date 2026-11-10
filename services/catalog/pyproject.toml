@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=75,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mint-catalog"
+version = "0.1.0"
+description = "Standalone, popularity-prioritized music metadata crawler and hybrid search"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.12",
+  "pydantic>=2.10,<3",
+  "numpy>=2,<3",
+  "uvicorn==0.34.2",
+  "httpx==0.28.1",
+  "psycopg[binary,pool]==3.2.9",
+  "qdrant-client==1.14.2",
+  "fastembed==0.7.0",
+  "ytmusicapi==1.12.3",
+  "defusedxml==0.7.1",
+  "websockets==15.0.1",
+]
+
+[project.optional-dependencies]
+test = ["pytest==8.3.5", "ruff==0.11.10"]
+
+[project.scripts]
+mint-catalog = "catalog.main:main"
+
+[tool.setuptools]
+packages = ["catalog"]
+
+[tool.setuptools.package-data]
+catalog = ["*.sql", "static/*"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: requires a disposable PostgreSQL database"]

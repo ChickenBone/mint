@@ -1,0 +1,121 @@
+name: mint-catalog
+
+x-service: &service
+  image: mint-catalog:local
+  build: .
+  init: true
+  restart: unless-stopped
+  environment: &environment
+    DATABASE_URL: postgresql://catalog@metadata/catalog
+    QDRANT_URL: http://vectors:6333
+    MODEL_CACHE: /models
+    VECTOR_COLLECTION: catalog_minilm_v1
+    CRAWLER_USER_AGENT: ${CRAWLER_USER_AGENT:?Set an application/version and public contact URL or email}
+    APPLE_ENABLED: ${APPLE_ENABLED:-false}
+    MUSICBRAINZ_ENABLED: ${MUSICBRAINZ_ENABLED:-true}
+    LISTENBRAINZ_ENABLED: ${LISTENBRAINZ_ENABLED:-true}
+    YOUTUBE_ENABLED: ${YOUTUBE_ENABLED:-false}
+    YTMUSIC_ENABLED: ${YTMUSIC_ENABLED:-false}
+    YOUTUBE_CHANNELS: ${YOUTUBE_CHANNELS:-}
+    PUBLIC_SOURCES: ${PUBLIC_SOURCES:-}
+    COUNTRIES: ${COUNTRIES:-us}
+    MAX_ENTITIES: ${MAX_ENTITIES:-10000000}
+    SOURCE_INTERVAL_SECONDS: ${SOURCE_INTERVAL_SECONDS:-4}
+    SOURCE_INTERVAL_OVERRIDES: ${SOURCE_INTERVAL_OVERRIDES:-}
+    CHART_INTERVAL_SECONDS: ${CHART_INTERVAL_SECONDS:-21600}
+    CRAWLER_WORKERS: ${CRAWLER_WORKERS:-8}
+    INDEXER_WORKERS: ${INDEXER_WORKERS:-2}
+    INDEX_BATCH_SIZE: ${INDEX_BATCH_SIZE:-64}
+    EMBEDDING_THREADS: ${EMBEDDING_THREADS:-2}
+  volumes:
+    - models:/models
+  networks: [private, egress]
+  security_opt: [no-new-privileges:true]
+  cap_drop: [ALL]
+  stop_grace_period: 60s
+  depends_on:
+    initialize:
+      condition: service_completed_successfully
+
+services:
+  metadata:
+    image: postgres:16-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: catalog
+      POSTGRES_DB: catalog
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - metadata:/var/lib/postgresql/data
+    networks: [private]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catalog -d catalog"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  vectors:
+    image: qdrant/qdrant:v1.14.1
+    restart: unless-stopped
+    environment:
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - vectors:/qdrant/storage
+    networks: [private]
+
+  initialize:
+    <<: *service
+    restart: on-failure:5
+    command: [init]
+    depends_on:
+      metadata:
+        condition: service_healthy
+      vectors:
+        condition: service_started
+
+  crawler:
+    <<: *service
+    command: [crawl]
+
+  indexer:
+    <<: *service
+    command: [index]
+
+  ranker:
+    <<: *service
+    command: [rank]
+
+  search:
+    <<: *service
+    command: [serve]
+    ports:
+      - "127.0.0.1:${CATALOG_PORT:-8097}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=20)"
+      interval: 30s
+      timeout: 25s
+      start_period: 180s
+      retries: 3
+
+  bulk-import:
+    <<: *service
+    profiles: [bulk]
+    restart: on-failure:5
+    command: [load-musicbrainz, /imports, --snapshot, "${MUSICBRAINZ_SNAPSHOT:-}"]
+    volumes:
+      - models:/models
+      - "${CATALOG_IMPORT_DIRECTORY:-./imports}:/imports"
+
+volumes:
+  metadata:
+  vectors:
+  models:
+
+networks:
+  private:
+    internal: true
+  egress:

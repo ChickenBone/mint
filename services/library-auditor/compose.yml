@@ -1,0 +1,23 @@
+name: mint-library-auditor
+
+services:
+  auditor:
+    image: mint-library-auditor:local
+    build: .
+    init: true
+    restart: unless-stopped
+    read_only: true
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 64
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      CATALOG_URL: ${CATALOG_URL:-}
+    ports:
+      - "127.0.0.1:${AUDITOR_PORT:-8098}:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

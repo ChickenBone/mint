@@ -1,0 +1,110 @@
+<!doctype html>
+<!--
+THESIS: Explore a catalog brain of artists, genre tags, songs and albums through real stored relationships.
+OWN-WORLD: Ink-blue instrument panels, ice-blue relationships, mint live state, amber backoff.
+STORY: See what is running, follow an observed record, then seed or repair discovery.
+FIRST VIEWPORT: Measured storage, pipeline health and a full-width whole-catalog graph.
+FORM: Existing instrument-panel world, Operate; secondary monitoring and controls unfold on demand.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Mint Catalog — Live Observatory</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 23V9l12 9L28 9v14' fill='none' stroke='%237ff0c3' stroke-width='4'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/console/console.css">
+  <script src="/console/cytoscape.min.js" defer></script>
+  <script src="/console/graph-layout.js" defer></script>
+  <script src="/console/graph-view.js" defer></script>
+  <script src="/console/console.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to live catalog</a>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Mint Catalog home">
+      <svg viewBox="0 0 36 36" aria-hidden="true"><path d="M5 26V10l13 10 13-10v16"/><circle cx="18" cy="5" r="2"/></svg>
+      <span>mint<span class="brand-sub">catalog</span></span>
+    </a>
+    <nav aria-label="Console"><a href="#main" class="selected">Observatory</a><a href="#search">Search</a><a href="#operations">Operations</a><a href="/data">Data browser</a><a href="/docs" target="_blank" rel="noreferrer">API ↗</a></nav>
+    <div class="connection"><span id="connection-dot" class="status-dot"></span><span id="connection">Connecting</span><button id="live-toggle" class="quiet" type="button">Pause view</button></div>
+  </header>
+  <main id="main">
+    <div class="page-title"><div><h1>Catalog observatory<span class="title-dot">.</span></h1><p>Storage, discovery and the connections across your catalog.</p></div><div class="freshness"><span id="snapshot-age">Waiting for first snapshot</span><span id="storage-age">Measuring storage…</span></div></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div class="readouts" aria-label="Catalog counters">
+      <div><span class="readout-label">PostgreSQL storage</span><strong id="database-size">—</strong><span id="database-note">Measuring database + indexes</span></div>
+      <div><span class="readout-label">Catalog records</span><strong id="entity-count">—</strong><span id="capacity-note">Waiting for metadata</span></div>
+      <div><span class="readout-label">Searchable vectors</span><strong id="indexed-count">—</strong><span id="indexed-note">Waiting for indexer</span></div>
+      <div><span class="readout-label">Crawl queue</span><strong id="queue-count">—</strong><span id="queue-note">Ready / scheduled</span></div>
+      <div><span class="readout-label">Observed / 5 min</span><strong id="crawl-rate">—</strong><span id="rate-note">Retained activity, not unique records</span></div>
+      <div><span class="readout-label">Needs attention</span><strong id="error-count">—</strong><a href="#operations" id="error-note">Failures and source backoff ↓</a></div>
+    </div>
+    <details class="storage-details"><summary>Storage breakdown <span id="storage-summary">Measuring…</span></summary><div id="storage-breakdown" class="storage-breakdown" role="status">Reading database storage measurements.</div></details>
+    <div class="observatory">
+      <details class="source-rail">
+        <summary class="section-head"><h2 id="sources-heading">Sources &amp; workers</h2><span class="count-label" id="source-count">Loading adapters</span></summary>
+        <div id="sources" class="source-list"><p class="empty">Loading source configuration…</p></div>
+        <section class="workers-section" aria-labelledby="workers-heading"><div class="section-head"><h2 id="workers-heading">Workers</h2><span class="count-label" id="worker-count">—</span></div><div id="workers"><p class="empty">Waiting for worker heartbeats.</p></div></section>
+        <p class="rail-note">Pause stops new source claims. In-flight work may finish. Enable disabled adapters in <code>.env</code>.</p>
+      </details>
+      <section class="map-panel" aria-labelledby="map-heading">
+        <div class="map-head"><div><h2 id="map-heading">The catalog brain</h2><p id="graph-scope" role="status">Loading artists, genres, songs and albums…</p></div><div class="graph-controls"><button id="zoom-out" type="button" aria-label="Zoom out">−</button><button id="zoom-in" type="button" aria-label="Zoom in">+</button><button id="reset-graph" type="button">Fit</button><button id="expand-graph" type="button" aria-pressed="false">Expand</button></div></div>
+        <div class="network-navigation">
+          <label>View<select id="graph-view"><option value="embeddings">Embedding Atlas</option><option value="atlas">Whole catalog groups</option><option value="catalog">Record explorer</option><option value="artists">Artist connections</option><option value="recent">Recent records</option></select></label>
+          <form id="artist-search" hidden><label for="artist-query" id="network-query-label">Find artists, genres, songs or albums</label><div><input id="artist-query" type="search" maxlength="100" placeholder="Name or genre"><button type="submit">Find</button></div></form>
+          <div class="network-actions"><button id="network-overview" type="button">Overview</button><button id="network-more" type="button" disabled hidden>Next catalog page</button></div>
+        </div>
+        <div id="embedding-controls" class="embedding-controls">
+          <label>Map display <select id="embedding-display"><option value="points">Points</option><option value="density">Density</option></select></label>
+          <label>Find loaded records <input id="embedding-query" type="search" maxlength="160" placeholder="Name, artist or source"></label>
+          <button id="embedding-more" type="button" disabled>Load more vectors</button>
+          <button id="embedding-all" type="button" disabled>Load indexed catalog</button>
+          <button id="embedding-stop" type="button" hidden>Stop loading</button>
+          <p id="embedding-progress" role="status">Reading locally indexed metadata embeddings...</p>
+        </div>
+        <nav id="atlas-breadcrumbs" class="atlas-breadcrumbs" aria-label="Catalog group path" hidden></nav>
+        <div class="graph-summary"><span id="graph-topology">Waiting for relationships</span><span id="graph-coverage">Loading whole catalog…</span></div>
+        <div class="network-surface">
+          <div class="graph-grid" aria-hidden="true"></div>
+          <div id="network" role="group" tabindex="0" aria-label="Interactive catalog relationships" aria-describedby="graph-help"></div>
+          <div id="embedding-map" role="group" tabindex="0" aria-label="Embedding Atlas metadata projection" aria-describedby="graph-help" hidden></div>
+          <div id="graph-tooltip" class="graph-tooltip" role="status" hidden></div>
+          <div id="graph-empty" class="graph-empty"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="28"/><circle cx="50" cy="50" r="42"/><path d="M50 4v20m0 52v20M4 50h20m52 0h20"/></svg><h3>Ready to discover</h3><p>Sources will populate this map as they crawl.<br>Add an artist, album or video seed to start a new branch.</p><a href="#seed-form" class="text-action">Add your first seed ↗</a></div>
+          <div class="map-caption"><span><i class="legend artist"></i>Artist</span><span id="genre-legend"><i class="legend genre"></i>Genre tag</span><span><i class="legend album"></i>Album</span><span><i class="legend song"></i>Song</span><span id="graph-count">0 visible nodes</span></div>
+        </div>
+        <p id="graph-failure" class="network-notice graph-failure" role="alert" hidden></p>
+        <div class="graph-toolbar"><label>Inspect a group or record<select id="graph-record"><option value="">Select a record…</option></select></label><label>Layout<select id="graph-layout"><option value="cose">Organic</option><option value="concentric">Radial</option></select></label><label class="spacing-control">Node spacing <output id="spacing-value" for="graph-spacing">1.8×</output><input id="graph-spacing" type="range" min="1" max="3" step="0.2" value="1.8"></label><button id="focus-graph" type="button" aria-pressed="false" disabled>Focus neighbors</button></div>
+        <p id="network-notice" class="network-notice">Every stored record is represented by a group. Zoom into or select a group to expand.</p>
+        <details class="graph-instructions"><summary>How to explore</summary><p id="graph-help" class="graph-help">Zoom into or select a group to reveal its records. Drag nodes to arrange; drag the background to pan. Scroll or pinch to zoom. Use the record picker for keyboard inspection; focus the graph for arrow-key pan, +/− zoom, 0 to fit, Esc to clear selection. Groups partition stored records, not musical similarity.</p></details>
+        <details id="inspector" class="inspector"><summary>Selection &amp; connection evidence</summary>
+        <div id="entity-detail" class="entity-detail"><span class="detail-cross" aria-hidden="true">⌖</span><p>Select a node or search result to inspect its source, indexing state and relationships.</p></div>
+        <section id="network-evidence" class="network-evidence" aria-label="Connection evidence" hidden><h3>Connections and evidence</h3><div id="connection-list"></div></section>
+        </details>
+        <details class="pipeline-details"><summary>Pipeline details <span id="pipeline-summary">Waiting for workers…</span></summary>
+        <div class="pipeline" aria-label="Pipeline state"><div><span class="pipeline-step">Discovery</span><span id="discovery-state">Waiting</span></div><span class="pipeline-arrow" aria-hidden="true">→</span><div><span class="pipeline-step">Embedding</span><span id="embedding-state">Waiting</span></div><span class="pipeline-arrow" aria-hidden="true">→</span><div><span class="pipeline-step">Search index</span><span id="search-state">Waiting</span></div></div>
+        <p id="pipeline-note" class="pipeline-note" role="status">Reading worker heartbeats and source budgets…</p>
+        </details>
+      </section>
+      <details class="activity-panel"><summary class="section-head"><h2 id="activity-heading">Live activity</h2><span class="count-label">Last 60 events</span></summary><ol id="activity" class="activity-list"><li class="empty">No activity received yet. Completed work and errors appear here.</li></ol><p class="activity-foot">Actual worker events · refreshed every 5s</p></details>
+    </div>
+    <section class="search-section" id="search" aria-labelledby="search-heading">
+      <div class="section-head section-head-large"><div><h2 id="search-heading">Explore your catalog</h2><p>Exact names or a sonic description. Search stays on this host.</p></div><span class="count-label">Lexical + semantic retrieval</span></div>
+      <form id="search-form" class="search-form"><label class="search-input"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="m15 15 6 6"/></svg><span class="sr-only">Search query</span><input name="q" id="query" type="search" maxlength="256" placeholder="Artist, track, album… or atmospheric electronic music" required></label><label><span class="sr-only">Source filter</span><select name="source"><option value="">All sources</option><option value="musicbrainz">MusicBrainz</option><option value="apple">Apple</option><option value="youtube">YouTube</option><option value="ytmusic">YouTube Music</option></select></label><label><span class="sr-only">Entity type</span><select name="kind"><option value="">All types</option><option value="artist">Artists / channels</option><option value="album">Albums</option><option value="song">Songs / videos</option></select></label><label><span class="sr-only">Search mode</span><select name="mode"><option value="hybrid">Hybrid</option><option value="lexical">Keyword only</option></select></label><button class="primary" type="submit">Search <span aria-hidden="true">↗</span></button></form>
+      <div id="search-status" class="search-status" role="status">Search the records already discovered. This does not query upstream providers.</div>
+      <div id="results" class="results"><p class="empty">The next connection starts with a search.</p></div>
+    </section>
+    <section class="operations" id="operations" aria-labelledby="operations-heading">
+      <div class="section-head section-head-large"><div><h2 id="operations-heading">Operations</h2><p>Start a branch. Inspect a delay. Keep discovery moving.</p></div><a class="text-action" href="/v1/console/snapshot" target="_blank" rel="noreferrer">Raw telemetry ↗</a></div>
+      <div class="operations-grid">
+        <section class="seed-section"><h3>Add a discovery seed</h3><form id="seed-form"><div class="field-pair"><label>Source<select name="source" id="seed-source"><option value="musicbrainz">MusicBrainz</option><option value="ytmusic">YouTube Music</option><option value="youtube">YouTube</option><option value="apple">Apple</option></select></label><label>Type<select name="kind" id="seed-kind"><option value="artist">Artist / channel</option><option value="album">Album</option><option value="song">Song / video</option></select></label></div><label>Provider ID<input name="identifier" id="seed-id" required maxlength="128" placeholder="MusicBrainz UUID"></label><label id="country-field" hidden>Storefront<input name="country" value="us" pattern="[a-z]{2}" maxlength="2"></label><p class="field-help" id="seed-help">Use an explicit MusicBrainz UUID, not an artist name.</p><button class="primary" type="submit">Queue discovery <span aria-hidden="true">+</span></button><p id="seed-status" role="status"></p></form></section>
+        <section class="budget-section"><h3>Upstream budgets</h3><div id="budgets"><p class="empty">No upstream requests observed.</p></div><h3 class="subsection-title">Popularity leaders</h3><div id="popular"><p class="empty">No ranked observations yet.</p></div><p class="field-help">Decaying, source-scoped discovery scores—not global play counts. Unranked YouTube Music entries are never assigned invented ranks.</p></section>
+        <section class="failure-section"><h3>Attention queue</h3><div id="failures"><p class="empty">No failures reported.</p></div></section>
+      </div>
+      <details class="queue-details"><summary>Inspect the next crawl jobs</summary><div id="jobs" class="jobs"><p class="empty">No queued jobs.</p></div></details>
+      <details class="queue-details"><summary id="research-summary">Source research and access limits</summary><p class="field-help">Implemented adapters, limited metadata lookups, bulk datasets and credential-only sources are not interchangeable. No key extraction or access bypass.</p><div id="source-research"></div></details>
+    </section>
+    <footer><span>Mint Catalog <span class="footer-divider">/</span> Independent metadata infrastructure</span><span>Whole-catalog overview · Source-attributed data · Local vectors</span></footer>
+  </main>
+</body>
+</html>

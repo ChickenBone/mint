@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Mint Catalog — API</title>
+  <link rel="stylesheet" href="/console/console.css">
+</head>
+<body>
+  <header class="masthead"><a class="brand" href="/">mint<span class="brand-sub">catalog / API</span></a><a class="text-action" href="/openapi.json">OpenAPI schema ↗</a></header>
+  <main>
+    <div class="page-title"><div><h1>Local catalog API.</h1><p>Metadata and source-attributed relationships. No upstream keys.</p></div></div>
+    <section class="operations">
+      <h2>Search</h2>
+      <p class="search-status"><a class="text-action" href="/v1/search?q=ambient&amp;mode=lexical">GET /v1/search?q=ambient&amp;mode=lexical</a></p>
+      <p>Options: <code>q</code> (1–256 characters), <code>mode=hybrid|lexical</code>,
+        <code>limit=1..50</code>, optional <code>source</code>
+        (musicbrainz, apple, youtube, ytmusic, spotify, deezer, audius, archive,
+        wikidata, soundcloud, openverse),
+        <code>kind=artist|album|song</code>, <code>country=global|us|…</code>,
+        and <code>group_artists=true|false</code> (default true).</p>
+      <p>Returns <code>query</code>, <code>mode</code>, <code>results</code> and
+        <code>has_more</code> (retrieved candidates, not an exhaustive total).
+        Hybrid uses local embeddings plus keyword search; dependency failures return
+        503. Request lexical mode explicitly to search without the vector store.</p>
+      <p>Artist results group explicit cross-provider identities before the limit,
+        retaining the highest-ranked matching record plus <code>canonical_id</code>,
+        <code>providers</code> and <code>providers_truncated</code>.
+        Names alone never cause a merge. Use <code>group_artists=false</code>
+        for individual source records. Albums and songs remain source-scoped.</p>
+    </section>
+    <section class="operations">
+      <h2>Entity and graph</h2>
+      <p class="search-status"><code>GET /v1/entities/{source:scope:kind:id}</code></p>
+      <p>Returns the entity, up to 100 explicit edges and source-scoped popularity
+        signals, observed provider links and stored attribution annotations.
+        Example key: <code>youtube:global:song:abcdefghijk</code>.</p>
+      <p>Artist details also include the canonical group and its stored provider
+        records. Observed links expose their <code>canonical_status</code>;
+        conflicting or excluded assertions do not merge groups.</p>
+      <p class="search-status"><code>GET /v1/console/graph/{key}</code></p>
+      <p>Returns a bounded, fetched-node relationship graph for inspection.</p>
+      <p class="search-status"><code>GET /v1/console/artist-network</code></p>
+      <p>Pages stored canonical artists with optional <code>q</code>,
+        <code>limit=1..20</code> and <code>after</code> from the response's
+        <code>next</code>. Pass <code>key</code> to expand one artist;
+        <code>next</code> then pages that artist's credited records.</p>
+      <p>Edges are shared stored song/album credits with source-linked evidence,
+        not inferred similarity. Returns <code>nodes</code>, <code>edges</code>,
+        <code>focus</code>, <code>next</code>, <code>limits</code> and
+        <code>truncated</code>. Views cap at 180 artists/400 edges; credit and
+        evidence lists are bounded, not exhaustive relationship totals.</p>
+    </section>
+    <section class="operations">
+      <h2>Raw data browser</h2>
+      <p><a class="text-action" href="/data">Open the read-only data browser</a>
+        for PostgreSQL tables, Qdrant payloads and individual stored vectors.</p>
+      <p><code>GET /v1/data/tables</code>, <code>/v1/data/postgres/{table}</code>
+        and <code>/v1/data/vectors</code>. Pages accept <code>limit=1..50</code>,
+        optional <code>exact</code> (first primary-key value or vector entity key)
+        and an opaque <code>after</code> cursor from the previous response.</p>
+      <p><code>GET /v1/data/vectors/{uuid}</code> returns the stored floating-point
+        vector. No arbitrary SQL, mutations or other collections are supported.</p>
+    </section>
+    <section class="operations">
+      <h2>Health and live operations</h2>
+      <p class="search-status"><a class="text-action" href="/healthz">/healthz</a> ·
+        <a class="text-action" href="/readyz">/readyz</a> ·
+        <a class="text-action" href="/v1/console/snapshot">/v1/console/snapshot</a></p>
+      <p>Connect to <code>ws://localhost:8097/v1/console/live</code> from the same
+        origin for five-second telemetry snapshots. Use the
+        <a class="text-action" href="/#operations">console controls</a> for seeding,
+        source pause and retry; the OpenAPI schema describes their request bodies.</p>
+      <p class="field-help">Loopback operator tool, not a public authenticated API.
+        No external documentation scripts or CDN requests are needed.</p>
+    </section>
+    <footer><a class="text-action" href="/">← Back to observatory</a></footer>
+  </main>
+</body>
+</html>

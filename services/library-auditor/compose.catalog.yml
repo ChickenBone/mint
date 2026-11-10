@@ -1,0 +1,10 @@
+services:
+  auditor:
+    environment:
+      CATALOG_URL: http://search:8080
+    networks: [catalog]
+
+networks:
+  catalog:
+    external: true
+    name: ${CATALOG_NETWORK:-mint-catalog_egress}

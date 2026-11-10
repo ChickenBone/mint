@@ -229,7 +229,7 @@ export function routeQuery(compiled, owners, args) {
   for (const [id, n] of nameHits) bump(id, Math.min(3, n), "file names");
 
   const surfaceText = args.filter((arg) => !/^[^\s]*\/[^\s]*$/.test(arg)).join(" ").toLowerCase();
-  const server = /\b(?:web|browser|next(?:\.?js)?|server|backend|api|endpoint|database|migration|worker|indexing|metadata|transport|dto|bearer|provider|oauth|sync|admin|management|acquisition|catalog)\b/.test(surfaceText);
+  const server = /\b(?:web|browser|next(?:\.?js)?|server|backend|api|endpoint|database|migration|worker|indexing|metadata|transport|dto|bearer|provider|oauth|sync|admin|management|acquisition|catalog|auditor)\b/.test(surfaceText);
   const mobile = !server && /\b(?:mobile|android|ios|expo|native)\b/.test(surfaceText);
   const engine = !server && /\b(?:engine|decoder|dsp|transcode|background audio|native playback|native queue|native offline|expo audio)\b/.test(surfaceText);
   const consumer = !server && !engine && compiled.domains.some((d) => d.consumer && scores.get(d.id).score > 0);

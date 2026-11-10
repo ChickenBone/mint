@@ -1,0 +1,16 @@
+{
+  "name": "mint-catalog-console",
+  "private": true,
+  "scripts": {
+    "build:atlas": "node scripts/build-atlas.mjs",
+    "vendor": "node -e \"const fs=require('node:fs'); fs.copyFileSync('node_modules/cytoscape/dist/cytoscape.min.js','catalog/static/cytoscape.min.js'); fs.copyFileSync('node_modules/cytoscape/LICENSE','catalog/static/cytoscape.LICENSE.txt')\"",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "cytoscape": "3.34.4",
+    "embedding-atlas": "0.26.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

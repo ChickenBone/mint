@@ -78,6 +78,8 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | [`realtime`](agents/domains/realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components |
 | [`web-shell`](agents/domains/web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views |
 | [`deploy`](agents/domains/deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs |
+| [`catalog`](agents/domains/catalog.md) | Isolated metadata aggregation, evidence-backed recording reconciliation, popularity graph and search |
+| [`library-auditor`](agents/domains/library-auditor.md) | Read-only metadata manifest audits for duplicates, identifier conflicts and tag gaps with optional catalog matching |
 | [`agent-tooling`](agents/domains/agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory |
 | [`handbook`](agents/domains/handbook.md) | README, product/design decisions, curated engineering/topic guides, UX docs and screenshots |
 
