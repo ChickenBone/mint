@@ -78,6 +78,35 @@ Database-backed native session/worker revocation tests use
 The test applies migrations to that fresh database; never point it at an
 existing deployment.
 
+The real HTTP native listening fixture additionally needs a production web build,
+PostgreSQL and a `redis-server` executable on `PATH` (Linux/WSL is supported).
+Use a **separate fresh disposable database** named `mint_native_test_http`;
+the fixture applies migrations and creates accounts and collections, and does
+not erase or reset an existing database. Create it using your isolated test
+PostgreSQL instance, not a deployment. For example, in a POSIX shell:
+
+```bash
+npm run build -w @mint/web
+createdb --host=127.0.0.1 --username=mint mint_native_test_http
+NATIVE_HTTP_REQUIRED=1 \
+  NATIVE_HTTP_DATABASE_URL=postgres://mint:fixture-only@127.0.0.1:5432/mint_native_test_http \
+  npm exec -w @mint/web -- tsx --test tests/native-http.integration.test.ts
+```
+
+Replace the example connection only with disposable fixture credentials. Start
+from a clean test database for each run; remove it afterward using the same
+isolated PostgreSQL instance. The fixture starts its own loopback Redis, Next
+server and synthetic audio worker on ephemeral ports and stops those processes
+on completion. No live provider or real music download is needed.
+`NATIVE_HTTP_REQUIRED=1` turns a missing database setting into a failure rather
+than the optional skip used by ordinary local `npm test` runs. Missing tools,
+invalid database names, unavailable services or an absent build also fail.
+CI creates a separate native test database in its ephemeral PostgreSQL service
+and runs this required fixture **after** the production build.
+Assertions cover native login, library reads, likes, playlists, history, audio
+HEAD/ranges, revocation and web-cookie isolation. Synthetic audio bytes verify
+HTTP transport and authorization, not audible playback or device behavior.
+
 The app uses custom native cover-color extraction and background audio
 configuration, so a **development build** is required; Expo Go is not a
 complete validation target. Android builds require Java/Android SDK and an

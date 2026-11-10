@@ -9,6 +9,7 @@ import pg from "pg";
 import { hash } from "@node-rs/argon2";
 
 const database = process.env.NATIVE_HTTP_DATABASE_URL;
+const required = process.env.NATIVE_HTTP_REQUIRED === "1";
 async function listen(server: Server) {
   server.listen(0, "127.0.0.1");
   await once(server, "listening");
@@ -24,9 +25,10 @@ async function port() {
 }
 
 test("real Next native login, consumer mutations and signed private audio retain revocation and web isolation", {
-  skip: !database && "Set NATIVE_HTTP_DATABASE_URL to a fresh mint_native_test_... database after building @mint/web",
+  skip: !database && !required && "Set NATIVE_HTTP_DATABASE_URL to a fresh mint_native_test_... database after building @mint/web",
   timeout: 60_000,
 }, async () => {
+  assert.ok(database, "NATIVE_HTTP_DATABASE_URL is required when NATIVE_HTTP_REQUIRED=1.");
   assert.match(new URL(database!).pathname, /^\/mint_native_test_[a-z0-9_]+$/);
   process.env.DATABASE_URL = database;
   process.env.MINT_SIGNING_SECRET = randomBytes(32).toString("hex");
@@ -65,11 +67,13 @@ test("real Next native login, consumer mutations and signed private audio retain
     const origin = `http://127.0.0.1:${nextPort}`;
     const webOrigin = "http://localhost:8081";
     redis = spawn("redis-server", ["--port", String(redisPort), "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"], { stdio: "ignore" });
+    await once(redis, "spawn");
     next = spawn(process.execPath, ["../../node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(nextPort)], {
       cwd: new URL("../", import.meta.url), stdio: "ignore",
       env: { ...process.env, NODE_ENV: "production", DATABASE_URL: database!, REDIS_URL: `redis://127.0.0.1:${redisPort}`,
         PUBLIC_URL: origin, NATIVE_WEB_ORIGINS: webOrigin, PLAYBACK_WORKER_URL: `http://127.0.0.1:${workerPort}` },
     });
+    await once(next, "spawn");
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       try { ready = (await fetch(`${origin}/api/native/admin`)).status === 404; } catch { /* Owned server is starting. */ }
