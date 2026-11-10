@@ -1,5 +1,5 @@
 import { getUser } from "./auth";
-import { publicUrl } from "./request";
+import { mutationOriginAllowed } from "./request";
 
 export const analysisJson = (body: unknown, status = 200) =>
   Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
@@ -9,8 +9,7 @@ export async function analysisAdmin(request?: Request) {
   if (!user) return { error: analysisJson({ error: "Approved membership required" }, 401) } as const;
   if (user.role !== "admin") return { error: analysisJson({ error: "Administrator access required" }, 403) } as const;
   if (request) {
-    const origin = request.headers.get("origin");
-    if (origin && origin !== new URL(request.url).origin && origin !== new URL(publicUrl()).origin) {
+    if (!mutationOriginAllowed(request)) {
       return { error: analysisJson({ error: "Cross-origin changes are not allowed" }, 403) } as const;
     }
     if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {

@@ -26,7 +26,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const showToast = useCallback((message: string, tone: ToastTone = "neutral", action?: ToastAction) => {
     const id = ++nextId.current;
     setToasts((current) => [...current, { id, message, tone, action }].slice(-5));
-    timers.current.set(id, setTimeout(() => dismiss(id), 5000));
+    if (tone !== "error") timers.current.set(id, setTimeout(() => dismiss(id), 5000));
   }, [dismiss]);
 
   const runAction = async (toast: ToastRecord) => {

@@ -46,6 +46,14 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
       await assert.rejects(() => guests.command(device.id, { action: "pause" }), (error) => error instanceof DeviceError && error.status === 404);
       await assert.rejects(() => hosts.poll(device.id, "wrong-token", initial), (error) => error instanceof DeviceError && error.status === 403);
       await assert.rejects(() => secondSession.poll(device.id, device.token, initial), (error) => error instanceof DeviceError && error.status === 403);
+      const persisted = await hosts.register({ name: "This computer", state: initial });
+      const resumed = await hosts.resume(persisted.id);
+      assert.equal(resumed.id, persisted.id);
+      assert.notEqual(resumed.token, persisted.token);
+      await hosts.poll(persisted.id, resumed.token, initial);
+      await assert.rejects(() => hosts.poll(persisted.id, persisted.token, initial), (error) => error instanceof DeviceError && error.status === 403);
+      await assert.rejects(() => secondSession.resume(persisted.id), (error) => error instanceof DeviceError && error.status === 404);
+      await hosts.revoke(persisted.id);
       assert.equal((await hosts.list())[0]?.state.queueLength, 1);
       assert.equal("tokenHash" in (await hosts.list())[0]!, false);
       assert.equal("authSessionId" in (await hosts.list())[0]!, false);

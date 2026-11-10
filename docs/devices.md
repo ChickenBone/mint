@@ -1,6 +1,8 @@
 # Connected devices and parties
 
-Open **Settings → Devices** in the browser member app. An approved, signed-in Mint player registers its current browser tab. Rename it to identify its room or device. A device must remain awake, online and signed in; Mint cannot wake a closed browser. Background tabs may be suspended by the operating system.
+The player shows the song and the device that is playing it for the whole account. Pause, skip and scrub on any signed-in browser control that player, and the playhead moves together, including while someone is dragging it.
+
+Open **Settings → Devices** in the browser member app. An approved, signed-in Mint player registers its current browser tab once. Refreshing that tab resumes the same device; it does not add another. A closed tab stays listed until it is removed or ages out after a day. Rename it to identify its room or device. A device must remain awake, online and signed in; Mint cannot wake a closed browser. Background tabs may be suspended by the operating system.
 
 This describes the **browser device bridge**, not certified Expo remote-control
 or party parity. The native app preserves its own persistent audio engine and
@@ -30,7 +32,7 @@ Device and party actions do not acquire external media. Only existing, playable 
 
 `DeviceState` contains `{playing,time,duration,volume,trackId,queue,currentIndex,shuffle,repeat}` and optional `queueContext`/`queueEntryIds`. Without a context, `queue` is the full UUID list. With `{id,total,revision,offset,position,shuffle}`, it is only a bounded window; `currentIndex` is window-local and `position` is global. Entry IDs identify duplicate occurrences. Volume is 0–100. `DeviceHandoff` adds these queue fields to `{queue,currentIndex,position,playing,shuffle,repeat}`. Acknowledgment compares context identity/revision/global position, not identical hydrated windows. `applyHandoff` must reject blocked playback and resolve only after real destination playback confirmation. The callback's optional `AbortSignal` must be checked before playing so expired moves cannot start late.
 
-Commands are bound to an exact user, authenticated session, device, monotonic sequence and 20-second deadline. Device receiver tokens are held only in memory and hashed on the server. Polling atomically marks delivery; delivered commands are never reissued, even after a lost acknowledgment. This deliberately provides at-most-once execution rather than unsafe automatic retries. A device processes only one unacknowledged command at a time; missing acknowledgment is surfaced as failure. Each command must be explicitly retried by the user after a failure.
+Commands are bound to an exact user, authenticated session, device, monotonic sequence and 20-second deadline. The browser tab remembers its device id. Each page load reissues the receiver token, which is held only in memory and hashed on the server. Polling atomically marks delivery; delivered commands are never reissued, even after a lost acknowledgment. This deliberately provides at-most-once execution rather than unsafe automatic retries. A device processes only one unacknowledged command at a time; missing acknowledgment is surfaced as failure. Each command must be explicitly retried by the user after a failure.
 
 Heartbeat polling runs approximately every two seconds and omits the queue when it has not changed. Devices become offline after 25 seconds without a heartbeat. Commands older than one day and disconnected registrations older than one day are cleaned up during device activity. Request bodies are bounded to 3 MiB. All mutations require the exact configured `PUBLIC_URL` origin and approved session authentication; supplied user IDs cannot select an acting account.
 
@@ -38,7 +40,7 @@ REST endpoints:
 
 - `GET/POST /api/devices`: list/register.
 - `GET /api/devices/:id`: full owned-device state.
-- `POST /api/devices/:id/{poll,ack,commands,rename,revoke,handoff}`.
+- `POST /api/devices/:id/{resume,poll,ack,commands,position,rename,revoke,handoff}`. `position` shares a scrub with the account and does not move playback until a seek command is acknowledged.
 - `GET /api/devices/commands/:commandId`: command acknowledgment status, restricted to its original acting session.
 - `GET/POST /api/parties`: joined/hosted parties or create a party.
 - `POST /api/parties/join`: scoped invitation code.

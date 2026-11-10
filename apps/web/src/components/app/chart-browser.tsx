@@ -26,7 +26,7 @@ const action = "inline-flex min-h-11 items-center justify-center gap-2 rounded-f
 const statusNames = { requested: "Requested", processing: "Adding", ambiguous: "Pick a version", failed: "Couldn’t add" } as const;
 
 type AcquireJob = { view: number; chart: string; row: ChartRow; token?: string; youtubeUrl?: string };
-const requestGapMs = 1100;
+const requestGapMs = 0;
 
 export function ChartBrowser({ initial, member }: { initial: ChartPage; member: boolean }) {
   const [page, setPage] = useState(initial), [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
@@ -97,6 +97,7 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
     if (requesting?.view === view && requesting.id === job.row.id || waiting.some((queued) => queued.row.id === job.row.id)) return;
     setRowErrors((errors) => Object.fromEntries(Object.entries(errors).filter(([id]) => id !== job.row.id)));
     if (job.token) setResolution(null);
+    if (!job.token) setPage((current) => ({ ...current, items: current.items.map((item) => item.id === job.row.id ? { ...item, availability: "requested" as const, progress: null, reason: "Queued for matching" } : item) }));
     setWaiting((jobs) => [...jobs, { ...job, view: viewRef.current, chart: pageRef.current.chart.id }].slice(0, 25));
   };
   const play = async () => {
@@ -185,6 +186,12 @@ export function ChartBrowser({ initial, member }: { initial: ChartPage; member: 
               <ReportIssueButton className="min-h-11 rounded-control px-2 text-xs text-muted hover:bg-hover hover:text-fg"
                 context={`${row.title} — ${row.artist}`} icon={false} />
             </div> : row.availability === "ambiguous" && <p className="chart-row-reason text-xs leading-relaxed text-muted">Choose the version to add.</p>}
+            {member && row.availability === "failed" && /youtube/i.test(row.reason) && <form className="chart-row-reason mt-2 flex flex-wrap items-end gap-2" onSubmit={(event) => { event.preventDefault(); const input = new FormData(event.currentTarget).get("youtubeUrl"); request({ row, youtubeUrl: String(input ?? "").trim() }); }}>
+              <label className="min-w-0 flex-1 text-xs text-muted">YouTube URL
+                <input name="youtubeUrl" type="url" required maxLength={2048} placeholder="https://www.youtube.com/watch?v=…" className="mt-1 h-11 w-full rounded-full bg-elevated px-3 text-sm text-fg ring-1 ring-line" />
+              </label>
+              <button className={action}>Use this video</button>
+            </form>}
             {member && resolution?.row.id === row.id && <div ref={resolutionRef} tabIndex={-1} role="group" aria-label={`Choose the recording for ${row.title}`}
               onKeyDown={(event) => { if (event.key === "Escape") setResolution(null); }} className="mt-1 rounded-2xl bg-elevated p-4 sm:p-5">
           <ChartResolution row={row} results={resolution.results} disabled={requesting !== null || waiting.length > 0}

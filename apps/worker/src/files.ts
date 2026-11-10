@@ -46,6 +46,10 @@ export async function downloadToFile(
   });
   const tmp = `${dest}.part`;
   await pipeline(Readable.fromWeb(res.body as never), meter, createWriteStream(tmp));
+  if (bytes === 0) {
+    await fs.rm(tmp, { force: true });
+    throw new Error("Download was empty");
+  }
   await fs.rename(tmp, dest);
   await onProgress?.(1, bytes);
   const disposition = res.headers.get("content-disposition");

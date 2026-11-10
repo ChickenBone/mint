@@ -124,6 +124,7 @@ const adminDestinations = [
   { href: "/app/manage?tab=jobs", tab: "jobs", label: "Activity", icon: ListChecks, group: "Operations" },
   { href: "/app/manage?tab=workers", tab: "workers", label: "Workers", icon: Cpu, group: "Operations" },
   { href: "/app/manage?tab=analysis", tab: "analysis", label: "Analysis", icon: Waves, group: "Operations" },
+  { href: "/app/manage?tab=matching", tab: "matching", label: "Matching", icon: Sparkles, group: "Operations" },
 ] as const;
 
 const adminDestinationGroups = ["People", "Operations"].map((group) => ({

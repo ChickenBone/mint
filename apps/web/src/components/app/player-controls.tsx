@@ -30,19 +30,24 @@ export function PlaybackControls({ state, ready, command, expanded = false }: {
   </div>;
 }
 
-export function SeekControl({ state, ready, command }: {
+export function SeekControl({ state, ready, command, previewMs = null, onPreview }: {
   state: PlayerState; ready: boolean; command: (command: PlayerCommand) => void;
+  /** Position another device is dragging, in milliseconds. */
+  previewMs?: number | null;
+  onPreview?: (milliseconds: number | null) => void;
 }) {
   const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? previewMs ?? state.time;
   const seek = () => {
     if (draft !== null) command({ action: "seek", value: draft });
     setDraft(null);
+    onPreview?.(null);
   };
   return <label className="flex w-full items-center gap-2 text-[11px] text-muted tabular">
-    <span className="w-9 shrink-0 text-right">{timestamp(draft ?? state.time)}</span><span className="sr-only">Seek</span>
-    <input aria-label="Seek" aria-valuetext={`${timestamp(draft ?? state.time)} of ${timestamp(state.duration)}`} type="range" min="0" max={state.duration || 1} step="1000"
-      value={Math.min(draft ?? state.time, state.duration)} disabled={!ready || !state.track || !state.duration}
-      onChange={(event) => setDraft(Number(event.target.value))} onPointerUp={seek} onKeyUp={seek} onBlur={seek} onPointerCancel={() => setDraft(null)}
+    <span className="w-9 shrink-0 text-right">{timestamp(shown)}</span><span className="sr-only">Seek</span>
+    <input aria-label="Seek" aria-valuetext={`${timestamp(shown)} of ${timestamp(state.duration)}`} type="range" min="0" max={state.duration || 1} step="1000"
+      value={Math.min(shown, state.duration || shown)} disabled={!ready || !state.track || !state.duration}
+      onChange={(event) => { const next = Number(event.target.value); setDraft(next); onPreview?.(next); }} onPointerUp={seek} onKeyUp={seek} onBlur={seek} onPointerCancel={() => { setDraft(null); onPreview?.(null); }}
       className="h-8 min-w-0 flex-1 cursor-pointer accent-mint" />
     <span className="w-9 shrink-0">{timestamp(state.duration)}</span>
   </label>;

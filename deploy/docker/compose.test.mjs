@@ -180,6 +180,14 @@ test("chart metadata service is opt-in and isolated from secrets, media and publ
   assert.equal(nas.services["chart-source"].environment.MINT_CHARTS_ENABLED, "false");
 });
 
+test("song matching does not deploy a local model or Compose-managed provider key", () => {
+  const { services, networks } = resolve(source);
+  assert.equal(services.matcher, undefined);
+  assert.equal(networks.matching, undefined);
+  assert.equal(services.worker.environment.MATCHING_CLASSIFIER_URL, undefined);
+  assert.equal(services.worker.environment.OPENAI_API_KEY, undefined);
+});
+
 test("local pipeline is enabled and existing music is mounted read-only", () => {
   const { services } = resolve(source);
   assert.equal(services.worker.environment.REMOTE_DOWNLOADS, "never");

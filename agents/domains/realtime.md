@@ -26,7 +26,7 @@ Details: [architecture](../architecture.md#data-and-synchronization).
 - **Scope:** WebSocket service, Redis event channels, realtime tickets and live client components.
 - **Read before editing:** [agents/architecture.md](../architecture.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map realtime` (exports, line counts, cross-domain import edges).
 
 ### Owned files (9)

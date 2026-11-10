@@ -44,6 +44,21 @@ export interface TrackView {
   updatedAt: string;
 }
 
+/** Live position of one signed-in device. Time is seconds. */
+export interface PlaybackView {
+  deviceId: string;
+  deviceName: string;
+  playing: boolean;
+  time: number;
+  duration: number;
+  volume: number;
+  shuffle: boolean;
+  repeat: 0 | 1 | 2;
+  trackId: string | null;
+  scrubbing: boolean;
+  reportedAt: string;
+}
+
 export interface SyncState {
   status: "idle" | "syncing" | "error";
   message: string | null;
@@ -59,7 +74,8 @@ export type RealtimeEvent =
   | { type: "sync"; data: SyncState }
   | { type: "library"; data: { trackIds: string[] } }
   | { type: "access-request"; data: { pending: number } }
-  | { type: "worker"; data: WorkerView };
+  | { type: "worker"; data: WorkerView }
+  | { type: "playback"; data: PlaybackView };
 
 export async function publish(redis: Redis, channel: string, event: RealtimeEvent) {
   await redis.publish(channel, JSON.stringify(event));

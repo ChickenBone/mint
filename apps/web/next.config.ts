@@ -2,8 +2,15 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const dev = process.env.NODE_ENV === "development";
+const remoteDevHosts = (process.env.ALLOWED_ORIGINS ?? "").split(",").flatMap((entry) => {
+  try {
+    const url = new URL(entry.trim());
+    if (!url.hostname || url.hostname === "localhost" || url.hostname === "127.0.0.1") return [];
+    return [{ hostname: url.hostname, host: url.host }];
+  } catch { return []; }
+});
 // Headers are baked in at build time, so stay origin-agnostic: 'self' covers same-origin wss:// for /ws.
-const extraConnect = [process.env.NEXT_PUBLIC_WS_URL, dev && "ws://localhost:3001"].filter(Boolean).join(" ");
+const extraConnect = [process.env.NEXT_PUBLIC_WS_URL, dev && "ws://localhost:3001", ...remoteDevHosts.map((host) => `ws://${host.hostname}:3001`)].filter(Boolean).join(" ");
 
 const csp = [
   "default-src 'self'",
@@ -29,6 +36,8 @@ const config: NextConfig = {
   serverExternalPackages: ["@node-rs/argon2", "bullmq", "pg", "ioredis"],
   poweredByHeader: false,
   reactStrictMode: true,
+  allowedDevOrigins: remoteDevHosts.map((host) => host.hostname),
+  experimental: { serverActions: { allowedOrigins: remoteDevHosts.map((host) => host.host) } },
   async headers() {
     return [
       {
