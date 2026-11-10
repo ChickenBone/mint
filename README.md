@@ -8,6 +8,24 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 
 [Get started](#get-started) · [Self-hosting guide](docs/self-hosting.md) · [Screenshots](#screenshots) · [Updating](#updating-and-backups) · [Troubleshooting](#troubleshooting)
 
+## Current scope and roadmap
+
+The Expo Android/mobile app is Mint's consumer design authority. The existing
+browser listener remains supported but maintenance-only; the Next.js backend,
+API and administration remain active. Plex stays read-only. Native Search
+currently queries the installed library and MusicBrainz recording metadata;
+missing recordings still require **Add to library**. The separate
+[`services/catalog`](services/catalog/README.md) service is not integrated,
+and automatic search-miss imports are not shipped.
+
+The evidence and next steps are tracked in [#4's listening baseline PR](https://github.com/ChickenBone/mint/pull/11),
+[#5's required native HTTP CI PR](https://github.com/ChickenBone/mint/pull/10),
+[#6's bounded local Search paging PR](https://github.com/ChickenBone/mint/pull/9),
+and [#8's library-first contract PR](https://github.com/ChickenBone/mint/pull/12).
+The #8 contract is documented in [native setup](docs/mobile.md#library-first-catalog-and-import-contract-proposed-v1);
+it defines follow-on work, not current runtime behavior. [#7](https://github.com/ChickenBone/mint/issues/7)
+tracks physical Android playback verification; no device certification is claimed.
+
 ![Mint home with personal recommendations, album artwork and a persistent music player](docs/screenshots/home.png)
 
 ## What you can do
@@ -211,6 +229,27 @@ The worker applies database migrations; update it **before** web. In a NAS edito
 | An image pull is denied | Confirm the tag exists. Private forks/packages require GHCR sign-in with `read:packages`. |
 
 Use `docker compose ps` and `docker compose logs --tail=100 worker` for details. Review logs before sharing: tokens, paths and library metadata can be sensitive. [More troubleshooting](docs/self-hosting.md#troubleshooting).
+
+## Development and verification
+
+Use Node.js 22+ and npm from the repository root:
+
+```bash
+npm ci
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+`npm run agents -- affected` lists the focused checks for changed domains.
+Some database/integration tests need isolated fixtures; use the setup in the
+linked domain guide and never point destructive tests at a deployment. The
+native HTTP fixture verifies transport contracts, not audible playback or
+physical Android behavior. Browser-rendered screenshots and passing typechecks
+are not device evidence. Worker tests that create symlinks or assert POSIX path
+semantics need a compatible environment; the root suite may fail on Windows
+without symlink privileges.
 
 ## Advanced setup and development
 

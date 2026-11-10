@@ -166,6 +166,156 @@ compatibility retain the existing worker behavior. Artwork uses public
 `/api/artwork/:id`, a separately signed worker purpose; artwork requests do
 not send native bearer credentials to upstream image hosts.
 
+## Library-first catalog and import contract (proposed v1)
+
+This is a contract for follow-on work, not a description of shipped behavior.
+Native Search currently returns local catalog pages and separate MusicBrainz
+recording candidates; a member must still choose **Add to library**, and the
+requested stage is kept only in screen state. `services/catalog` remains
+standalone. Until the follow-on implementation lands, local search and playback
+must continue to work without it. The bounded Plex indexer in
+`apps/worker/src/library-index.ts` upserts existing tracks by
+`existingLibraryKey`; that is an identity seam, not a catalog export or a
+resumable crawler.
+
+### Identity and ownership
+
+| Reference | Contract |
+| --- | --- |
+| Local playable entry | Keep Mint `trackId` and each Plex `existingLibraryKey` (`server:section:ratingKey`) distinct. An indexed original is read-only and a replacement/upgrade is separate. |
+| Recording | Preserve a MusicBrainz recording ID when confidently known. A recording identity is not a release/edition identity; never merge local rows or select a playable file by title/artist similarity alone. |
+| Release and artist | Preserve release-group/release and artist MBIDs when available. The current schema has recording, release-group and artist IDs but no release ID; retain ambiguity and provenance until a more specific identity is verified. |
+| Seed/provenance | Record installation/source, entity kind/key, originating library track or explicit search demand, provider/source, relationship edge and contract version. Do not write directly across service databases. Exchange bounded records through an owned API or queue contract. |
+| Member intent | Keep likes and each editable playlist occurrence/revision account-owned and durable. Source-managed imports remain read-only; a copied collection is editable. Intent is not shared acquisition state. |
+
+### Seed, refresh and expansion
+
+1. A configured installation may seed from its existing indexed artists,
+   albums and tracks. Use the indexer's bounded pages and stable
+   `existingLibraryKey`; reuse existing external IDs, not inferred matches.
+   Keep edition/recording references even when enrichment jobs are deduplicated.
+2. Checkpoint each scan by installation, source/section, scan generation and
+   source cursor (plus last stable identity). A restart resumes from the
+   checkpoint; a changed/invalid source snapshot can restart an idempotent pass.
+   Repeated pages and restarts must not multiply jobs. A later refresh queues
+   only new or materially changed identities, not the whole library.
+3. Use a shared job key of entity kind plus verified external identity and
+   enrichment-policy version. Without an external ID, use a namespaced local
+   seed key; do not merge unrelated entities by normalized name. Normalized
+   repeated search demand may coalesce discovery work, but never erases a
+   member's separate intent.
+4. Persist bounded pages/checkpoints and expose scanned, queued, completed,
+   deferred, failed and last-progress values. Apply backpressure rather than
+   filling memory or the whole job queue. The installation owns its seed
+   control; member search adds targeted seeds, not global discovery.
+5. Related-artist/release expansion must include an attributable edge back to
+   one or more library/search seeds. An operator sets depth, per-seed fan-out,
+   per-source rate/concurrency/storage budgets and installation-wide job/storage
+   caps. The first implementation contract caps depth at one, five related
+   candidates per seed and 1,000 related candidates per installation per day;
+   operators may disable or lower expansion. Expansion never downloads all
+   tracks on an artist/album or treats metadata adjacency as audio intent.
+6. Pause stops new work without losing checkpoints; resume is idempotent.
+   Shared provider backoff applies across users and jobs. Quota exhaustion,
+   operator denial, unavailable source and retry-after are observable deferred
+   or blocked states, not endless retries or success-shaped results.
+
+For the synthetic 20,000-track acceptance fixture, use 500 artists, 2,000
+release groups and 18,000 distinct recording IDs (including 2,000 recordings
+present on multiple local editions). With 200 source rows per page, the first
+pass must produce exactly 20,500 distinct enrichment seeds, at most 500
+outstanding jobs and at most two active lookups per source; draining resumes
+from checkpoints. A second unchanged pass adds zero jobs. Adding 100 records
+with 90 new recording IDs, eight new release groups and two new artists adds
+exactly 100 seeds. Related work never exceeds the configured five-per-seed or
+1,000-per-installation daily ceiling. For budget tests, cap metadata storage at
+64 MiB per installation and 16 MiB per source; defer new writes when either cap
+is reached. These are contract fixture limits, not claims about current
+runtime configuration.
+
+### Search miss, request lifecycle and playback
+
+A **genuine miss** is a complete, successful search of the local library and
+all applicable configured metadata pages for the requested entity kind with
+zero candidates. A provider error, timeout, invalid response, disabled source,
+partial page, stale/incomplete result or transient empty state is not a miss.
+At least one eligible discovery provider for the entity kind must complete; if
+none is configured or available, the result is unknown/deferred, not a miss.
+Keep local matches usable while external enrichment is unavailable. Browsing,
+recommendations and prefetch are never request triggers.
+
+On a genuine artist, album or song miss, create/coalesce the targeted discovery
+seed automatically; do not ask for another confirmation. For artist/album
+metadata, this does not authorize bulk audio acquisition. For a song, queue
+audio only after a recording/version is confidently resolved and member
+permissions, operator policy, configured authorized sources, storage and
+concurrency quotas all allow it. An ambiguous identity stays ambiguous; a
+blocked/misconfigured source reports the real state. No source authorization or
+legal policy is inferred by Mint.
+
+An explicit **Like** or **Play** on an unavailable song is also a targeted
+member intent and starts the same request path when policy allows; a blocked
+request reports its actual state. It does not turn a browse, recommendation or
+prefetch into acquisition. **Play** stays ephemeral: it can request
+availability, but must not auto-resume after the listener moves on.
+
+Keep member intent and shared request state as independent axes:
+
+| Member intent | Contract |
+| --- | --- |
+| `none` | No saved request intent. A shared import may still exist for another member. |
+| `liked` | Account-owned; survives shared failure and attaches to the resolved playable track without exposing another member's like. |
+| `playlist-entry` | Account/collection/entry/revision-owned; preserves order and deliberate duplicate occurrences. Removing one member's entry does not cancel shared work. |
+| `play` | Short-lived foreground action only; never durable autoplay intent. |
+
+Intent survives import failure. Successful availability links the same resolved
+track to saved intent; source-managed imports are not edited. Metadata
+enrichment has its own `queued → processing → enriched` lifecycle, with
+`failed`, `ambiguous` and `unavailable` outcomes; an enriched artist or album
+does not imply an audio request.
+
+| Shared song-acquisition state | Listener meaning and transition |
+| --- | --- |
+| `requested` | A durable targeted seed/request exists; duplicate users/searches join the same eligible work. |
+| `processing` | Discovery or acquisition is active. For a not-yet-playable track, map queued/matching/searching/downloading/importing/tagging/scanning/analyzing stages to this state; `available` takes precedence as soon as the existing `PLAYABLE` rule is true. Do not expose worker jargon as the client contract. |
+| `available` | A selected track is playable under the existing `PLAYABLE` rule. Attach preserved member likes/playlist intent without changing source-managed collections. |
+| `failed` | Work failed with a safe reason and retry eligibility. Keep member intent; an idempotent retry resumes the same identity rather than creating duplicate tracks/jobs. |
+| `ambiguous` | More than one plausible recording/release/version or conflicting library match needs resolution. Do not silently select or acquire a different edition. |
+| `unavailable` | No configured authorized source, operator policy denial or exhausted quota prevents work. Show whether an operator/configuration change can unblock it; do not retry indefinitely. |
+
+Expose an account-authorized durable status lookup keyed by a stable request
+reference. A client response needs a versioned entity reference, request ID and
+listener-safe state/retry information; it must not expose worker secrets,
+private paths or raw provider errors. Current `{ trackId, needsQueue, stage }`
+and local requested-state are legacy behavior, not this durable contract.
+Cross-user retries and concurrent requests are idempotent by verified entity
+identity; each member's like and playlist entry remains independent through
+failure. `Play` is an ephemeral action: a request never pauses/replaces current
+audio, completion never steals playback or revives an expired play intent, and
+late availability only makes the item playable.
+
+### Contract fixtures and next implementation
+
+The owning tests must also prove: local search works during a metadata-provider
+outage; genuine artist/album/song misses auto-seed; provider failures and
+incomplete pages do not; repeated normalized searches and concurrent users
+share one job; browse/like/play do not cause unrelated acquisition; operator
+denial, quotas and unavailable sources remain truthful; ambiguous/version-
+conflicting matches do not acquire; failure then retry and status after relaunch
+preserve identity/intent; and completion after navigation does not affect the
+player. Use synthetic or licensed fixture metadata/media only.
+
+The smallest implementation slice is an account-scoped durable request/status
+contract for one confidently identified missing song, with shared idempotent
+deduplication and native status refresh; keep the local player independent.
+**Owners:** `mobile-contracts` defines/version-checks the DTO and allowlisted
+route; `collections` persists member intent; `acquisition` owns shared
+deduplication, stages and retries; `library` validates identity against local
+tracks; `mobile-search` presents genuine-miss and recovery states. This slice
+requires an explicit migration and focused fixture tests. It does not wire the
+standalone catalog or expand into bulk imports. Artist/album seed handling and
+bounded adjacent metadata growth follow the same contract.
+
 ## Secondary Expo web target
 
 For a web app served from a different origin, configure the **server-only**
