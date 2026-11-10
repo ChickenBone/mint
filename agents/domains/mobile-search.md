@@ -25,11 +25,11 @@ Use generated focused tests; new endpoints require native-contract and backend o
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map mobile-search` (exports, line counts, cross-domain import edges).
 
-### Owned files (12)
+### Owned files (13)
 
 - `apps/mobile/app/` `search.tsx`
 - `apps/mobile/app/browse/` `[facet].tsx`
-- `apps/mobile/src/features/search/` `BrowseAll.tsx`, `BrowseCard.tsx`, `BrowseCategoryScreen.tsx`, `SearchScreen.tsx`, `browse-model.ts`, `search-model.ts`, `useBrowseCatalog.ts`
+- `apps/mobile/src/features/search/` `BrowseAll.tsx`, `BrowseCard.tsx`, `BrowseCategoryScreen.tsx`, `SearchScreen.tsx`, `browse-model.ts`, `search-model.ts`, `useBrowseCatalog.ts`, `useLocalSearchPage.ts`
 - `apps/mobile/tests/` `search-browse-hooks.test.ts`, `search-browse.test.ts`, `search-model.test.ts`
 
 ### Validate
@@ -38,7 +38,7 @@ Owned tests: 3.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-model.test.ts
+npm exec -w @mint/mobile -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts src/features/search/useLocalSearchPage.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-model.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-model.test.ts
 ```
 

@@ -13,7 +13,7 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 | [`mobile-artists`](mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation | 4 | `mobile` `mobile-contracts` |
 | [`mobile-albums`](mobile-albums.md) | Album detail navigation, album identity and full-selection playback actions | 4 | `mobile` `mobile-contracts` |
 | [`mobile-playlists`](mobile-playlists.md) | Playlist and liked-song details, occurrence-based editing and collection actions | 7 | `mobile` `mobile-contracts` |
-| [`mobile-search`](mobile-search.md) | Local and recording Search, Browse all discovery/categories and read-only chart destinations | 12 | `mobile` `mobile-contracts` `mobile-playback` |
+| [`mobile-search`](mobile-search.md) | Local and recording Search, Browse all discovery/categories and read-only chart destinations | 13 | `mobile` `mobile-contracts` `mobile-playback` |
 | [`mobile-your-music`](mobile-your-music.md) | Your Library overview, collection browsing, folders/pins and playlist invitations | 4 | `mobile` `mobile-contracts` |
 | [`mobile-settings`](mobile-settings.md) | Listener settings, privacy/history, local storage, developer options, app information and compatible update checks | 6 | `mobile` `mobile-playback` |
 | [`mobile-player`](mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds | 17 | `mobile` `mobile-contracts` `mobile-home` `mobile-playback` |
