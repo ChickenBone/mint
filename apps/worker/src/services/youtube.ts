@@ -79,18 +79,18 @@ export async function findRequestedVideo(userId: string, track: { title: string;
   const classified = await classifyRequestedVideo(track, candidates);
   if (classified.status === "selected") {
     const chosen = candidates.find((video) => video.id === classified.id);
-    if (chosen && (isPreviewUpload(chosen.title) || !sameRequestedVersion(track.title, chosen.title))) {
-      log.info({ videoId: classified.id, title: chosen.title }, "OpenAI selected a different version; using deterministic matching");
+    if (!chosen || isPreviewUpload(chosen.title) || !sameRequestedVersion(track.title, chosen.title)) {
+      log.info({ videoId: classified.id, title: chosen?.title }, "OpenAI selection did not identify a usable candidate; using deterministic matching");
     } else {
       log.info({ videoId: classified.id, confidence: classified.confidence }, "OpenAI selected YouTube recording");
       return classified.id;
     }
-  }
-  if (classified.status === "none") {
+  } else if (classified.status === "none") {
     log.info({ confidence: classified.confidence }, "OpenAI rejected all YouTube candidates");
     return null;
+  } else {
+    log.info({ reason: classified.reason, title: track.title, artist: track.artist }, "OpenAI did not select a recording; using deterministic matching");
   }
-  log.info({ reason: classified.reason, title: track.title, artist: track.artist }, "OpenAI did not select a recording; using deterministic matching");
   return selectRequestedVideo(track, candidates);
 }
 
