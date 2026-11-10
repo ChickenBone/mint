@@ -222,7 +222,7 @@ resumable crawler.
 
 For the synthetic 20,000-track acceptance fixture, use 500 artists, 2,000
 release groups and 18,000 distinct recording IDs (including 2,000 recordings
-present on multiple local editions). With 250 source rows per page, the first
+present on multiple local editions). With 200 source rows per page, the first
 pass must produce exactly 20,500 distinct enrichment seeds, at most 500
 outstanding jobs and at most two active lookups per source; draining resumes
 from checkpoints. A second unchanged pass adds zero jobs. Adding 100 records
