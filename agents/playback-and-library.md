@@ -76,6 +76,31 @@ cache, and authenticated lyric API responses remain private/no-store. See the
 [read coverage and retention table](architecture.md#server-side-public-read-caches);
 this does not introduce offline/service-worker lyric caching.
 
+## Search, metadata and import boundary
+
+Native Search currently combines bounded results from the selected Mint
+server's library with a separate MusicBrainz recording search in “Beyond your
+library.” The MusicBrainz results are metadata candidates, not records from
+Mint's separate `services/catalog` crawler. Today a member must choose
+**Add to library** for a missing recording; local Search does not automatically
+import a miss. Its visible requested-stage label is held in the Search
+component's local state, not durable request-status recovery across navigation
+or relaunch. See the [core-listening baseline](architecture.md#core-listening-baseline)
+for the current capability/evidence matrix and the existing-library seed seam.
+
+The confirmed next-wave decision changes that behavior: a genuine search miss
+for an artist, album or song will seed discovery and queue an import
+automatically, without another listener confirmation. Do not treat provider
+errors, timeouts, incomplete pages or transient empty responses as confirmed
+misses. Keep metadata enrichment separate from audio acquisition, enforce
+member permissions, operator controls and configured authorized sources, and
+show truthful progress/failure/retry status. Related artists/releases discovered
+from the library are metadata seeds, not blanket permission to acquire their
+audio. Explicit Like/Play intent remains supported, and browsing,
+recommendations and prefetching do not acquire music. This is a future contract,
+not current behavior; [#8](https://github.com/ChickenBone/mint/issues/8) owns its
+definition and implementation boundary.
+
 ## Collections, devices and offline
 
 Preserve native playlists, duplicates/order, smart rules, collaboration, folders/pins and separate source-managed imports. Copying an import creates an editable Mint copy, never upstream edits.

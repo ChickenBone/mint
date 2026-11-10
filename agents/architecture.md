@@ -37,11 +37,74 @@ existing backend business rules.
 
 Do not weaken these boundaries to simplify Vercel hosting, browser access, worker onboarding or reverse-proxy troubleshooting.
 
+## Core listening baseline
+
+This is the current compatibility baseline, not a feature-parity or release-readiness claim.
+
+| Capability | Current implementation and evidence | Verified scope | Owner / smallest next check |
+| --- | --- | --- | --- |
+| Sign-in and account scope | Native auth uses revocable account/installation-bound bearer sessions (`packages/client/src/auth.ts`, `apps/web/src/app/api/native/auth/`); storage cleanup ordering is covered by `apps/mobile/tests/auth-storage.test.ts` and transport boundaries by `apps/web/tests/native-auth.test.ts`. | Native credentials and account cleanup have focused tests. The real Next.js login/session/audio fixture exists in `apps/web/tests/native-http.integration.test.ts`, but this CI workflow does not set its required `NATIVE_HTTP_DATABASE_URL`. | `mobile` / `mobile-contracts` / `deploy`: wire and run the real fixture in CI while retaining web/native isolation: [#5](https://github.com/ChickenBone/mint/issues/5). |
+| Library browse and search | `apps/mobile/src/features/search/SearchScreen.tsx` queries the selected server's local catalog and separately presents MusicBrainz recording results. The screen currently requests at most 50 songs and 18 albums/artists per query. | Search is bounded and distinguishes local matches from external metadata; a MusicBrainz candidate still requires the explicit **Add to library** action. | `mobile-search`: make all local matches reachable with bounded paging: [#6](https://github.com/ChickenBone/mint/issues/6). |
+| Playback and queue continuity | The native engine keeps queue state across routes, progressively hydrates frozen collection pages, and restores account/server-scoped queues paused (`apps/mobile/src/playback/`, `apps/mobile/tests/playback-engine.test.ts`). | Tests cover duplicate occurrence identity, queue edits that preserve the current item, paused restoration, seek/repeat state and account-key isolation. | `mobile-playback`: verify the shipped Android path on a physical device; source/unit tests are not device evidence: [#7](https://github.com/ChickenBone/mint/issues/7). |
+| Likes and playlists | Member collections are served through the music API and `packages/core/src/db/music.ts`; `apps/web/tests/music-platform.test.ts` covers member isolation, ordered duplicate entries, revisions, imported-playlist copies and separate native/source-managed likes. | PostgreSQL fixtures are configured in CI through `MUSIC_TEST_DATABASE_URL`; this does not establish a successful CI run for a particular revision. | `collections` / `acquisition` / `mobile-contracts`: preserve read-only source imports and member intent in the catalog/import contract: [#8](https://github.com/ChickenBone/mint/issues/8). |
+
+These are different evidence levels: source and unit assertions establish only
+their tested behavior; database integration tests require their configured
+fixture; neither source tests nor an OTA/build record is physical-device
+evidence. The native HTTP fixture above is currently not wired into CI, and no
+physical Android playback result is claimed here.
+
+### MusicBrainz search, catalog isolation and library seed seam
+
+Mint's current listener Search requests local results from the selected Mint
+server and, separately, shows current MusicBrainz recording-search results in
+“Beyond your library.” This is metadata search, not a search against the
+standalone catalog. A result not in the library is not imported until the
+member explicitly selects **Add to library**. The worker's MusicBrainz matching
+and enrichment paths are also distinct from the standalone catalog service.
+The current Search surface keeps the returned request stage in component-local
+state; issue #8 must define durable request status and recovery across navigation
+or relaunch.
+
+`services/catalog` is an independently operated metadata service with its own
+storage and crawler; its README explicitly says **“No Mint integration.”**
+Nothing currently exports Mint's indexed library into that service or seeds it
+from listener searches. The existing read-only Plex indexer is a concrete
+future seed source: it reads bounded Plex pages and upserts `tracks` by the
+stable server/section/rating-key `existingLibraryKey`, alongside the existing
+library match key and available recording IDs (`apps/worker/src/library-index.ts`,
+`packages/core/migrations/0004_existing_library.sql`). This is an indexing seam,
+not a catalog export or crawler integration. Issue [#8](https://github.com/ChickenBone/mint/issues/8)
+owns the bounded, resumable library-first seed/export contract and adjacent
+metadata growth; define an explicit exchange boundary rather than cross-service
+database writes. It must not require a worldwide catalog or block local search
+and playback.
+
+The confirmed next-wave behavior is intentionally different from today's
+explicit-only request flow: a **genuine search miss** for an artist, album or
+song will seed discovery and queue an import automatically, without another
+listener confirmation. A provider error, timeout, incomplete page or transient
+empty response is not a genuine miss. This future behavior remains subject to
+member permissions, operator policy and authorized configured sources; it does
+not make metadata adjacency an instruction to acquire audio. Keep honest,
+durable status and preserve explicit Like/Play intent. Issue #8 defines this
+contract; automatic search-miss imports are not implemented by this baseline.
+
 ## Data and synchronization
 
 One shared library can serve many members, while likes, playlists, history, offline state and source choices retain their intended account ownership.
 
 Reuse shared view/protocol helpers so APIs, realtime events and UI agree. Preserve signed choices, request ownership, deterministic queue jobs, transactional/advisory-lock deduplication and conflict-safe revisions.
+
+For core listening changes, treat existing media and user state as migration
+inputs to preserve, not disposable fixtures: Plex and its original files remain
+read-only; library indexing must remain idempotent; likes stay member-owned;
+playlist entry identity, duplicate occurrence, order and revision stay stable;
+source-managed playlists remain distinct from editable copies; and saved queues
+remain scoped to the selected server/account and restore paused. Keep browser
+routes/features and backend/API compatibility intact while native consumer UX
+evolves. Database changes are additive migrations; never rewrite applied
+migrations, reset existing installations, or silently discard provider data.
 
 WebSockets enhance server-rendered state; they are not the only recovery mechanism. Preserve polling/invalidation fallbacks where implemented. Public events must not reveal which member liked a track.
 
