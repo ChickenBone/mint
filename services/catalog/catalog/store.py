@@ -11,10 +11,11 @@ from psycopg.types.json import Jsonb
 from catalog.config import Settings
 from catalog.model import Entity, chart_weight, entity_key
 from catalog.providers import HOSTS, SOURCES, lookup_task, task_source
+from catalog.vectors import Vectors
 
 
 BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','deezer-albums',
-    'deezer-tracks','audius-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums')
+    'deezer-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums')
     OR (task IN ('lookup','deezer-lookup') AND kind IN ('artist','album')))"""
 
 
@@ -37,14 +38,75 @@ class Store:
     def close(self):
         self.pool.close()
 
+    def purge_audius(self, vectors: Vectors):
+        """Remove Audius-owned catalog data and its rebuildable vectors."""
+        with self.transaction() as conn:
+            conn.execute("SELECT entities FROM catalog_budget FOR UPDATE")
+            entities = conn.execute(
+                """SELECT key,source,kind,revision,indexed_revision FROM entities
+                   WHERE source='audius' OR origin='audius' ORDER BY key"""
+            ).fetchall()
+            keys = [row["key"] for row in entities]
+            counts = {}
+            for row in entities:
+                source_counts = counts.setdefault(row["source"], [0, 0])
+                source_counts[0] += 1
+                source_counts[1] += row["revision"] == row["indexed_revision"]
+            artist_data_removed = any(row["kind"] == "artist" for row in entities)
+            if not artist_data_removed:
+                artist_data_removed = conn.execute(
+                    """SELECT EXISTS(SELECT 1 FROM entity_links
+                       WHERE provider='audius' AND kind='artist') AS exists"""
+                ).fetchone()["exists"]
+
+            jobs_removed = conn.execute(
+                """DELETE FROM jobs
+                   WHERE source='audius' OR task=ANY(%s) OR entity_key=ANY(%s)""",
+                (["audius-chart", "audius-lookup", "audius-tracks"], keys),
+            ).rowcount
+            conn.execute("DELETE FROM edges WHERE source=ANY(%s) OR target=ANY(%s)", (keys, keys))
+            conn.execute(
+                "DELETE FROM chart_signals WHERE chart LIKE 'audius:%%' OR key=ANY(%s)",
+                (keys,),
+            )
+            conn.execute("DELETE FROM entity_links WHERE provider='audius' OR key=ANY(%s)", (keys,))
+            conn.execute("DELETE FROM entity_annotations WHERE key=ANY(%s)", (keys,))
+            conn.execute("DELETE FROM vector_outbox WHERE key=ANY(%s)", (keys,))
+            conn.execute("DELETE FROM activity WHERE source='audius' OR key=ANY(%s)", (keys,))
+            if keys:
+                conn.execute("DELETE FROM entities WHERE key=ANY(%s)", (keys,))
+                conn.execute(
+                    "UPDATE catalog_budget SET entities=GREATEST(0,entities-%s)",
+                    (len(keys),),
+                )
+            for source, (entity_count, indexed_count) in counts.items():
+                conn.execute(
+                    """UPDATE source_metrics SET entities=GREATEST(0,entities-%s),
+                       indexed=GREATEST(0,indexed-%s) WHERE source=%s""",
+                    (entity_count, indexed_count, source),
+                )
+            conn.execute("DELETE FROM source_metrics WHERE source='audius'")
+            conn.execute("DELETE FROM source_controls WHERE source='audius'")
+            conn.execute("DELETE FROM host_budgets WHERE host=%s", ("discoveryprovider.audius.co",))
+            if artist_data_removed:
+                from catalog.identity import rebuild_artists
+
+                rebuild_artists(conn)
+        vectors_removed = vectors.delete_source("audius")
+        return {
+            "entities_removed": len(entities),
+            "jobs_removed": jobs_removed,
+            "vectors_removed": vectors_removed,
+        }
+
     def migrate(self):
         with self.pool.connection() as conn, conn.transaction():
             conn.execute("SELECT pg_advisory_xact_lock(71628401)")
             conn.execute(Path(__file__).with_name("schema.sql").read_text())
             version = conn.execute("SELECT max(version) AS version FROM catalog_schema").fetchone()
-            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8):
+            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
                 raise ValueError("Unsupported catalog schema version")
-            for target in range(version["version"] + 1, 9):
+            for target in range(version["version"] + 1, 10):
                 conn.execute(Path(__file__).with_name(f"schema-v{target}.sql").read_text())
                 if target == 4:
                     from catalog.identity import rebuild_artists
@@ -106,7 +168,7 @@ class Store:
             if self.settings.youtube_enabled:
                 for channel in self.settings.youtube_channels:
                     self.enqueue(conn, "yt-feed", "global", "artist", channel, 20)
-            for source in ("deezer", "audius", "archive", "openverse", "openwhyd"):
+            for source in ("deezer", "archive", "openverse", "openwhyd"):
                 if self.settings.enabled(source):
                     self.enqueue(
                         conn,
@@ -122,13 +184,16 @@ class Store:
 
         budget = conn.execute("SELECT entities FROM catalog_budget FOR UPDATE").fetchone()
         inserted, accepted = ingest(
-            conn, entities, self.settings.max_entities - budget["entities"],
+            conn,
+            entities,
+            self.settings.max_entities - budget["entities"],
             merge_relationships=merge_relationships,
         )
         if schedule:
             targets = {
                 tuple(key.split(":"))
-                for item in accepted for key in (*item.artist_keys, *item.album_keys)
+                for item in accepted
+                for key in (*item.artist_keys, *item.album_keys)
             }
             targets.update(
                 (item.source, item.country, item.kind, item.provider_id) for item in accepted
@@ -138,11 +203,18 @@ class Store:
                 if self.settings.enabled(source):
                     key = entity_key(country, kind, identifier, source)
                     task = lookup_task(source, kind)
-                    jobs.append({
-                        "key": f"{task}:{key}:0", "task": task, "entity_key": key,
-                        "country": country, "kind": kind, "provider_id": identifier,
-                        "source": source, "host": HOSTS[source],
-                    })
+                    jobs.append(
+                        {
+                            "key": f"{task}:{key}:0",
+                            "task": task,
+                            "entity_key": key,
+                            "country": country,
+                            "kind": kind,
+                            "provider_id": identifier,
+                            "source": source,
+                            "host": HOSTS[source],
+                        }
+                    )
             if jobs:
                 conn.execute(
                     """INSERT INTO jobs(key,task,entity_key,country,kind,provider_id,source,host)
@@ -206,14 +278,21 @@ class Store:
                      raw_value bigint,position integer)
                    ORDER BY chart,key,position DESC ON CONFLICT(chart,key)
                    DO UPDATE SET weight=excluded.weight,raw_value=excluded.raw_value,observed_at=now()""",
-                (Jsonb([
-                    {
-                        "chart": f"{item.source}:{kind}:{item.provider_id}", "key": item.key,
-                        "weight": math.log1p(value) / 20, "signal_kind": kind,
-                        "raw_value": value, "position": position,
-                    }
-                    for position, (item, kind, value) in enumerate(discovery.metrics)
-                ]),),
+                (
+                    Jsonb(
+                        [
+                            {
+                                "chart": f"{item.source}:{kind}:{item.provider_id}",
+                                "key": item.key,
+                                "weight": math.log1p(value) / 20,
+                                "signal_kind": kind,
+                                "raw_value": value,
+                                "position": position,
+                            }
+                            for position, (item, kind, value) in enumerate(discovery.metrics)
+                        ]
+                    ),
+                ),
             )
         if discovery.annotations:
             conn.execute(
@@ -222,10 +301,14 @@ class Store:
                    jsonb_to_recordset(%s) AS a(key text,metadata jsonb,position integer)
                    ORDER BY key,position DESC
                    ON CONFLICT(key) DO UPDATE SET metadata=excluded.metadata""",
-                (Jsonb([
-                    {"key": key, "metadata": metadata, "position": position}
-                    for position, (key, metadata) in enumerate(discovery.annotations)
-                ]),),
+                (
+                    Jsonb(
+                        [
+                            {"key": key, "metadata": metadata, "position": position}
+                            for position, (key, metadata) in enumerate(discovery.annotations)
+                        ]
+                    ),
+                ),
             )
         if discovery.links:
             conn.execute(
@@ -235,14 +318,23 @@ class Store:
                    AS l(key text,provider text,kind text,identifier text,url text,position integer)
                    ORDER BY key,provider,kind,identifier,position DESC
                    ON CONFLICT(key,provider,kind,identifier) DO UPDATE SET observed_at=now()""",
-                (Jsonb([
-                    {
-                        "key": key, "provider": source, "kind": kind, "identifier": identifier,
-                        "url": url, "position": position,
-                    }
-                    for position, (key, source, kind, identifier, url)
-                    in enumerate(discovery.links)
-                ]),),
+                (
+                    Jsonb(
+                        [
+                            {
+                                "key": key,
+                                "provider": source,
+                                "kind": kind,
+                                "identifier": identifier,
+                                "url": url,
+                                "position": position,
+                            }
+                            for position, (key, source, kind, identifier, url) in enumerate(
+                                discovery.links
+                            )
+                        ]
+                    ),
+                ),
             )
         for key, source, kind, identifier, url in discovery.links:
             if kind == "artist":

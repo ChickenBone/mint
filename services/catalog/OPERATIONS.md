@@ -18,15 +18,14 @@ volumes are confined to this directory/project.
 | YouTube Music | Unauthenticated `ytmusicapi` charts, artists, albums, songs and bounded chart playlists | Country chart seeds expand through explicit browse/video IDs. Unofficial access can change or fail; no credentials, account access or challenge bypass. Unranked chart entries remain unranked. |
 | Spotify / SoundCloud | Public oEmbed lookups for explicitly seeded IDs/slugs | Limited metadata, not public catalog/chart/search APIs. No token/client-ID extraction. |
 | Deezer | Public charts and artist/album/track metadata | Explicit positions only; artist albums and album tracks paginate with a 10,000-offset cap. |
-| Audius | Public trending/user/track metadata | Raw plays, bounded user-track pagination to 10,000-offset cap; attribution links use the stable metadata endpoint rather than invented UI routes. |
 | Internet Archive | Live Music Archive top-download search and projected item metadata | Item is a live set/album; downloads are item-scoped. No media manifest or files downloaded. |
 | Wikidata | Explicit Q-ID metadata and asserted provider IDs | Caller supplies kind; no name matching. Labels prefer English, then multilingual, then a deterministic available language; `label_language` preserves provenance. Amazon ASINs remain product links, never fake Amazon Music API results. |
 | Openverse | Music-only metadata feed and item lookup | Requires stored license URL, attribution and source landing-page link. No audio or embed HTML retained. |
 | Discogs | Public artist/master/release metadata, paginated artist releases; local CC0 XML dumps | Artist IDs numeric, albums prefixed `m`/`r` to separate masters/editions. Explicit genres/credits, separate styles, scoped release `have`/`want` counts. Minimum 2.5s/request; no authenticated search or tracklist-derived song IDs. |
 | Openwhyd | Public current hot-track export, at most 20 results | Discovery-only: stores explicit YouTube/SoundCloud identities, with posts/reposts/likes when present. Minimum 2s/request. No user metadata, comments, media URLs, inferred genres or historical coverage claim. |
 
-See [SOURCES.md](SOURCES.md) for 27 researched options and source references.
-Nine additional adapters are opt-in through `PUBLIC_SOURCES`; existing `.env`
+See [SOURCES.md](SOURCES.md) for 26 researched options and source references.
+Eight additional adapters are opt-in through `PUBLIC_SOURCES`; existing `.env`
 files retain their previous configuration. Spotify, SoundCloud and Wikidata need
 explicit seeds or supported crosswalks; they do not have automatic chart feeds.
 New public adapters reject redirects, use fixed HTTPS endpoints and share the
@@ -44,12 +43,39 @@ Genre coverage depends on the provider and record type. MusicBrainz lookups
 request public `inc=genres` on the existing request, not arbitrary tags or
 authenticated user genres. Apple supplies explicit genre labels; Deezer's full
 album payloads can supply genres, while tracks and artists generally do not.
-Audius songs and Openverse records retain their explicit genres. Missing genres
-remain missing: album or artist genres are not silently copied onto songs, and
+Openverse records retain their explicit genres. Missing genres remain missing:
+album or artist genres are not silently copied onto songs, and
 YouTube categories or oEmbed titles are not interpreted as musical genres.
 Partial catalog pages can lack tags until their full lookups run.
 Updating the parser does not instantly retag existing records: their scheduled
 lookups must run, or an operator can seed a specific ID through the console/CLI.
+
+### Retire Audius data
+
+Audius is no longer an implemented source. Remove it from `PUBLIC_SOURCES` in
+the existing `.env` before starting the updated image; unsupported names now
+fail configuration validation. To remove existing Audius catalog data, back
+up first and stop the crawler, indexer, ranker and search services so no worker
+can race the cleanup:
+
+```sh
+docker compose stop crawler indexer ranker search
+docker compose up -d metadata vectors
+docker compose build initialize
+docker compose run --rm initialize
+docker compose run --rm --no-deps initialize purge-audius
+docker compose up --build -d
+```
+
+`docker compose run --rm initialize` applies pending schema migrations (including
+v9) before the purge. The purge itself does not run migrations.
+
+The command deletes Audius entities and source-owned edges, signals, jobs,
+annotations, provider links, activity, source controls, metrics and Qdrant
+vectors. It retains other providers' entities and links. PostgreSQL and Qdrant
+cannot share a transaction; if vector cleanup fails after the database commit,
+restore Qdrant and rerun the same command. It is idempotent and removes any
+remaining vectors even when no Audius entity rows remain.
 
 Sources and permissions:
 [MusicBrainz API](https://musicbrainz.org/doc/MusicBrainz_API),
@@ -795,7 +821,7 @@ One JSON object per line (this is **not** a raw MusicBrainz dump importer):
 ```
 
 Supported import sources are `musicbrainz`, `apple`, `youtube`, `ytmusic`,
-`spotify`, `deezer`, `audius`, `archive`, `wikidata` and `soundcloud`.
+`spotify`, `deezer`, `archive`, `wikidata` and `soundcloud`.
 Openverse JSONL imports are rejected because this import shape lacks required
 attribution; use its adapter. Apple rows also require their
 HTTPS `url` and storefront `country`. Optional fields: `artist`, `album`,

@@ -310,5 +310,5 @@ def test_discogs_flow_retains_identity_and_indexes_genre_metadata(store, vectors
             conn.execute("SELECT count(*) AS n FROM entities WHERE kind='song'").fetchone()["n"]
             == 0
         )
-        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 8
-        assert conn.execute("SELECT count(*) AS n FROM source_controls").fetchone()["n"] == 15
+        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 9
+        assert conn.execute("SELECT count(*) AS n FROM source_controls").fetchone()["n"] == 14

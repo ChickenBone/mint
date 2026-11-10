@@ -11,7 +11,6 @@ EntitySource = Literal[
     "ytmusic",
     "spotify",
     "deezer",
-    "audius",
     "archive",
     "wikidata",
     "soundcloud",
@@ -27,7 +26,6 @@ Source = Literal[
     "ytmusic",
     "spotify",
     "deezer",
-    "audius",
     "archive",
     "wikidata",
     "soundcloud",
@@ -36,8 +34,14 @@ Source = Literal[
     "openwhyd",
 ]
 PUBLIC_SOURCES = (
-    "spotify", "deezer", "audius", "archive", "wikidata", "soundcloud",
-    "openverse", "discogs", "openwhyd",
+    "spotify",
+    "deezer",
+    "archive",
+    "wikidata",
+    "soundcloud",
+    "openverse",
+    "discogs",
+    "openwhyd",
 )
 SOURCES = ("musicbrainz", "listenbrainz", "apple", "youtube", "ytmusic", *PUBLIC_SOURCES, "omdb")
 HOSTS = {
@@ -48,7 +52,6 @@ HOSTS = {
     "ytmusic": "music.youtube.com",
     "spotify": "open.spotify.com",
     "deezer": "api.deezer.com",
-    "audius": "discoveryprovider.audius.co",
     "archive": "archive.org",
     "wikidata": "www.wikidata.org",
     "soundcloud": "soundcloud.com",
@@ -60,7 +63,6 @@ KINDS = {
     "omdb": ("artist", "album", "song"),
     "spotify": ("artist", "album", "song"),
     "deezer": ("artist", "album", "song"),
-    "audius": ("artist", "song"),
     "archive": ("album",),
     "wikidata": ("artist", "album", "song"),
     "soundcloud": ("artist", "song"),
@@ -72,7 +74,9 @@ KINDS = {
 # A documentation link is not a claim that a crawler exists or reuse is unrestricted.
 RESEARCH = (
     (
-        "omdb", "Openmusic Database", "bulk",
+        "omdb",
+        "Openmusic Database",
+        "bulk",
         "Local PostgreSQL dump metadata import; published download links may expire",
         "https://github.com/OatsCG/OMDB",
     ),
@@ -124,13 +128,6 @@ RESEARCH = (
         "adapter",
         "Public chart and artist/album/track metadata",
         "https://developers.deezer.com/api",
-    ),
-    (
-        "audius",
-        "Audius",
-        "adapter",
-        "Public trending, artist and track metadata; no streaming",
-        "https://docs.audius.co/api/",
     ),
     (
         "archive",
@@ -295,8 +292,6 @@ def canonical_url(source: str, kind: str, identifier: str) -> str:
         return f"https://open.spotify.com/{path}/{identifier}"
     if source == "deezer":
         return f"https://www.deezer.com/{path}/{identifier}"
-    if source == "audius":
-        return f"https://discoveryprovider.audius.co/v1/{'users' if kind == 'artist' else 'tracks'}/{identifier}"
     if source == "archive":
         return f"https://archive.org/details/{identifier}"
     if source == "wikidata":

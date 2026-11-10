@@ -3,6 +3,7 @@ from dataclasses import replace
 
 import pytest
 
+from catalog.model import DIMENSIONS
 from catalog.ranker import refresh_batch
 from catalog.store import LeaseLost
 
@@ -21,6 +22,157 @@ def test_ingestion_is_idempotent_and_indexes_only_changed_documents(store, song)
         assert conn.execute("SELECT entities FROM catalog_budget").fetchone()["entities"] == 1
         store.ingest(conn, [replace(song, title="Changed")])
         assert conn.execute("SELECT revision FROM entities").fetchone()["revision"] > first
+
+
+def test_purge_audius_removes_only_audius_data_and_is_idempotent(store, vectors, song):
+    audius_key = "audius:global:song:abc"
+    audius_artist_key = "audius:global:artist:def"
+    with store.transaction() as conn:
+        store.ingest(conn, [song])
+        for key, kind, identifier, title, genres in (
+            (audius_key, "song", "abc", "Audius Track", ["Ambient"]),
+            (audius_artist_key, "artist", "def", "Audius Artist", []),
+        ):
+            conn.execute(
+                """INSERT INTO entities(key,source,origin,quality,country,kind,provider_id,
+                   title,artist,album,genres,url,document)
+                   VALUES (%s,'audius','audius',1,'global',%s,%s,%s,'','',%s,%s,%s)""",
+                (
+                    key,
+                    kind,
+                    identifier,
+                    title,
+                    genres,
+                    f"https://example.org/{identifier}",
+                    title,
+                ),
+            )
+        conn.execute("UPDATE catalog_budget SET entities=entities+2")
+        conn.execute("INSERT INTO source_metrics(source,entities,indexed) VALUES ('audius',2,0)")
+        conn.execute(
+            """INSERT INTO vector_outbox(key,revision)
+               SELECT key,revision FROM entities WHERE source='audius'"""
+        )
+        conn.execute(
+            """INSERT INTO entity_links(key,provider,kind,identifier,url) VALUES
+               (%s,'audius','artist','def','https://example.org/audius-artist'),
+               (%s,'deezer','song','123','https://www.deezer.com/track/123'),
+               (%s,'audius','artist','def','https://example.org/audius-artist')""",
+            (song.key, song.key, audius_key),
+        )
+        conn.execute(
+            """INSERT INTO entity_annotations(key,metadata) VALUES
+               (%s,'{"source":"audius"}'),(%s,'{"source":"musicbrainz"}')""",
+            (audius_key, song.key),
+        )
+        conn.execute(
+            """INSERT INTO edges(source,target,relation) VALUES
+               (%s,%s,'artist'),(%s,%s,'artist'),(%s,%s,'artist')""",
+            (
+                audius_key,
+                song.key,
+                song.key,
+                audius_artist_key,
+                song.key,
+                "musicbrainz:global:artist:other",
+            ),
+        )
+        conn.execute(
+            """INSERT INTO chart_signals(chart,key,rank,weight) VALUES
+               ('audius:plays:abc',%s,NULL,0.5),
+               ('audius:plays:orphan',%s,NULL,0.5),
+               ('musicbrainz:weekly',%s,NULL,0.5)""",
+            (audius_key, song.key, song.key),
+        )
+        conn.execute(
+            """INSERT INTO jobs(key,task,entity_key,country,kind,provider_id,source,host) VALUES
+               ('audius-lookup','audius-lookup',%s,'global','song','abc','audius','discoveryprovider.audius.co'),
+               ('other-audius-entity','deezer-lookup',%s,'global','song','123','deezer','api.deezer.com')""",
+            (audius_key, audius_artist_key),
+        )
+        conn.execute(
+            "INSERT INTO host_budgets(host) VALUES ('discoveryprovider.audius.co') ON CONFLICT DO NOTHING"
+        )
+        conn.execute(
+            """INSERT INTO activity(source,role,action,key,detail)
+               VALUES ('audius','crawler','crawled',%s,'Audius fixture')""",
+            (audius_key,),
+        )
+        rows = conn.execute(
+            "SELECT key,revision,source,country,kind FROM entities WHERE key=ANY(%s)",
+            ([audius_key, audius_artist_key, song.key],),
+        ).fetchall()
+    vectors.upsert(rows, [[1.0, *([0.0] * (DIMENSIONS - 1))] for _ in rows])
+
+    result = store.purge_audius(vectors)
+
+    assert result == {"entities_removed": 2, "jobs_removed": 2, "vectors_removed": 2}
+    assert vectors.search([1.0, *([0.0] * (DIMENSIONS - 1))], {"source": "audius"}, 10) == []
+    assert (
+        len(vectors.search([1.0, *([0.0] * (DIMENSIONS - 1))], {"source": "musicbrainz"}, 10)) == 1
+    )
+    with store.transaction() as conn:
+        assert (
+            conn.execute("SELECT count(*) AS n FROM entities WHERE source='audius'").fetchone()["n"]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT count(*) AS n FROM entities WHERE key=%s", (song.key,)).fetchone()[
+                "n"
+            ]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM vector_outbox WHERE key=%s", (audius_key,)
+            ).fetchone()["n"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM edges WHERE target=%s OR source=%s",
+                (audius_artist_key, audius_key),
+            ).fetchone()["n"]
+            == 0
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM chart_signals WHERE chart LIKE 'audius:%'"
+            ).fetchone()["n"]
+            == 0
+        )
+        assert conn.execute(
+            "SELECT provider FROM entity_links WHERE key=%s", (song.key,)
+        ).fetchall() == [{"provider": "deezer"}]
+        assert conn.execute(
+            "SELECT metadata FROM entity_annotations WHERE key=%s", (song.key,)
+        ).fetchone()["metadata"] == {"source": "musicbrainz"}
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM jobs WHERE source='audius' OR entity_key=%s",
+                (audius_artist_key,),
+            ).fetchone()["n"]
+            == 0
+        )
+        assert conn.execute("SELECT entities FROM catalog_budget").fetchone()["entities"] == 1
+        assert (
+            conn.execute(
+                "SELECT entities FROM source_metrics WHERE source='musicbrainz'"
+            ).fetchone()["entities"]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) AS n FROM source_metrics WHERE source='audius'"
+            ).fetchone()["n"]
+            == 0
+        )
+
+    assert store.purge_audius(vectors) == {
+        "entities_removed": 0,
+        "jobs_removed": 0,
+        "vectors_removed": 0,
+    }
 
 
 def test_low_quality_chart_does_not_destroy_enriched_metadata_or_edges(store, song):

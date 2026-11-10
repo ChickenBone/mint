@@ -12,10 +12,18 @@ DIMENSIONS = 384
 
 def provider_id(value: object, source: str = "apple") -> str:
     text = str(value)
-    if source in ("spotify", "audius", "archive", "wikidata", "soundcloud", "openverse", "amazon", "discogs", "omdb"):
+    if source in (
+        "spotify",
+        "archive",
+        "wikidata",
+        "soundcloud",
+        "openverse",
+        "amazon",
+        "discogs",
+        "omdb",
+    ):
         patterns = {
             "spotify": r"[a-zA-Z0-9]{22}",
-            "audius": r"[a-zA-Z0-9]{3,30}",
             "archive": r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,99}",
             "wikidata": r"Q[1-9][0-9]{0,14}",
             "soundcloud": r"[a-zA-Z0-9_-]{1,60}(?:~[a-zA-Z0-9_-]{1,60})?",
@@ -47,7 +55,10 @@ def entity_key(country: str, kind: str, identifier: object, source: str = "apple
 
     if not re.fullmatch("(?:[a-z]{2}|global)", country) or kind not in KINDS:
         raise ValueError("Invalid storefront or entity kind")
-    if source in ("musicbrainz", "youtube", "ytmusic", "omdb", *PUBLIC_SOURCES) and country != "global":
+    if (
+        source in ("musicbrainz", "youtube", "ytmusic", "omdb", *PUBLIC_SOURCES)
+        and country != "global"
+    ):
         raise ValueError("This source's entity identity has global scope")
     if source == "apple" and country == "global":
         raise ValueError("Apple records require a storefront")

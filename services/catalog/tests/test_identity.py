@@ -223,7 +223,7 @@ def test_v3_migration_backfills_existing_evidence_and_preserves_vectors(store):
     store.migrate()
     ingest(store, artist("deezer", "27"))
     with store.transaction() as conn:
-        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 8
+        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 9
         assert len(artist_groups(conn, [mb.key])[mb.key]["providers"]) == 2
         assert (
             conn.execute(

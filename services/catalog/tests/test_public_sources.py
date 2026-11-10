@@ -54,18 +54,6 @@ def fixtures():
             },
         ),
         (
-            job("audius", identifier="abc"),
-            {
-                "data": {
-                    "id": "abc",
-                    "title": "Signal Test",
-                    "user": {"id": "def", "name": "Fixture Artist"},
-                    "genre": "Ambient",
-                    "play_count": 1234,
-                }
-            },
-        ),
-        (
             job("archive", "album", "fixture-concert"),
             {
                 "result": {
@@ -127,7 +115,7 @@ def test_public_metadata_has_source_identity_and_no_media_or_embeds(work, payloa
         ("spotify", "song", "../secret"),
         ("spotify", "song", "a" * 21),
         ("deezer", "song", "-1"),
-        ("audius", "album", "abc"),
+        ("audius", "song", "abc"),
         ("archive", "song", "valid-id"),
         ("archive", "album", "http://host"),
         ("wikidata", "artist", "Q0"),
@@ -208,7 +196,6 @@ def test_deezer_album_expansion_preserves_artist_and_album_relationships():
     "source,payload",
     [
         ("deezer", {"id": 999, "title": "Wrong"}),
-        ("audius", {"data": {"id": "wrong", "title": "Wrong"}}),
         ("archive", {"result": {"identifier": "wrong", "title": "Wrong"}}),
         ("wikidata", {"entities": {"123": {"id": "Q999"}}}),
         ("openverse", {"id": UUID, "category": "music"}),
@@ -352,9 +339,10 @@ def test_public_sources_config_and_fixed_endpoint_transport(settings, monkeypatc
     monkeypatch.setenv("CRAWLER_USER_AGENT", "Tests/1.0")
     monkeypatch.setenv("PUBLIC_SOURCES", ",".join(PUBLIC_SOURCES))
     assert Settings.load().public_sources == PUBLIC_SOURCES
-    monkeypatch.setenv("PUBLIC_SOURCES", "amazon")
-    with pytest.raises(ValueError, match="unsupported"):
-        Settings.load()
+    for unsupported in ("amazon", "audius"):
+        monkeypatch.setenv("PUBLIC_SOURCES", unsupported)
+        with pytest.raises(ValueError, match="unsupported"):
+            Settings.load()
     enabled = replace(settings, public_sources=PUBLIC_SOURCES)
     for work, _ in fixtures():
         with pytest.raises(Deferred):
@@ -417,9 +405,9 @@ def test_all_public_adapters_flow_through_queue_storage_index_and_filtered_searc
             if work["source"] == "openverse":
                 assert detail["annotations"]["license"] == "by"
         data = client.get("/v1/console/snapshot").json()
-        assert data["entities"] == data["indexed"] == 7
+        assert data["entities"] == data["indexed"] == 6
         assert len(data["research"]) >= 20
-        assert len(data["sources"]) == 15
+        assert len(data["sources"]) == 14
 
 
 @pytest.mark.integration
@@ -501,5 +489,5 @@ def test_v2_upgrade_preserves_jobs_pauses_and_host_budgets(store):
             conn.execute("SELECT next_at::text AS next_at FROM host_budgets").fetchone()["next_at"]
             == "infinity"
         )
-        assert conn.execute("SELECT count(*) AS n FROM source_controls").fetchone()["n"] == 15
+        assert conn.execute("SELECT count(*) AS n FROM source_controls").fetchone()["n"] == 14
         assert conn.execute("SELECT entities FROM catalog_budget").fetchone()["entities"] == 0

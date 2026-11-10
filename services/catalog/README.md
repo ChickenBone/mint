@@ -81,15 +81,15 @@ docker compose exec crawler mint-catalog status
 
 ## Sources
 
-There are **14 implemented adapters**. The example configuration enables
-MusicBrainz, ListenBrainz, YouTube Music, YouTube, Spotify, Deezer, Audius,
+There are **13 implemented adapters**. The example configuration enables
+MusicBrainz, ListenBrainz, YouTube Music, YouTube, Spotify, Deezer,
 Internet Archive, Wikidata, SoundCloud, Openverse, Discogs and Openwhyd. Apple is optional.
 An additional **Openmusic Database bulk reader** accepts local PostgreSQL dumps.
-See [SOURCES.md](SOURCES.md) for all **27 researched sources**, references and
+See [SOURCES.md](SOURCES.md) for all **26 researched sources**, references and
 honest access/coverage limits.
 
-Deezer charts, Audius trending, Live Music Archive downloads and Openverse
-music metadata add automatic discovery. Spotify and SoundCloud support limited
+Deezer charts, Live Music Archive downloads and Openverse music metadata add
+automatic discovery. Spotify and SoundCloud support limited
 public oEmbed lookups, **not full catalog/search/chart crawling**. Openwhyd's
 public hot-track export supplies additional explicit YouTube/SoundCloud IDs,
 not personal profiles or invented chart ranks. Discogs supports keyless
@@ -99,19 +99,33 @@ MusicBrainz preserve explicit provider links without merging matching names.
 Amazon's documented API requires credentials; only explicit Amazon links are
 retained, not a fictional no-key Amazon crawler.
 
-**Upgrading an existing installation:** add this line to your existing `.env`
-(do not overwrite the file), then rebuild:
+**Upgrading an existing installation:** existing `.env` files are not changed
+automatically. Remove `audius` from `PUBLIC_SOURCES`; the current version rejects
+it as an unsupported adapter. To remove previously stored Audius data, back up
+first, stop the catalog workers, and run the idempotent purge:
 
 ```dotenv
-PUBLIC_SOURCES=spotify,deezer,audius,archive,wikidata,soundcloud,openverse,discogs,openwhyd
+PUBLIC_SOURCES=spotify,deezer,archive,wikidata,soundcloud,openverse,discogs,openwhyd
 ```
 
 ```sh
+docker compose stop crawler indexer ranker search
+docker compose up -d metadata vectors
+docker compose build initialize
+docker compose run --rm initialize
+docker compose run --rm --no-deps initialize purge-audius
 docker compose up --build -d
 ```
 
-The additive schema upgrade keeps existing records and queues. Back up first;
-see [OPERATIONS.md](OPERATIONS.md).
+Run `initialize` first to apply pending schema migrations (including v9);
+`purge-audius` itself does not migrate the database.
+
+The purge removes Audius-owned entities and related edges, signals, jobs,
+annotations, provider links, source controls, metrics and Qdrant vectors, while
+retaining other providers' entities and metadata. If Qdrant is unavailable after
+the PostgreSQL deletion, rerun `purge-audius` after restoring it; the operation
+is safe to retry. The normal additive schema upgrade otherwise keeps existing
+records and queues. See [OPERATIONS.md](OPERATIONS.md).
 
 ### Bulk metadata without per-record HTTP
 

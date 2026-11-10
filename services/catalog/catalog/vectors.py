@@ -97,3 +97,18 @@ class Vectors:
             ),
         )
         return [point.payload for point in response.points if point.payload]
+
+    def delete_source(self, source: str) -> int:
+        if not self.client.collection_exists(self.collection):
+            return 0
+        query_filter = models.Filter(
+            must=[models.FieldCondition(key="source", match=models.MatchValue(value=source))]
+        )
+        count = self.client.count(self.collection, count_filter=query_filter, exact=True).count
+        if count:
+            self.client.delete(
+                self.collection,
+                points_selector=models.FilterSelector(filter=query_filter),
+                wait=True,
+            )
+        return count

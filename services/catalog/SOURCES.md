@@ -1,7 +1,7 @@
 # Source coverage and research
 
-This service has **14 implemented network adapters** plus an **OMDB bulk reader**,
-including two deliberately limited oEmbed adapters. The **27 distinct sources/datasets**
+This service has **13 implemented network adapters** plus an **OMDB bulk reader**,
+including two deliberately limited oEmbed adapters. The **26 distinct sources/datasets**
 below were researched; research is not a claim that all 27 have working crawlers. Availability, terms
 and limits can change. No upstream accounts, keys, browser tokens, media
 downloads or access-control workarounds are used.
@@ -17,7 +17,6 @@ downloads or access-control workarounds are used.
 | [YouTube Music](https://ytmusicapi.readthedocs.io/) | Unofficial unauthenticated charts, artists, albums and songs | Explicit chart ranks only; playlist order is not a rank |
 | [Spotify](https://developer.spotify.com/documentation/embeds/reference/oembed) | Public artist/album/track **title lookup only**; seeded IDs or explicit metadata crosswalks | No charts, popularity, discography enumeration or Web API emulation |
 | [Deezer](https://developers.deezer.com/api) | Public chart, artist, album and track metadata; bounded artist-album and album-track pagination | Explicit `position`, never the unrelated `rank` score |
-| [Audius](https://docs.audius.co/api/) | Public trending, user and track metadata; bounded user-track pagination | Raw track play-count observations; list order is not a chart rank |
 | [Internet Archive](https://archive.org/developers/) | Live Music Archive top-download item search and metadata; live sets represented as albums | Raw item-download observations, not individual song plays |
 | [Wikidata](https://www.wikidata.org/wiki/Wikidata:Data_access) | Explicit Q-ID lookup, English-preferred labels with recorded fallback language and selected asserted provider identifiers | No inferred matches, global popularity or general Wikidata crawl |
 | [SoundCloud](https://developers.soundcloud.com/docs/oembed) | Public user/track oEmbed metadata from explicit slugs | No search/chart crawl, account API or extracted client IDs |
@@ -26,11 +25,11 @@ downloads or access-control workarounds are used.
 | [Openwhyd public export](https://github.com/openwhyd/openwhyd/blob/main/docs/API.md) | Public `/hot?format=json` feed; explicit YouTube video and SoundCloud slug identities only | Source posts/reposts/likes when supplied. No invented rank, user profiles, comments or stream URLs. Unsupported platforms are counted in logs. |
 | [Openmusic Database (OMDB)](https://github.com/OatsCG/OMDB) | Local PostgreSQL tar/custom-dump metadata reader; independent `omdb` IDs, album membership and explicit artist/featured-artist credits | Published subscriber/view observations remain OMDB-scoped. No network crawler, playback tables, media, artwork or inferred genres. Publisher describes research-purpose data; its software MIT license does not establish a license for all dataset contents. |
 
-`PUBLIC_SOURCES=spotify,deezer,audius,archive,wikidata,soundcloud,openverse,discogs,openwhyd`
-enables the nine additional adapters. The other five have their own enable
+`PUBLIC_SOURCES=spotify,deezer,archive,wikidata,soundcloud,openverse,discogs,openwhyd`
+enables the eight additional adapters. The other five have their own enable
 flags. Existing `.env` files are not changed automatically.
 
-Deezer, Audius, Archive, Openverse and Openwhyd start from public discovery feeds. Spotify,
+Deezer, Archive, Openverse and Openwhyd start from public discovery feeds. Spotify,
 SoundCloud and Wikidata require explicit seeds or supported external identifiers
 found in MusicBrainz/Wikidata metadata. For SoundCloud song IDs use
 `user~track` (the two URL slugs); artist IDs use the user slug.

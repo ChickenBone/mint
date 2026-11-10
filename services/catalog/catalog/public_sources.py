@@ -14,8 +14,6 @@ def request_url(job):
     if task.endswith("-chart"):
         if source == "deezer":
             return "https://api.deezer.com/chart/0", {"limit": 50}
-        if source == "audius":
-            return "https://discoveryprovider.audius.co/v1/tracks/trending", {"limit": 50}
         if source == "archive":
             return "https://archive.org/advancedsearch.php", {
                 "q": "collection:etree AND mediatype:etree",
@@ -34,11 +32,22 @@ def request_url(job):
             if kind != "artist" or job["page"] % 100:
                 raise ValueError("Invalid Discogs discography page")
             return f"https://api.discogs.com/artists/{identifier}/releases", {
-                "per_page": 100, "page": job["page"] // 100 + 1,
-                "sort": "year", "sort_order": "desc",
+                "per_page": 100,
+                "page": job["page"] // 100 + 1,
+                "sort": "year",
+                "sort_order": "desc",
             }
-        path = "artists" if kind == "artist" else "masters" if identifier.startswith("m") else "releases"
-        return f"https://api.discogs.com/{path}/{identifier if kind == 'artist' else identifier[1:]}", {}
+        path = (
+            "artists"
+            if kind == "artist"
+            else "masters"
+            if identifier.startswith("m")
+            else "releases"
+        )
+        return (
+            f"https://api.discogs.com/{path}/{identifier if kind == 'artist' else identifier[1:]}",
+            {},
+        )
     if source == "spotify":
         return "https://open.spotify.com/oembed", {"url": canonical_url(source, kind, identifier)}
     if source == "soundcloud":
@@ -59,14 +68,6 @@ def request_url(job):
                 "index": job["page"],
             }
         return f"https://api.deezer.com/{path}/{identifier}", {}
-    if source == "audius":
-        path = "users" if kind == "artist" else "tracks"
-        if task == "audius-tracks":
-            return f"https://discoveryprovider.audius.co/v1/users/{identifier}/tracks", {
-                "limit": 50,
-                "offset": job["page"],
-            }
-        return f"https://discoveryprovider.audius.co/v1/{path}/{identifier}", {}
     if source == "archive":
         # Metadata-only field projection avoids receiving a whole media file manifest.
         return f"https://archive.org/metadata/{identifier}/metadata", {}
@@ -143,9 +144,11 @@ def parse(job, payload):
     source, task, kind = job["source"], job["task"], job["kind"]
     if source == "discogs":
         from catalog.discogs import parse as parse_discogs
+
         return parse_discogs(job, payload)
     if source == "openwhyd":
         from catalog.openwhyd import parse as parse_openwhyd
+
         return parse_openwhyd(payload)
     result = Discovery([], [], [], [])
     if "error" in payload:
@@ -228,32 +231,6 @@ def parse(job, payload):
                     result.pages.append(("deezer-tracks", "album", parent.provider_id, len(tracks)))
             if kind == "artist":
                 result.pages.append(("deezer-albums", "artist", parent.provider_id, 0))
-    elif source == "audius":
-        data = payload["data"]
-        items = rows(data, 100) if isinstance(data, list) else [data]
-        for row in items:
-            row_kind = "song" if task in ("audius-chart", "audius-tracks") else kind
-            if task == "audius-lookup" and str(row["id"]) != job["provider_id"]:
-                raise ValueError("Audius identity does not match request")
-            user = row.get("user") or {}
-            item = entity(
-                source,
-                row_kind,
-                row["id"],
-                row["name"] if row_kind == "artist" else row["title"],
-                artist=user.get("name", ""),
-                artists=(user["id"],) if user.get("id") else (),
-                genres=[row["genre"]] if row.get("genre") else [],
-            )
-            result.entities.append(item)
-            if row_kind == "song" and row.get("play_count") is not None:
-                result.metrics.append((item, "plays", count(row["play_count"])))
-            if row_kind == "artist":
-                result.pages.append(("audius-tracks", "artist", item.provider_id, 0))
-        if task == "audius-tracks" and len(items) == 50:
-            if job["page"] >= 10000:
-                raise ValueError("Audius track pagination budget exceeded")
-            result.pages.append(("audius-tracks", "artist", job["provider_id"], job["page"] + 50))
     elif source == "archive":
         if task == "archive-chart":
             items = rows(payload["response"]["docs"], 50)

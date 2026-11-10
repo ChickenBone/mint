@@ -15,7 +15,7 @@ from catalog.providers import SOURCES, lookup_task
 def main():
     parser = argparse.ArgumentParser(description="Independent multi-source music metadata catalog")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "crawl", "index", "rank", "serve", "status", "reindex"):
+    for name in ("init", "crawl", "index", "rank", "serve", "status", "reindex", "purge-audius"):
         commands.add_parser(name)
     reconcile = commands.add_parser("reconcile-artists")
     reconcile.add_argument(
@@ -29,7 +29,10 @@ def main():
     exclude.add_argument("identifier")
     seed = commands.add_parser("seed")
     seed.add_argument(
-        "source", choices=tuple(source for source in SOURCES if source not in ("listenbrainz", "openwhyd", "omdb"))
+        "source",
+        choices=tuple(
+            source for source in SOURCES if source not in ("listenbrainz", "openwhyd", "omdb")
+        ),
     )
     seed.add_argument("kind", choices=("artist", "album", "song"))
     seed.add_argument("identifier")
@@ -42,20 +45,41 @@ def main():
     discogs = commands.add_parser("import-discogs")
     discogs.add_argument("path", help="Local CC0 Discogs XML or XML.gz; no automatic download")
     discogs.add_argument("--kind", choices=("artist", "master", "release"), required=True)
-    discogs.add_argument("--limit", type=int, default=100000, help="Maximum observations, default 100000")
+    discogs.add_argument(
+        "--limit", type=int, default=100000, help="Maximum observations, default 100000"
+    )
     musicbrainz = commands.add_parser("import-musicbrainz")
     musicbrainz.add_argument("path", help="Official tar.xz or JSONL[.xz/.gz] snapshot")
-    musicbrainz.add_argument("--kind", choices=("artist", "release-group", "recording", "release"), required=True)
-    musicbrainz.add_argument("--limit", type=int, default=100000000, help="Input records this run; checkpoint resumes automatically")
+    musicbrainz.add_argument(
+        "--kind", choices=("artist", "release-group", "recording", "release"), required=True
+    )
+    musicbrainz.add_argument(
+        "--limit",
+        type=int,
+        default=100000000,
+        help="Input records this run; checkpoint resumes automatically",
+    )
     omdb = commands.add_parser("import-omdb")
     omdb.add_argument("path", help="Local OMDB PostgreSQL tar/custom dump (SQL is never executed)")
-    omdb.add_argument("--kind", choices=("artist", "album", "song", "album-artists", "song-artists", "song-features"), required=True)
+    omdb.add_argument(
+        "--kind",
+        choices=("artist", "album", "song", "album-artists", "song-artists", "song-features"),
+        required=True,
+    )
     omdb.add_argument("--limit", type=int, default=1000000000)
     snapshot = commands.add_parser("load-musicbrainz")
-    snapshot.add_argument("directory", help="Download/cache directory, separate from the catalog database")
-    snapshot.add_argument("--snapshot", help="Official YYYYMMDD-HHMMSS snapshot, defaults to LATEST")
-    snapshot.add_argument("--kinds", nargs="+", choices=("artist", "release-group", "recording", "release"),
-                          default=("artist", "release-group", "recording", "release"))
+    snapshot.add_argument(
+        "directory", help="Download/cache directory, separate from the catalog database"
+    )
+    snapshot.add_argument(
+        "--snapshot", help="Official YYYYMMDD-HHMMSS snapshot, defaults to LATEST"
+    )
+    snapshot.add_argument(
+        "--kinds",
+        nargs="+",
+        choices=("artist", "release-group", "recording", "release"),
+        default=("artist", "release-group", "recording", "release"),
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings.load()
@@ -147,7 +171,11 @@ def main():
             try:
                 if args.command == "load-musicbrainz":
                     result = load_musicbrainz(
-                        store, args.directory, stop, snapshot=args.snapshot, kinds=args.kinds,
+                        store,
+                        args.directory,
+                        stop,
+                        snapshot=args.snapshot,
+                        kinds=args.kinds,
                     )
                 else:
                     result = importer(store, args.path, args.kind, stop, limit=args.limit)
@@ -191,6 +219,12 @@ def main():
             print(json.dumps({"status": "interrupted" if stop.is_set() else "queued"}))
             if stop.is_set():
                 raise SystemExit(130)
+        elif args.command == "purge-audius":
+            vectors = Vectors(settings)
+            try:
+                print(json.dumps({"status": "complete", **store.purge_audius(vectors)}))
+            finally:
+                vectors.close()
         else:
             with store.transaction() as conn:
                 counts = conn.execute(

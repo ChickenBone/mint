@@ -1,7 +1,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const names = { musicbrainz: "MusicBrainz", listenbrainz: "ListenBrainz", apple: "Apple Music", youtube: "YouTube", ytmusic: "YouTube Music", spotify: "Spotify", deezer: "Deezer", audius: "Audius", archive: "Internet Archive", wikidata: "Wikidata", soundcloud: "SoundCloud", openverse: "Openverse", discogs: "Discogs", openwhyd: "Openwhyd", omdb: "Openmusic Database", amazon: "Amazon Music", catalog: "Source genre tags" };
+const names = { musicbrainz: "MusicBrainz", listenbrainz: "ListenBrainz", apple: "Apple Music", youtube: "YouTube", ytmusic: "YouTube Music", spotify: "Spotify", deezer: "Deezer", archive: "Internet Archive", wikidata: "Wikidata", soundcloud: "SoundCloud", openverse: "Openverse", discogs: "Discogs", openwhyd: "Openwhyd", omdb: "Openmusic Database", amazon: "Amazon Music", catalog: "Source genre tags" };
 const fmt = new Intl.NumberFormat();
 const state = { snapshot: null, token: null, socket: null, paused: false, lastAt: 0, lastEvent: 0, selected: null, graph: null, graphSignature: "", reconnect: null, searchAbort: null, researchSignature: "" };
 const network = { mode: "embeddings", query: "", next: null, focus: null, request: null, loading: false, overview: true, atlasPath: [null] };
@@ -732,7 +732,7 @@ function seedHelp() {
   for (const option of $("seed-kind").options) option.disabled = metadata ? !metadata.kinds.includes(option.value) : false;
   if (metadata && !metadata.kinds.includes(kind)) $("seed-kind").value = metadata.kinds[0];
   const effective = $("seed-kind").value;
-  const hint = ({musicbrainz: "MusicBrainz UUID", apple: "Apple numeric ID", spotify: "22-character Spotify ID", deezer: "Deezer numeric ID", audius: "Audius encoded ID", archive: "Live Music Archive item identifier", wikidata: "Q… Wikidata ID", soundcloud: effective === "song" ? "user~track URL slugs" : "user URL slug", openverse: "Openverse UUID", discogs: effective === "artist" ? "Discogs numeric artist ID" : "m<master ID> or r<release ID>"})[source] || (effective === "song" ? "11-character video ID" : effective === "artist" ? "UC… channel / artist browse ID" : "MPRE… album browse ID");
+  const hint = ({musicbrainz: "MusicBrainz UUID", apple: "Apple numeric ID", spotify: "22-character Spotify ID", deezer: "Deezer numeric ID", archive: "Live Music Archive item identifier", wikidata: "Q… Wikidata ID", soundcloud: effective === "song" ? "user~track URL slugs" : "user URL slug", openverse: "Openverse UUID", discogs: effective === "artist" ? "Discogs numeric artist ID" : "m<master ID> or r<release ID>"})[source] || (effective === "song" ? "11-character video ID" : effective === "artist" ? "UC… channel / artist browse ID" : "MPRE… album browse ID");
   $("seed-id").placeholder = hint;
   $("seed-help").textContent = enabled === false ? `${names[source]} is disabled. Enable it in .env and run docker compose up -d before adding seeds.` : `Use the explicit ${hint}, not a URL or name. Existing identities are deduplicated.`;
   $("seed-form").querySelector("button").disabled = enabled === false;
