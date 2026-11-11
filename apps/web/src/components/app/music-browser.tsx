@@ -12,6 +12,7 @@ import { CollectionActions } from "./collection-actions";
 import { TrackMenuButton, usePlayer } from "./player";
 import { AlbumLink, ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
+import { CatalogArtistAlbums, CatalogLibraryAlbum } from "./catalog-artist-albums";
 
 const kinds = ["track", "album", "artist", "playlist"] as const;
 type Kind = typeof kinds[number];
@@ -265,6 +266,9 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         <button type="button" disabled={start + page.items.length >= page.total} onClick={() => change({ start: String(start + 100) })} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 hover:bg-hover disabled:opacity-40">Next<ChevronRight className="ml-1 size-4" aria-hidden /></button>
       </div>
     </nav>}
+    {collection.kind === "artist" && type === "album" && <CatalogArtistAlbums
+      artistMbid={artistProfile?.status === "ready" ? artistProfile.musicBrainzArtistId : null} />}
+    {collection.kind === "album" && <CatalogLibraryAlbum albumId={collection.id} />}
     {collection.kind === "artist" && <ArtistAbout artistProfile={artistProfile} name={title} />}
   </div>;
 }

@@ -16,6 +16,7 @@ import * as search from "../../music/search/route";
 import * as reports from "../../issue-reports/route";
 import * as charts from "../../charts/route";
 import { nativeBrowseResponse } from "@/lib/native-browse";
+import { catalogConnectionResponse } from "@/lib/catalog-connection";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +51,7 @@ async function dispatch(request: Request, path: string[]) {
   if (key === "music/search") return search.GET(request);
   if (key === "issue-reports") return reports.POST(request);
   if (key === "browse") return nativeBrowseResponse(request);
+  if (path[0] === "catalog") return catalogConnectionResponse(request, path);
   if (key === "charts") {
     if (process.env.MINT_CHARTS_ENABLED === "false" && !new URL(request.url).searchParams.has("chart")) return Response.json({ charts: [] });
     return charts.GET(request);

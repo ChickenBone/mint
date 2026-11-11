@@ -48,6 +48,12 @@ test("consumer allowlist excludes admin, workers, chart acquisition and path tra
   // Search browsing can read categories and charts, but never write through those routes.
   assert.equal(nativeRouteAllowed(["browse"], "GET"), true);
   assert.equal(nativeRouteAllowed(["charts"], "GET"), true);
+  for (const path of [["catalog", "artists", "mbid", "albums"], ["catalog", "albums", "mbid", "recordings"],
+    ["catalog", "library-albums", "local-id", "recordings"]]) {
+    assert.equal(nativeRouteAllowed(path, "GET"), true);
+    for (const method of ["HEAD", "POST", "PUT", "PATCH", "DELETE"]) assert.equal(nativeRouteAllowed(path, method), false);
+  }
+  assert.equal(nativeRouteAllowed(["catalog", "priority", "artists"], "POST"), false);
   for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
     assert.equal(nativeRouteAllowed(["browse"], method), false);
     assert.equal(nativeRouteAllowed(["charts"], method), false);

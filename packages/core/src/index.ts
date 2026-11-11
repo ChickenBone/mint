@@ -5,3 +5,4 @@ export * from "./views";
 export * from "./stats";
 export * from "./agent-protocol";
 export * from "./track-state";
+export * from "./catalog-bridge";

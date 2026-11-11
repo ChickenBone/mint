@@ -30,6 +30,7 @@ export function nativeRouteAllowed(path: string[], method: string) {
   if (key === "player/items") return method === "POST";
   if (key === "issue-reports") return method === "POST";
   if (key === "music/search") return method === "GET" || method === "POST";
+  if (/^catalog\/(artists\/[^/]+\/albums|(albums|library-albums)\/[^/]+\/recordings)$/.test(key)) return method === "GET";
   // Consumer discovery reads only; chart acquisition and provider setup stay on the cookie web app.
   if (key === "browse" || key === "charts") return method === "GET";
   if (path[0] !== "music" || path.length > 4) return false;

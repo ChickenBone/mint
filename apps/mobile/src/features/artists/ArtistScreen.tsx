@@ -7,6 +7,7 @@ import { MusicShelf } from "../../components/ui/music";
 import { Section } from "../../components/ui/primitives";
 import { useResource } from "../../hooks/useResource";
 import { artistSelection, loadArtistDetail } from "./artist-model";
+import { CatalogArtistAlbums } from "./CatalogArtistAlbums";
 
 export function ArtistScreen() {
   const params = useLocalSearchParams<{ id: string }>();
@@ -20,6 +21,8 @@ export function ArtistScreen() {
     title={data?.page.title ?? "Artist"} artwork={first ? `/api/artwork/${first.id}?variant=artist` : undefined}
     round start={start} onStart={setStart}>
     {data?.albums.items.length ? <Section title="Albums"><MusicShelf items={data.albums.items} /></Section> : null}
+    {data?.albums.artistProfile?.status === "ready" && data.albums.artistProfile.musicBrainzArtistId ?
+      <CatalogArtistAlbums key={data.albums.artistProfile.musicBrainzArtistId} artistMbid={data.albums.artistProfile.musicBrainzArtistId} /> : null}
     {data?.page.artistProfile?.profile?.biography ? <Section title="About the artist">
       <Text style={detailStyles.secondary}>{data.page.artistProfile.profile.biography}</Text>
       <Text style={detailStyles.secondary}>Artist information from MusicBrainz and Wikipedia.</Text>
