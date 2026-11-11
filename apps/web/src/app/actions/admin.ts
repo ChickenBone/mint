@@ -9,6 +9,8 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { setIssueReportStatus } from "@/lib/issue-reports";
 import { enqueueRetry } from "@/lib/queues";
+import { claimAdminFailedRetry, listAdminFailedJobs, removeAdminFailedJobs } from "@/lib/admin-failed-jobs";
+import { withFailedPipelineCleanup } from "@/lib/failed-pipeline-jobs";
 
 const id = z.uuid();
 
@@ -46,13 +48,35 @@ export async function setMemberRole(userId: string, role: "user" | "admin") {
 export async function retryAllFailed() {
   await requireAdmin();
   const db = getDb();
-  const failed = await db.select({ id: schema.tracks.id }).from(schema.tracks).where(eq(schema.tracks.stage, "failed")).limit(500);
-  for (const t of failed) {
-    await db.update(schema.tracks).set({ stage: "queued", progress: 0, error: null, detail: "Retrying" }).where(eq(schema.tracks.id, t.id));
-    await enqueueRetry(t.id);
+  const failed = await listAdminFailedJobs(db, 500);
+  let retried = 0;
+  for (const track of failed) {
+    const trackId = await claimAdminFailedRetry(db, { trackId: track.id, failureVersion: track.failureVersion });
+    if (!trackId) continue;
+    await enqueueRetry(trackId);
+    retried++;
   }
-  revalidatePath("/app/admin");
-  return { retried: failed.length };
+  revalidatePath("/app/manage");
+  return { retried };
+}
+
+export async function removeFailedJob(trackId: string, failureVersion: string) {
+  await requireAdmin();
+  const result = await withFailedPipelineCleanup((cleanup) =>
+    removeAdminFailedJobs(getDb(), cleanup, { trackId, failureVersion }));
+  revalidatePath("/app/manage");
+  return result;
+}
+
+export async function clearAllFailedJobs() {
+  await requireAdmin();
+  const result = await withFailedPipelineCleanup((cleanup) => removeAdminFailedJobs(getDb(), cleanup));
+  revalidatePath("/app/manage");
+  if (result.failed) {
+    throw new Error(`Removed ${result.removed} failed attempts; ${result.failed} could not be removed and remain visible. ` +
+      `Some matching worker records may already have been removed. Refresh and retry. ${result.failure}`);
+  }
+  return result;
 }
 
 export async function setIssueReportResolved(reportId: string, resolved: boolean) {

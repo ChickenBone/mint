@@ -1,6 +1,7 @@
 import "server-only";
 import { albumArtwork, trackArtwork } from "./artwork-query";
 import { catalogSearch } from "./catalog-search";
+import { listAdminFailedJobs } from "./admin-failed-jobs";
 import { computeStats, toTrackView, toWorkerView, type Stats, type TrackView } from "@mint/core";
 import { getDb, schema } from "@mint/core/db";
 import { getRedis } from "@mint/core/redis";
@@ -211,9 +212,8 @@ export async function getMembers() {
   return rows;
 }
 
-export async function getFailedTracks(limit = 100): Promise<TrackView[]> {
-  const rows = await db().select().from(t).where(eq(t.stage, "failed")).orderBy(desc(t.updatedAt)).limit(limit);
-  return rows.map((r) => ({ ...toTrackView(r), detail: r.error ?? r.detail }));
+export async function getFailedTracks(limit = 100) {
+  return listAdminFailedJobs(db(), limit);
 }
 
 export interface Health {
