@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
+import { ListMusic, Mic2, MoreHorizontal, Volume2, VolumeX, X } from "lucide-react";
+import { PlayerDevices } from "./player-devices";
 import { Artwork } from "@/components/artwork";
 import { playerItemSchema, type PlayerCommand, type PlayerItem, type PlayerState } from "@/lib/player-protocol";
 import { analysisSchema } from "@mint/core/analysis";
@@ -725,7 +726,7 @@ export function PlayerBar() {
     <div className="hidden min-w-0 items-center gap-2 lg:col-start-3 lg:row-start-1 lg:flex lg:justify-end">
       <Transport label="Lyrics" active={panel === "lyrics"} disabled={!ready || !track} onClick={() => setPanel(panel === "lyrics" ? null : "lyrics")}><Mic2 /></Transport>
       <Transport label="Queue" active={panel === "queue"} disabled={!ready} onClick={() => setPanel(panel === "queue" ? null : "queue")}><ListMusic /></Transport>
-      <Link href="/app/settings?section=devices" aria-label="Devices" title="Devices" className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><MonitorSpeaker className="size-5" /></Link>
+      <PlayerDevices className="grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg" />
       <div className="flex max-w-36 items-center gap-1">
         <Transport label={view.volume ? "Mute" : "Unmute"} disabled={mirror ? !track : !ready} onClick={() => {
           if (view.volume) previousVolume.current = view.volume;

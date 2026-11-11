@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import Link from "next/link";
-import { ArrowDown, ListMusic, Mic2, MonitorSpeaker, MoreHorizontal, Settings2, Volume2 } from "lucide-react";
+import { ArrowDown, ListMusic, Mic2, MoreHorizontal, Settings2, Volume2 } from "lucide-react";
+import { PlayerDevices } from "./player-devices";
 import { Artwork, ArtworkAtmosphere } from "../artwork";
 import type { PlayerCommand, PlayerItem, PlayerState } from "@/lib/player-protocol";
 import { LyricsPanel, QueueContents } from "./player-panels";
@@ -54,7 +55,7 @@ export function NowPlaying({
     if (!interactive) return;
     heading.current?.focus({ preventScroll: true });
     const trap = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || !dialog.current) return;
+      if (event.key !== "Tab" || !dialog.current || (event.target instanceof Element && event.target.closest("dialog[open]"))) return;
       const focusable = Array.from(dialog.current.querySelectorAll<HTMLElement>(
         'a[href],button:not(:disabled),input:not(:disabled),[tabindex]:not([tabindex="-1"])',
       ));
@@ -97,9 +98,7 @@ export function NowPlaying({
       <h1 ref={heading} tabIndex={-1} className="rounded text-base font-bold focus-visible:outline focus-visible:outline-2 focus-visible:outline-mint">Now Playing</h1>
       <div className="flex items-center gap-1">
         <Link href="/app/settings?section=playback" aria-label="Playback and sound settings" className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg"><Settings2 className="size-5" /></Link>
-        <Link href="/app/settings?section=devices" aria-label="Devices" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
-          <MonitorSpeaker className="size-4" /><span className="hidden sm:inline">Devices</span>
-        </Link>
+        <PlayerDevices className="grid size-11 place-items-center rounded-full text-muted hover:bg-hover hover:text-fg" />
         <button type="button" onClick={onCollapse} aria-label="Collapse now playing" className="inline-flex size-11 items-center justify-center gap-2 rounded-full text-sm text-muted hover:bg-hover hover:text-fg sm:w-auto sm:px-3">
           <ArrowDown className="size-4" /><span className="hidden sm:inline">Collapse</span>
         </button>

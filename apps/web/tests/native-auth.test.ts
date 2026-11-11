@@ -71,6 +71,21 @@ test("native web CORS is opt-in and never grants cookies", async () => {
   assert.equal(response.headers.get("cache-control"), "private, no-store");
   assert.match(response.headers.get("vary")!, /Authorization/);
 });
+test("native device allowlist exposes only owned list, receiver and handoff operations", () => {
+  const id = "41de9df5-44a9-4b69-8534-1ae803cea58f";
+  assert.equal(nativeRouteAllowed(["devices"], "GET"), true);
+  assert.equal(nativeRouteAllowed(["devices"], "POST"), true);
+  assert.equal(nativeRouteAllowed(["devices", "commands", id], "GET"), true);
+  for (const action of ["poll", "ack", "disconnect", "handoff"]) {
+    assert.equal(nativeRouteAllowed(["devices", id, action], "POST"), true);
+    assert.equal(nativeRouteAllowed(["devices", id, action], "GET"), false);
+  }
+  assert.equal(nativeRouteAllowed(["devices", "transfer"], "POST"), true);
+  assert.equal(nativeRouteAllowed(["devices", "complete-transfer"], "POST"), true);
+  for (const path of [["devices", id, "revoke"], ["devices", id, "rename"], ["devices", id, "commands"], ["parties"]]) {
+    assert.equal(nativeRouteAllowed(path, "POST"), false);
+  }
+});
 test("same-origin behind a reverse proxy follows canonical PUBLIC_URL rather than the internal request host", async () => {
   const original = process.env.PUBLIC_URL;
   process.env.PUBLIC_URL = "https://mint.example.com";

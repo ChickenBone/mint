@@ -17,6 +17,7 @@ import * as reports from "../../issue-reports/route";
 import * as charts from "../../charts/route";
 import { nativeBrowseResponse } from "@/lib/native-browse";
 import { catalogConnectionResponse } from "@/lib/catalog-connection";
+import { deviceApi } from "@/lib/devices";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,7 @@ const json = (error: string, status: number) => Response.json({ error }, { statu
 
 async function dispatch(request: Request, path: string[]) {
   const key = path.join("/");
+  if (path[0] === "devices") return deviceApi(request, path.slice(1), "devices");
   const id = { params: Promise.resolve({ id: path[2]! }) };
   if (key === "player/catalog") return catalog.GET(request);
   if (key === "player/session") return session.GET();
@@ -66,7 +68,8 @@ async function handle(request: Request, context: Context) {
     try {
       const session = await resolveNativeSession(request);
       if (!session) return json("Playback access has expired. Sign in again.", 401);
-      return await runNativeRequest({ user: session.user, sessionHash: session.sessionHash, request },
+      return await runNativeRequest({ user: session.user, sessionHash: session.sessionHash, request,
+        installationId: session.deviceId, deviceName: session.deviceName },
         () => dispatch(request, path));
     } catch (error) {
       console.error("[native-api] request failed", error instanceof Error ? error.name : "Unknown failure");

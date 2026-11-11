@@ -23,6 +23,11 @@ export async function nativeHttp(request: Request, handle: () => Promise<Respons
 export function nativeRouteAllowed(path: string[], method: string) {
   if (path.some((part) => !part || part === "." || part === ".." || part.includes("/") || part.includes("\\"))) return false;
   const key = path.join("/");
+  const uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+  if (key === "devices") return method === "GET" || method === "POST";
+  if (key === "devices/transfer" || key === "devices/complete-transfer") return method === "POST";
+  if (new RegExp(`^devices/commands/${uuid}$`).test(key)) return method === "GET";
+  if (new RegExp(`^devices/${uuid}/(poll|ack|disconnect|handoff)$`).test(key)) return method === "POST";
   if (/^player\/(catalog|session|offline)$/.test(key)) return method === "GET";
   if (/^player\/(audio|info|lyrics)\/[^/]+$/.test(key)) return method === "GET" || (path[1] === "audio" && method === "HEAD");
   if (/^player\/analysis\/[^/]+$/.test(key)) return method === "GET";

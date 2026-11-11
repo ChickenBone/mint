@@ -10,6 +10,7 @@ import { OfflineStore, OFFLINE_BUDGET, type OfflineState } from "../offline/stor
 import { accountScope, registerPlaybackCleanup } from "./account-cleanup";
 import { PlaybackEngine } from "./engine";
 import { createPlaylist } from "./playlist";
+import { startNativeDeviceBridge, type NativeDeviceBridge } from "./device-bridge";
 import { PlaybackDiagnostics, emptyDiagnostics, type DiagnosticsSnapshot } from "./diagnostics";
 import { DiagnosticsPreference } from "./diagnostics-preference";
 import { emptyPlayerState, type MobileTrack, type PlayerCollection, type PlayerState, type RepeatMode } from "./types";
@@ -20,6 +21,9 @@ export interface PlayerController {
   expanded: boolean;
   open(): void;
   close(): void;
+  localDeviceId(): string | null;
+  handoffTo(id: string): Promise<void>;
+  deviceError: string | null;
   capabilities: { nativeBackground: boolean; offline: boolean; dsp: false; gapless: false };
   offline: OfflineState;
   format: "original" | "mp3";
@@ -53,6 +57,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const apiRef = useRef(api);
   useEffect(() => { apiRef.current = api; }, [api]);
   const engineRef = useRef<PlaybackEngine | null>(null);
+  const deviceRef = useRef<NativeDeviceBridge | null>(null);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
   const offlineRef = useRef<OfflineStore | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsSnapshot>(emptyDiagnostics);
   const [recorder] = useState(() => new PlaybackDiagnostics(undefined, setDiagnostics));
@@ -77,7 +83,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!scopeServer || !scopeUser) return;
     startupErrorRef.current = null;
     let cancelled = false, removeStatus: (() => void) | undefined;
-    let engine: PlaybackEngine | null = null, downloads: OfflineStore | null = null;
+    let engine: PlaybackEngine | null = null, downloads: OfflineStore | null = null, bridge: NativeDeviceBridge | null = null;
     const requireApi = () => {
       if (!apiRef.current || apiRef.current.serverUrl !== scopeServer) throw new Error("Sign in to listen.");
       return apiRef.current;
@@ -159,10 +165,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             setDiagnostics(emptyDiagnostics());
           }
           await preference.dispose();
+          bridge?.dispose();
           await Promise.all([localEngine.revoke(), localDownloads.revoke()]);
         });
         await engine.restore();
-        if (!cancelled) setState(engine.state);
+        if (!cancelled) {
+          setState(engine.state);
+          bridge = startNativeDeviceBridge({
+            api: requireApi(), state: () => localEngine.getDeviceState(),
+            kind: Platform.OS === "web" ? "web" : "native",
+            execute: (command, signal) => localEngine.executeDevice(command, signal),
+            apply: (handoff, signal) => localEngine.applyDeviceHandoff(handoff, signal),
+            error: (message) => { if (!cancelled) setDeviceError(message); },
+          });
+          deviceRef.current = bridge;
+          if (AppState.currentState !== "active") bridge.sleep();
+        }
       } catch (error) {
         if (!cancelled) {
           const message = error instanceof Error ? error.message : "Audio could not start. Reopen the app.";
@@ -186,6 +204,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setDiagnostics(emptyDiagnostics());
       setState(emptyPlayerState);
       removeStatus?.();
+      bridge?.dispose();
+      deviceRef.current = null;
+      setDeviceError(null);
       engine?.dispose();
       engineRef.current = null;
       // Account cleanup is awaited by AuthProvider. A route change never gets here.
@@ -196,7 +217,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const subscription = AppState.addEventListener("change", (next) => {
       const engine = engineRef.current, downloads = offlineRef.current;
       if (!engine) return;
-      if (next !== "active") { engine.persist(); return; }
+      if (next !== "active") { engine.persist(); deviceRef.current?.sleep(); return; }
+      deviceRef.current?.wake();
       void apiRef.current?.preferences().catch((error: unknown) => {
         if (!(error instanceof ApiError && error.status === 0)) engine.fail(error);
       });
@@ -210,6 +232,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
     });
     return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const hide = () => deviceRef.current?.sleep();
+    const show = () => deviceRef.current?.wake();
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("pageshow", show);
+    return () => { window.removeEventListener("pagehide", hide); window.removeEventListener("pageshow", show); };
   }, []);
 
   const act = useCallback(async (action: (engine: PlaybackEngine) => void | Promise<void>) => {
@@ -231,6 +262,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, []);
   const value = useMemo<PlayerController>(() => ({
     state, offline, expanded, open, close, format,
+    deviceError,
+    localDeviceId: () => deviceRef.current?.deviceId ?? null,
+    handoffTo: async (id) => {
+      if (!deviceRef.current) throw new Error("The player is still connecting. Try again shortly.");
+      const connection = apiRef.current;
+      if (!connection) throw new Error("Sign in to choose a player.");
+      const rows = await connection.devices();
+      const source = rows.find((row) => row.online && row.state.playing && row.state.queueLength > 0);
+      if (!source || source.id === deviceRef.current.deviceId) {
+        await deviceRef.current.handoffTo(id);
+        return;
+      }
+      const wait = async (commandId: string) => {
+        const deadline = Date.now() + 20_000;
+        while (Date.now() < deadline) {
+          if (apiRef.current !== connection) throw new Error("Account changed during the playback move.");
+          const command = await connection.deviceCommandStatus(commandId);
+          if (command.status === "succeeded") return;
+          if (command.status === "failed" || command.status === "expired") throw new Error(command.error || "Playback move was not confirmed.");
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        throw new Error("Device did not confirm the playback move.");
+      };
+      const transferred = await connection.transferDevice(id);
+      await wait(transferred.id);
+      const pause = await connection.completeDeviceTransfer(transferred.id);
+      await wait(pause.id);
+    },
     diagnosticsEnabled: diagnosticsEnabled && diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]),
     diagnosticsWarning: diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]) ? diagnosticsWarning : null,
     diagnostics: diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]) ? diagnostics : emptyDiagnostics(),
@@ -258,7 +317,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     moveInQueue: (id, before) => act((engine) => engine.moveInQueue(id, before)), clearUpcoming: () => act((engine) => engine.clearUpcoming()),
     download: (track) => downloadAct((store) => store.download(track)), removeDownload: (id) => downloadAct((store) => store.remove(id)),
     retryDownload: (id) => downloadAct((store) => store.retry(id)), clearDownloads: () => downloadAct((store) => store.clear()),
-  }), [act, downloadAct, state, offline, expanded, open, close, format, diagnosticsEnabled, diagnosticsWarning, diagnostics, diagnosticsOwner, scopeServer, scopeUser]);
+  }), [act, downloadAct, state, offline, expanded, open, close, format, deviceError, diagnosticsEnabled, diagnosticsWarning, diagnostics, diagnosticsOwner, scopeServer, scopeUser]);
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;
 }
 export function usePlayer(): PlayerController {

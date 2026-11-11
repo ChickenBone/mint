@@ -72,19 +72,20 @@ test("playback moves from the device that is playing, otherwise the most recent 
   assert.equal(playbackSource([{ id: "only", online: true, lastSeenAt: "2026-11-05T00:00:00.000Z", state: { playing: true, queueLength: 1 } }], "only"), null);
 });
 
-test("refresh resumes the same device and does not revoke it", async () => {
+test("disconnect deletes this Web player; reconnect registers a new ephemeral player", async () => {
   const storage = new Map<string, string>();
   const memory = {
     getItem: (key: string) => storage.get(key) ?? null,
     setItem: (key: string, value: string) => { storage.set(key, value); },
     removeItem: (key: string) => { storage.delete(key); },
   };
-  let registers = 0, resumes = 0, revokes = 0;
+  let registers = 0, resumes = 0, revokes = 0, disconnects = 0;
   const fetcher: typeof fetch = async (url, init) => {
     const path = String(url);
     if (path === "/api/devices") { registers++; return Response.json({ id: deviceId, token: "secret" }); }
     if (path.endsWith("/resume")) { resumes++; return Response.json({ id: deviceId, token: "rotated" }); }
     if (path.endsWith("/revoke")) { revokes++; return Response.json({ ok: true }); }
+    if (path.endsWith("/disconnect")) { disconnects++; return Response.json({ ok: true }); }
     return Response.json({ command: null });
   };
   const first = startDeviceBridge({
@@ -97,15 +98,18 @@ test("refresh resumes the same device and does not revoke it", async () => {
     assert.equal(storage.get("mint:device:persistent"), deviceId);
   } finally { first.dispose(); }
   assert.equal(revokes, 0);
+  assert.equal(disconnects, 1);
+  assert.equal(storage.has("mint:device:persistent"), false);
   const second = startDeviceBridge({
     memberId: "persistent", name: "Computer", getState: state, pollMs: 50, error: () => {}, storage: memory,
     execute: async () => {}, applyHandoff: async () => {}, fetcher,
   });
   try {
     await until(() => second.deviceId === deviceId);
-    assert.equal(registers, 1);
-    assert.equal(resumes, 1);
+    assert.equal(registers, 2);
+    assert.equal(resumes, 0);
   } finally { second.dispose(); }
+  assert.equal(disconnects, 2);
 });
 
 test("bridge executes a delivered command at most once and strips unchanged heartbeat queues", async () => {
@@ -140,9 +144,26 @@ test("bridge refuses wrong-device and expired envelopes before executing", async
       execute: async () => { executions++; }, applyHandoff: async () => { executions++; },
       fetcher: async (url) => Response.json(String(url) === "/api/devices" ? { id: deviceId, token: "secret" } : { command: envelope }),
     });
+
     try { await until(() => errors.length > 0); assert.equal(executions, 0); }
     finally { bridge.dispose(); }
   }
+});
+
+test("guarded source pause rejects a changed track at delivery without interrupting local playback", async () => {
+  let executed = 0, rejected = 0;
+  const envelope = command({ command: { action: "pause", expected: { trackId: randomUUID(), index: 0, contextId: null, revision: null } } });
+  const bridge = startDeviceBridge({
+    memberId: "guarded", getState: state, storage: null, error: () => {}, pollMs: 50,
+    execute: async () => { executed++; }, applyHandoff: async () => {},
+    fetcher: async (url, init) => {
+      if (String(url) === "/api/devices") return Response.json({ id: deviceId, token: "receiver" });
+      if (String(url).endsWith("/ack")) { rejected++; assert.equal(JSON.parse(String(init?.body)).success, false); return Response.json({ ok: true }); }
+      return Response.json({ command: envelope });
+    },
+  });
+  try { await until(() => rejected === 1); assert.equal(executed, 0); }
+  finally { bridge.dispose(); }
 });
 
 test("handoff admission never pauses the source; only successful destination acknowledgment does", async () => {

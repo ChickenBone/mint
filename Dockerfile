@@ -11,6 +11,7 @@ WORKDIR /repo
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY packages/core/package.json packages/core/
+COPY packages/client/package.json packages/client/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
 COPY apps/realtime/package.json apps/realtime/

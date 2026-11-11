@@ -18,7 +18,7 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
   const pool = new pg.Pool({ connectionString: url.toString() });
   try {
     const root = path.resolve(import.meta.dirname, "../../../packages/core/migrations");
-    for (const file of ["0000_init.sql", "0001_workers.sql", "0002_drop_previews.sql", "0003_track_artwork_url.sql", "0004_existing_library.sql", "0007_devices.sql"]) {
+    for (const file of ["0000_init.sql", "0001_workers.sql", "0002_drop_previews.sql", "0003_track_artwork_url.sql", "0004_existing_library.sql", "0007_devices.sql", "0018_device_lifecycle.sql"]) {
       await pool.query(await readFile(path.join(root, file), "utf8"));
     }
     const db = drizzle(pool, { schema });
@@ -121,6 +121,29 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
       assert.equal((await hosts.commandStatus(moved.id)).status, "succeeded");
     });
 
+    await t.test("remote transfer completion waits for acknowledgment, binds the actor/source, detects source changes and cannot replay", async () => {
+      await hosts.poll(source.id, source.token, initial);
+      const admitted = await hosts.handoff(source.id, source.token, device.id, initial);
+      await assert.rejects(() => hosts.completeTransfer(admitted.id), (error) => error instanceof DeviceError && error.status === 409);
+      await assert.rejects(() => secondSession.completeTransfer(admitted.id), (error) => error instanceof DeviceError && error.status === 404);
+      await hosts.poll(device.id, device.token, initial);
+      await hosts.acknowledge(device.id, device.token, { id: admitted.id, sequence: admitted.sequence, success: true, state: initial });
+      const changedId = randomUUID(), changed = { ...initial, trackId: changedId, queue: [changedId] };
+      await hosts.poll(source.id, source.token, changed);
+      await assert.rejects(() => hosts.completeTransfer(admitted.id), (error) => error instanceof DeviceError && error.status === 409);
+      await hosts.poll(source.id, source.token, initial);
+      const paused = await hosts.completeTransfer(admitted.id);
+      assert.equal(paused.deviceId, source.id);
+      assert.equal(paused.command.action, "pause");
+      assert.ok(paused.command.action === "pause" && paused.command.expected?.trackId === initial.trackId);
+      await assert.rejects(() => hosts.completeTransfer(admitted.id), (error) => error instanceof DeviceError && error.status === 404);
+      const delivery = (await hosts.poll(source.id, source.token, changed)).command!;
+      await hosts.acknowledge(source.id, source.token, { id: delivery.id, sequence: delivery.sequence, success: false,
+        error: "Source changed tracks", state: changed });
+      assert.equal((await hosts.commandStatus(paused.id)).status, "failed");
+      await hosts.poll(source.id, source.token, initial);
+    });
+
     let partyId = "", invitation = "";
     await t.test("party invitations are scoped and revocable; uninvited members cannot read", async () => {
       const party = await hosts.createParty("One room", device.id); partyId = party.id;
@@ -174,6 +197,42 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
       await hosts.revoke(device.id);
       assert.equal((await hosts.commandStatus(pending.id)).status, "failed");
       await assert.rejects(() => hosts.poll(device.id, device.token, initial), (error) => error instanceof DeviceError && error.status === 404);
+    });
+
+    await t.test("Web players are ephemeral, cleanup is account-scoped, native installations survive session rotation and expire after 30 days", async () => {
+      const longExpiry = new Date(now + 40 * 24 * 3600_000);
+      await pool.query("UPDATE sessions SET expires_at=$1", [longExpiry]);
+      const installationId = randomUUID();
+      const installed = new DeviceStore(db, { userId: host, sessionId: hostSession, installationId, deviceName: "Fixture phone" }, () => now);
+      const native = await installed.register({ name: "ignored", state: initial });
+      assert.equal(native.kind, "native");
+      assert.equal(native.name, "Fixture phone");
+      const web = await hosts.register({ name: "Misleading phone", kind: "native", state: initial });
+      assert.equal(web.kind, "web", "Cookie registration cannot claim installed identity");
+      assert.equal(web.name, "Web player");
+      const guestWeb = await guests.register({ name: "Guest browser", state: initial });
+      await hosts.disconnect(web.id, web.token);
+      assert.equal((await hosts.list()).some((row) => row.id === web.id), false);
+      await assert.rejects(() => hosts.resume(web.id), (error) => error instanceof DeviceError && error.status === 404);
+      const crashed = await hosts.register({ name: "Crashed tab", state: initial });
+      now += 25_001;
+      assert.equal((await hosts.list()).some((row) => row.id === crashed.id), false);
+      assert.equal((await pool.query("SELECT id FROM connected_devices WHERE id=$1", [guestWeb.id])).rowCount, 1, "Host cleanup cannot touch guest data");
+      await pool.query("DELETE FROM sessions WHERE id=$1", [hostSession]);
+      const rotated = new DeviceStore(db, { userId: host, sessionId: hostOtherSession, installationId, deviceName: "Fixture phone" }, () => now);
+      assert.equal((await secondSession.list()).find((row) => row.id === native.id)?.online, false);
+      const reconnected = await rotated.register({ name: "ignored", state: initial });
+      assert.equal(reconnected.id, native.id);
+      await assert.rejects(() => rotated.poll(native.id, native.token, initial), (error) => error instanceof DeviceError && error.status === 403);
+      await rotated.disconnect(native.id, reconnected.token);
+      now += 30 * 24 * 3600_000;
+      assert.equal((await secondSession.list()).some((row) => row.id === native.id), true, "Retained at the exact 30-day boundary");
+      now += 1;
+      assert.equal((await secondSession.list()).some((row) => row.id === native.id), false);
+      const sameInstallationGuest = new DeviceStore(db, { userId: guest, sessionId: guestSession, installationId }, () => now);
+      const guestNative = await sameInstallationGuest.register({ name: "Guest phone", state: initial });
+      const newHostNative = await rotated.register({ name: "Host phone", state: initial });
+      assert.notEqual(guestNative.id, newHostNative.id, "Installation identity is scoped to the account");
     });
   } finally {
     await pool.end();

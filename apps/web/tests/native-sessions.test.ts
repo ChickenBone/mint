@@ -19,6 +19,8 @@ test("native sessions retain approval, device binding, hash isolation and privat
   const { sha256 } = await import("@mint/core/crypto");
   const { activePlaybackSession } = await import("@mint/core/playback");
   const { createNativeSession, resolveNativeSession, revokeNativeSession } = await import("../src/lib/native-sessions");
+  const { DeviceStore } = await import("../src/lib/devices-store");
+  const { connectedDevices } = await import("@mint/core/devices-db");
   const { eq } = await import("drizzle-orm");
   const db = getDb();
   const [member, operator] = await db.insert(schema.users).values([
@@ -40,10 +42,20 @@ test("native sessions retain approval, device binding, hash isolation and privat
     assert.equal(await resolveNativeSession(request(credential.token.replace(deviceId, otherDevice))), null);
     const [stored] = await db.select().from(schema.sessions).where(eq(schema.sessions.id, resolved!.sessionHash));
     assert.equal(stored!.id.includes(credential.token), false, "The raw credential is not stored.");
+    const deviceStore = new DeviceStore(db, { userId: member!.id, sessionId: resolved!.sessionHash, installationId: deviceId });
+    const registration = await deviceStore.register({ name: "Fixture phone", state: {
+      playing: false, time: 0, duration: 0, volume: 100, trackId: null, queue: [], currentIndex: 0, shuffle: false, repeat: 0,
+    } });
+    await db.update(connectedDevices).set({ lastConnectedAt: new Date(Date.now() - 10 * 24 * 3600_000) }).where(eq(connectedDevices.id, registration.id));
+    await resolveNativeSession(request(credential.token));
+    const [connected] = await db.select().from(connectedDevices).where(eq(connectedDevices.id, registration.id));
+    assert.ok(connected!.lastConnectedAt.getTime() > Date.now() - 5000, "Any authenticated Mint connection renews installed retention");
 
     const second = await createNativeSession(member!.id, deviceId, "Fixture phone", "127.0.0.1");
     assert.equal(await resolveNativeSession(request(credential.token)), null, "Same-installation sign-in revokes the prior native session.");
     assert.equal(await activePlaybackSession(resolved!.sessionHash, member!.id), null);
+    const [retained] = await db.select().from(connectedDevices).where(eq(connectedDevices.id, registration.id));
+    assert.equal(retained?.authSessionId, null, "Token rotation retains installed identity but disconnects its old receiver");
     await db.update(schema.users).set({ status: "disabled" }).where(eq(schema.users.id, member!.id));
     assert.equal(await resolveNativeSession(request(second.token)), null);
     assert.equal(await activePlaybackSession(sha256(second.token), member!.id), null, "Disabled accounts cannot stream.");
