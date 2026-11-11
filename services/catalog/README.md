@@ -3,7 +3,8 @@
 Standalone music metadata aggregation, evidence-backed recording reconciliation,
 popularity graph and local vector search. MusicBrainz snapshots provide the
 foundation; targeted crawling enriches source coverage rather than replacing it.
-**No Mint integration. No upstream API keys.**
+It runs independently by default, with an optional private Mint bridge.
+No upstream API keys are used.
 
 ## Start locally
 
@@ -315,6 +316,24 @@ The scheduler devotes three of five shared per-host slots to bulk artist/album d
 one oldest-due exploration slot and one popularity-priority slot for enrichment.
 Empty bulk slots fall back to ordinary work. This increases discovery yield
 without raising upstream request rates.
+MusicBrainz album enrichment browses up to three explicit releases per release
+group and pages their recordings, retaining release-group membership even when
+other recording metadata is richer. Existing imported albums are admitted in
+bounded batches, including partially populated albums. This is not exhaustive
+coverage of every edition; rate limits and normal refresh schedules still apply.
+Observed artist popularity helps prioritize their albums, while an oldest-due
+slot continues long-tail work.
+
+An operator can prioritize a known MusicBrainz artist without connecting Mint's
+database to this service:
+
+```sh
+docker compose exec crawler mint-catalog priority-artist 00000000-0000-4000-8000-000000000001 --provenance library-export
+```
+
+Use the actual artist UUID and a non-sensitive provenance label. Add `--remove`
+to remove that label; priority is recalculated by the ranker. This is an explicit
+operator input, not a listening statistic.
 Dispatch reserves a host and leases its work atomically, removing worker races
 over the same request slot. Apple lookups combine up to five albums/artists or
 50 songs per request without mixing kinds/storefronts. Existing records and
@@ -324,6 +343,26 @@ Crawler logs include `new_entities` and fetch/parse/store timings; ranker logs
 include batch duration, making source delays distinguishable from database
 lock waits.
 See [parallelism and limits](OPERATIONS.md#parallelism-and-limits).
+
+### Optional Mint bridge
+
+The separate, disabled-by-default bridge exposes only bounded metadata reads
+and an authenticated MusicBrainz artist-priority feed. It does not expose the
+catalog console or acquire audio. Supply a private, randomly generated
+`CATALOG_BRIDGE_TOKEN` of 32–256 printable ASCII characters through the
+environment or an untracked `.env`, then start it:
+
+```sh
+docker compose --profile bridge up -d bridge
+```
+
+It binds `127.0.0.1:8098` by default, separate from the console. Configure Mint
+with the matching token and bridge URL. Keep traffic on trusted loopback or use
+a private TLS-protected connection; never publish the console or a plaintext
+bridge externally. The bridge accepts verified MusicBrainz IDs, not names or
+library/user details. An empty or partial catalog is not proof that music does
+not exist. Separately containerized deployments can use the opt-in TLS/private
+network overlay described in [bridge operations](OPERATIONS.md#optional-mint-bridge).
 
 ### Higher request rates
 

@@ -11,7 +11,7 @@ volumes are confined to this directory/project.
 
 | Source | No-key input | Purpose and limits |
 | --- | --- | --- |
-| MusicBrainz | Public artist, recording and release-group lookups, including explicit genres; paginated artist recordings/release groups | Open identity and metadata; recordings and release groups are not individual release editions. Shared rate limit: at most one request/second. Supply an identifying application/contact User-Agent. |
+| MusicBrainz | Public artist, recording and release-group lookups, including explicit genres; paginated artist recordings/release groups and bounded release recordings | Open identity and metadata; recordings and release groups are not individual release editions. Shared rate limit: at most one request/second. Supply an identifying application/contact User-Agent. |
 | ListenBrainz | Public **sitewide weekly** top recordings | Popularity seeds linked by explicit recording/artist MBIDs. Community sample, not worldwide listening counts. Entries without recording MBIDs are not guessed. |
 | Apple, opt-in | Public top-song chart feeds and iTunes lookup endpoint | Storefront-specific chart seeds and artist/album/song expansion. Default shared lookup budget: 15 requests/minute. Lookup caps do not support exhaustive catalog enumeration. |
 | YouTube | Public channel Atom feeds and video oEmbed metadata | Explicit channel/video seeds; recent uploads, titles and available public view observations. Channel uploader identities are not verified musical artist identities. |
@@ -357,6 +357,26 @@ If no eligible bulk work exists, that slot falls
 back immediately to ordinary priority selection. All slots honor the same
 source controls, host budgets and leases.
 
+MusicBrainz release-group jobs browse at most three releases, then page at most
+1,000 recordings per release. Each recording retains the explicit release-group
+edge, without replacing richer metadata or previously observed memberships.
+Larger pages fail visibly; the three-edition sample is not exhaustive. Ranker
+sweeps admit at most 50 previously unscheduled albums per batch and stop at
+1,000 due/ready release-group jobs, reserving admission space for both observed
+or explicitly prioritized albums (200) and unranked albums (800). This allows
+existing bulk-imported empty and
+partial albums to be enriched without an unbounded queue flood. Jobs refresh
+normally and share the host's admission, pause and retry controls.
+
+Album job priority incorporates the actual decaying chart-derived popularity
+of its explicitly credited artists; no ranks are manufactured. An operator may
+also run `mint-catalog priority-artist <musicbrainz-artist-uuid> --provenance
+<label>` to add a persistent, explicit priority label. Labels must be
+non-sensitive lowercase identifiers, at most 64 characters. `--remove` removes
+the specified label; ranker sweeps recalculate priorities. This input reads no
+Mint database and does not automatically track additions or removals in a Mint
+library. Priority is a scheduling preference, not a popularity observation.
+
 Dispatch locks one eligible host with `SKIP LOCKED`, selects and leases its work,
 and reserves its first request in the same transaction. The transport consumes
 that admission once; redirects and YouTube Music follow-ups still reserve their
@@ -436,6 +456,58 @@ No GPU or source-pacing changes are implied by these settings.
 To apply code/settings changes locally, run `docker compose up --build -d`.
 Use `docker compose logs -f --tail=50 crawler indexer` to see pool sizes and
 progress. Setting worker counts to `1` restores serial execution.
+
+## Optional Mint bridge
+
+The separate `bridge` Compose profile is off by default. It runs only the bridge
+API, not the console, on the internal catalog network and exposes its port to
+host loopback only. Set a private random `CATALOG_BRIDGE_TOKEN` (32–256 printable
+ASCII characters) in the environment or an untracked `.env`; configure the same
+token and URL on Mint. Set `CATALOG_BRIDGE_PORT` to change the host port.
+All bridge routes require `Authorization: Bearer <token>`; missing or invalid
+tokens receive 401. Rotate the token on both sides. Do not send it over an
+untrusted plaintext network, expose the console, or use this interface as a
+public API. Container-to-host connectivity requires an explicitly configured
+private route; loopback on a container is not the host's loopback.
+
+For separate Compose deployments on the same Docker host, an operator can use
+the optional `compose.bridge.yml` overlay. Create a dedicated internal Docker
+network and a private CA-signed certificate with DNS SAN `mint-catalog-bridge`;
+mount the certificate and key as readable files for catalog UID 10001, and make
+the CA available to Mint's client. Do not mount the private key into Mint.
+
+```sh
+docker network create --internal mint-catalog-bridge
+# Set CATALOG_BRIDGE_TOKEN, CATALOG_BRIDGE_TLS_CERT_FILE and
+# CATALOG_BRIDGE_TLS_KEY_FILE to private operator-provided values first.
+docker compose -f compose.yml -f compose.bridge.yml --profile bridge up -d bridge
+```
+
+Attach only Mint services that need this interface to the same external
+`mint-catalog-bridge` network and configure
+`https://mint-catalog-bridge:8080` as their URL. The network name can be changed
+with `CATALOG_BRIDGE_NETWORK` on both stacks. The overlay mounts only the
+certificate/key into the bridge and enables TLS; it does not attach or publish
+the console. Keep both files and the token out of tracked configuration, protect
+their permissions, and provision CA trust in Mint before connecting. The plain
+default loopback listener remains intended only for same-host clients.
+
+`GET /v1/artists/{artist_mbid}/albums` and
+`GET /v1/albums/{release_group_mbid}/recordings` return
+`{"items":[{"id":"...","title":"...","artist":"...","url":"..."}],"next_cursor":null}`.
+Identifiers and URLs are explicitly MusicBrainz-scoped; parent records absent
+from the catalog return 404. Pass `limit` (1–100) and `after` (the previous
+`next_cursor`) to page by ID. Pages are current reads, not a frozen snapshot.
+
+`POST /v1/priority/artists` accepts `{"add":[...],"remove":[...]}` with 1–100
+unique, disjoint MusicBrainz artist UUIDs total and returns
+`{"added":n,"removed":n}`. Changes are idempotent and use the fixed
+`mint-library` provenance; omissions do not remove IDs. Only explicit verified
+IDs belong in this feed, never names, users, credentials or other library data.
+It affects crawl scheduling only, does not alter popularity signals, and never
+requests or downloads audio. Payloads are limited to 16 KiB, concurrent requests
+to eight, and database statements to two seconds. Rate and source backoff still
+govern every subsequent upstream crawl.
 
 ## Raw data browser
 

@@ -13,7 +13,7 @@ from catalog.model import Entity, chart_weight, entity_key
 from catalog.providers import HOSTS, SOURCES, lookup_task, task_source
 
 
-BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','deezer-albums',
+BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','mb-releases','mb-release','deezer-albums',
     'deezer-tracks','audius-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums')
     OR (task IN ('lookup','deezer-lookup') AND kind IN ('artist','album')))"""
 
@@ -42,9 +42,9 @@ class Store:
             conn.execute("SELECT pg_advisory_xact_lock(71628401)")
             conn.execute(Path(__file__).with_name("schema.sql").read_text())
             version = conn.execute("SELECT max(version) AS version FROM catalog_schema").fetchone()
-            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8):
+            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
                 raise ValueError("Unsupported catalog schema version")
-            for target in range(version["version"] + 1, 9):
+            for target in range(version["version"] + 1, 10):
                 conn.execute(Path(__file__).with_name(f"schema-v{target}.sql").read_text())
                 if target == 4:
                     from catalog.identity import rebuild_artists
@@ -60,7 +60,7 @@ class Store:
         with self.pool.connection() as conn, conn.transaction():
             yield conn
 
-    def enqueue(self, conn, task, country, kind, identifier, priority=0.0, page=0):
+    def enqueue(self, conn, task, country, kind, identifier, priority=0.0, page=0, *, album_key=None):
         source = task_source(task)
         if task == "chart" or task.endswith("-chart"):
             key = f"{task}:{country}"
@@ -70,6 +70,14 @@ class Store:
 
             key = f"{task}:{provider_id(identifier, 'ytmusic')}"
             target_key = None
+        elif task == "mb-release":
+            from catalog.model import provider_id
+
+            identifier = provider_id(identifier, "musicbrainz")
+            if not album_key or entity_key("global", "album", album_key.split(":")[-1], "musicbrainz") != album_key:
+                raise ValueError("Release jobs require a MusicBrainz album key")
+            target_key = album_key
+            key = f"{task}:{album_key}:{identifier}:{page}"
         else:
             target_key = entity_key(
                 country, kind, identifier, "musicbrainz" if source == "listenbrainz" else source
@@ -116,6 +124,31 @@ class Store:
                         "",
                         100,
                     )
+
+    def priority_artist(self, conn, identifier, provenance, *, remove=False):
+        key = entity_key("global", "artist", identifier, "musicbrainz")
+        if remove:
+            return conn.execute(
+                "DELETE FROM priority_artists WHERE entity_key=%s AND provenance=%s",
+                (key, provenance),
+            ).rowcount
+        inserted = conn.execute(
+            """INSERT INTO priority_artists(entity_key,provenance) VALUES (%s,%s)
+               ON CONFLICT DO NOTHING""",
+            (key, provenance),
+        ).rowcount
+        self.enqueue(conn, "mb-lookup", "global", "artist", identifier, 10)
+        if inserted:
+            conn.execute(
+                """UPDATE jobs SET priority=greatest(priority,10),due_at=now(),ready=true
+                   WHERE NOT dead AND lease_until<=now() AND (
+                     entity_key=%s OR entity_key IN (
+                       SELECT source FROM edges WHERE target=%s AND relation='artist'
+                     )
+                   )""",
+                (key, key),
+            )
+        return inserted
 
     def ingest(self, conn, entities: list[Entity], *, schedule=True, merge_relationships=False):
         from catalog.ingestion import ingest

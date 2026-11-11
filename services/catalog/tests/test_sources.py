@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from catalog.sources import Deferred, MAX_BODY, Sources, request_url, retry_after
-from conftest import ARTIST_ID
+from conftest import ALBUM_ID, ARTIST_ID
 
 
 def job(task="chart", **kwargs):
@@ -30,6 +30,51 @@ def test_request_building_cannot_use_arbitrary_urls(settings):
     assert params["offset"] == 100
     with pytest.raises(ValueError):
         request_url(job("lookup", provider_id="https://localhost"), settings)
+
+
+def test_musicbrainz_album_release_and_recording_requests_are_bounded(settings):
+    url, params = request_url(
+        job("mb-releases", country="global", kind="album", provider_id=ALBUM_ID), settings
+    )
+    assert url == "https://musicbrainz.org/ws/2/release"
+    assert params == {"release-group": ALBUM_ID, "limit": 3, "offset": 0, "fmt": "json"}
+    url, params = request_url(
+        job("mb-release", country="global", kind="album", provider_id=ARTIST_ID, page=100),
+        settings,
+    )
+    assert url == "https://musicbrainz.org/ws/2/recording"
+    assert params["release"] == ARTIST_ID
+    assert params["limit"] == 100 and params["offset"] == 100
+
+
+def test_release_recording_page_follows_explicit_album_and_paginates():
+    from catalog.crawler import process
+    from catalog.model import entity_key
+    from conftest import SONG_ID
+
+    album_key = entity_key("global", "album", ALBUM_ID, "musicbrainz")
+    store = MagicMock()
+    store.settings.chart_interval = 100
+    sources = Mock()
+    sources.fetch.return_value = {
+        "recording-count": 2, "recordings": [{"id": SONG_ID, "title": "First"}],
+    }
+    release = {
+        "key": "release-job", "task": "mb-release", "source": "musicbrainz",
+        "country": "global", "kind": "album", "provider_id": ARTIST_ID,
+        "entity_key": album_key, "page": 0, "priority": 2,
+    }
+    process(store, sources, release)
+    entities = store.ingest.call_args.args[1]
+    assert entities[0].album_keys == (album_key,)
+    assert store.ingest.call_args.kwargs["merge_relationships"] is True
+    assert store.enqueue.call_args.args[1:] == (
+        "mb-release", "global", "album", ARTIST_ID, 2, 1
+    )
+    assert store.enqueue.call_args.kwargs["album_key"] == album_key
+    sources.fetch.return_value = {"recording-count": 1, "recordings": []}
+    with pytest.raises(ValueError, match="page budget"):
+        process(store, sources, release)
 
 
 @pytest.mark.parametrize("kind", ["artist", "album", "song"])

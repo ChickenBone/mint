@@ -1,0 +1,16 @@
+services:
+  bridge:
+    networks:
+      mint_catalog_bridge:
+        aliases: [mint-catalog-bridge]
+    environment:
+      CATALOG_BRIDGE_TLS_CERT: /run/catalog-bridge/tls.crt
+      CATALOG_BRIDGE_TLS_KEY: /run/catalog-bridge/tls.key
+    volumes:
+      - "${CATALOG_BRIDGE_TLS_CERT_FILE:?Set CATALOG_BRIDGE_TLS_CERT_FILE}:/run/catalog-bridge/tls.crt:ro"
+      - "${CATALOG_BRIDGE_TLS_KEY_FILE:?Set CATALOG_BRIDGE_TLS_KEY_FILE}:/run/catalog-bridge/tls.key:ro"
+
+networks:
+  mint_catalog_bridge:
+    name: ${CATALOG_BRIDGE_NETWORK:-mint-catalog-bridge}
+    external: true

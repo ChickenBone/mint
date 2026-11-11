@@ -101,6 +101,17 @@ services:
       start_period: 180s
       retries: 3
 
+  bridge:
+    <<: *service
+    profiles: [bridge]
+    command: [serve-bridge]
+    networks: [private]
+    environment:
+      <<: *environment
+      CATALOG_BRIDGE_TOKEN: ${CATALOG_BRIDGE_TOKEN:-}
+    ports:
+      - "127.0.0.1:${CATALOG_BRIDGE_PORT:-8098}:8080"
+
   bulk-import:
     <<: *service
     profiles: [bulk]

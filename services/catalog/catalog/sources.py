@@ -109,6 +109,15 @@ def request_url(job: dict, settings: Settings) -> tuple[str, dict]:
         raise Deferred("MusicBrainz source is disabled", 3600)
     identifier = provider_id(job["provider_id"], "musicbrainz")
     root = "https://musicbrainz.org/ws/2"
+    if task == "mb-releases":
+        return f"{root}/release", {
+            "release-group": identifier, "limit": 3, "offset": 0, "fmt": "json",
+        }
+    if task == "mb-release":
+        return f"{root}/recording", {
+            "release": identifier, "limit": 100, "offset": job["page"],
+            "inc": "artist-credits", "fmt": "json",
+        }
     if task in ("mb-albums", "mb-songs"):
         resource = "release-group" if task == "mb-albums" else "recording"
         return f"{root}/{resource}", {

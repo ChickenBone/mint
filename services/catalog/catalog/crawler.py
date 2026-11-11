@@ -52,6 +52,7 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
     observed_at = None
     next_page = None
     discovery = None
+    releases = []
     if job["source"] in PUBLIC_SOURCES:
         from catalog.public_sources import parse
 
@@ -84,6 +85,25 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         ranked = listenbrainz_entities(payload)
         entities = [entity for entity, _ in ranked]
         observed_at = datetime.fromtimestamp(payload["payload"]["to_ts"], timezone.utc)
+    elif task == "mb-releases":
+        releases = payload["releases"]
+        if not isinstance(releases, list) or len(releases) > 3:
+            raise ValueError("Invalid MusicBrainz release page")
+        releases = [provider_id(row["id"], "musicbrainz") for row in releases]
+        entities = []
+    elif task == "mb-release":
+        rows = payload["recordings"]
+        total = payload["recording-count"]
+        if not isinstance(rows, list) or len(rows) > 100 or type(total) is not int or total < 0:
+            raise ValueError("Invalid MusicBrainz release recording page")
+        entities = [
+            replace(musicbrainz_entity("song", row), album_keys=(job["entity_key"],), quality=0)
+            for row in rows
+        ]
+        if job["page"] + len(rows) < total:
+            if not rows or job["page"] + len(rows) >= 1000:
+                raise ValueError("MusicBrainz release recordings exceed page budget")
+            next_page = job["page"] + len(rows)
     elif task in ("mb-albums", "mb-songs"):
         kind, field = ("album", "release-groups") if task == "mb-albums" else ("song", "recordings")
         rows = payload[field]
@@ -104,7 +124,9 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         conn.execute("SELECT entities FROM catalog_budget FOR UPDATE")
         for leased in sorted([job, *companions], key=lambda row: row["key"]):
             store.lock_job(conn, leased)
-        inserted = store.ingest(conn, entities)
+        inserted = store.ingest(
+            conn, entities, merge_relationships=task.startswith("mb-") or task == "lb-chart"
+        )
         if discovery is not None:
             store.view_signals(conn, discovery.views)
             store.public_observations(conn, discovery)
@@ -137,10 +159,24 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
                 store.enqueue(
                     conn, expansion, "global", "artist", job["provider_id"], job["priority"] * 0.5
                 )
+        if task == "mb-lookup" and job["kind"] == "album":
+            store.enqueue(conn, "mb-releases", "global", "album", job["provider_id"], job["priority"])
+        if task == "mb-releases":
+            for identifier in releases:
+                store.enqueue(
+                    conn, "mb-release", "global", "album", identifier, job["priority"],
+                    album_key=job["entity_key"],
+                )
         if next_page is not None:
-            store.enqueue(
-                conn, task, country, "artist", job["provider_id"], job["priority"], next_page
-            )
+            if task == "mb-release":
+                store.enqueue(
+                    conn, task, country, "album", job["provider_id"], job["priority"], next_page,
+                    album_key=job["entity_key"],
+                )
+            else:
+                store.enqueue(
+                    conn, task, country, "artist", job["provider_id"], job["priority"], next_page
+                )
         for leased in [job, *companions]:
             store.complete(
                 conn,
