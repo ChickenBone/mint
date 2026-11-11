@@ -331,6 +331,7 @@ export class DeviceStore {
         eq(commands.actorId, this.actor.userId), eq(commands.actorSessionId, this.actor.sessionId))).for("update");
       if (!command || command.command.action !== "handoff" || !command.sourceDeviceId) throw new DeviceError(404, "Playback move not found.");
       if (command.status !== "succeeded") throw new DeviceError(409, "Destination has not confirmed playback. Source will keep playing.");
+      if (command.expiresAt.getTime() <= this.clock()) throw new DeviceError(409, "Playback move expired. Source will keep playing.");
       const source = await this.owned(tx, command.sourceDeviceId);
       const target = command.command.handoff;
       const expected = {

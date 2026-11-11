@@ -44,7 +44,7 @@ REST endpoints:
 - `GET /api/devices/:id`: full owned-device state.
 - `POST /api/devices/:id/{resume,poll,ack,commands,position,rename,revoke,handoff}`. `position` shares a scrub with the account and does not move playback until a seek command is acknowledged.
 - `POST /api/devices/:id/disconnect`: token-bound normal disconnection; deletes a Web player or marks an installed registration offline.
-- `POST /api/devices/transfer`: move account playback to an owned, awake destination. `POST /api/devices/complete-transfer` with the admitted command ID pauses its bound source only after confirmed destination playback; completion cannot be replayed.
+- `POST /api/devices/transfer`: move account playback to an owned, awake destination. `POST /api/devices/complete-transfer` with the admitted command ID pauses its bound source only after confirmed destination playback and before the original command deadline; expired completions leave the source playing, and completion cannot be replayed.
 - `GET /api/devices/commands/:commandId`: command acknowledgment status, restricted to its original acting session.
 - `GET/POST /api/parties`: joined/hosted parties or create a party.
 - `POST /api/parties/join`: scoped invitation code.

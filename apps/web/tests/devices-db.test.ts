@@ -144,6 +144,28 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
       await hosts.poll(source.id, source.token, initial);
     });
 
+    await t.test("successful transfer completion expires at its deadline even if the source plays the same track again", async () => {
+      for (const delay of [0, 5 * 60_000]) {
+        await hosts.poll(source.id, source.token, initial);
+        await hosts.poll(device.id, device.token, initial);
+        const admitted = await hosts.handoff(source.id, source.token, device.id, initial);
+        await hosts.poll(device.id, device.token, initial);
+        await hosts.acknowledge(device.id, device.token, { id: admitted.id, sequence: admitted.sequence, success: true, state: initial });
+        const changedId = randomUUID();
+        await hosts.poll(source.id, source.token, { ...initial, trackId: changedId, queue: [changedId] });
+        now = Date.parse(admitted.expiresAt) + delay;
+        await hosts.poll(source.id, source.token, initial);
+        assert.equal((await hosts.commandStatus(admitted.id)).status, "succeeded");
+        await assert.rejects(() => secondSession.completeTransfer(admitted.id), (error) => error instanceof DeviceError && error.status === 404);
+        for (let retry = 0; retry < 2; retry++) {
+          await assert.rejects(() => hosts.completeTransfer(admitted.id),
+            (error) => error instanceof DeviceError && error.status === 409 && /expired/i.test(error.message));
+          assert.equal((await hosts.poll(source.id, source.token, initial)).command, null);
+        }
+        await hosts.poll(device.id, device.token, initial);
+      }
+    });
+
     let partyId = "", invitation = "";
     await t.test("party invitations are scoped and revocable; uninvited members cannot read", async () => {
       const party = await hosts.createParty("One room", device.id); partyId = party.id;
