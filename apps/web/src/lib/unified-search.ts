@@ -3,6 +3,10 @@ import type { PlayerItem } from "./player-protocol";
 
 export { uniqueRecordingResults as uniqueExternalResults };
 
+export function recordingsOutsideTop<T>(recordings: T[], top: T | null, topRendered: boolean): T[] {
+  return topRendered && top ? recordings.filter((recording) => recording !== top) : recordings;
+}
+
 function textRelevance(value: string, query: string) {
   const text = normalizeSearchText(value);
   if (text === query) return 100;

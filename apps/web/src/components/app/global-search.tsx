@@ -10,7 +10,7 @@ import { fetchCatalog } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import type { RecordingSearchItem } from "@/lib/music-requests";
 import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
-import { searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "@/lib/unified-search";
+import { recordingsOutsideTop, searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "@/lib/unified-search";
 import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
@@ -82,7 +82,6 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
       type: "track", title: recording.title, artist: recording.artist, source: "recording", recording,
     })),
   ]);
-  const moreExternal = top?.source === "recording" ? visibleExternal.filter((item) => item !== top.recording) : visibleExternal;
   const remember = useCallback((value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -260,6 +259,7 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
     if (player) void player.command({ action: "play", item });
   };
   const localLoading = normalized.length >= 2 && activeLocal?.loading !== false;
+  const moreExternal = recordingsOutsideTop(visibleExternal, top?.source === "recording" ? top.recording : null, !localLoading);
   const externalLoading = normalized.length >= 2 && activeExternal?.loading !== false;
   const isEmpty = !localLoading && !externalLoading && !groups.length && !visibleExternal.length &&
     !activeExternal?.error && !activeLocal?.errors;

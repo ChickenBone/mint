@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { RecordingSearchItem } from "../src/lib/music-requests";
 import type { PlayerItem } from "../src/lib/player-protocol";
-import { searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "../src/lib/unified-search";
+import { recordingsOutsideTop, searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "../src/lib/unified-search";
 
 const localTrack = (overrides: Partial<PlayerItem> = {}): PlayerItem => ({
   id: "local-track",
@@ -89,4 +89,14 @@ test("an exact wider-catalog song outranks library metadata matches but tied lib
   assert.equal(topSearchResult("quiet orbit", [artist, library, external]), external);
   const playable = { ...external, source: "library" };
   assert.equal(topSearchResult("quiet orbit", [playable, external]), playable);
+});
+
+test("returned recordings stay in More songs until the external top is rendered", () => {
+  const featured = recording("featured"), other = recording("other");
+  const returned = [featured, other];
+  assert.deepEqual(recordingsOutsideTop(returned, featured, false), returned);
+  assert.deepEqual(recordingsOutsideTop(returned, featured, true), [other]);
+  assert.deepEqual(recordingsOutsideTop([featured], featured, false), [featured]);
+  assert.deepEqual(recordingsOutsideTop([featured], featured, true), []);
+  assert.deepEqual(recordingsOutsideTop(returned, null, true), returned);
 });
