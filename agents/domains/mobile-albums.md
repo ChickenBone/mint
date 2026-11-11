@@ -23,10 +23,10 @@ Use generated focused checks; shared detail changes coordinate with foundation a
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map mobile-albums` (exports, line counts, cross-domain import edges).
 
-### Owned files (4)
+### Owned files (5)
 
 - `apps/mobile/app/album/` `[id].tsx`
-- `apps/mobile/src/features/albums/` `AlbumScreen.tsx`, `album-model.ts`
+- `apps/mobile/src/features/albums/` `AlbumScreen.tsx`, `CatalogAlbumScreen.tsx`, `album-model.ts`
 - `apps/mobile/tests/` `albums-detail.test.ts`
 
 ### Validate
@@ -35,7 +35,7 @@ Owned tests: 1.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/album/[id].tsx' src/features/albums/AlbumScreen.tsx src/features/albums/album-model.ts tests/albums-detail.test.ts
+npm exec -w @mint/mobile -- eslint 'app/album/[id].tsx' src/features/albums/AlbumScreen.tsx src/features/albums/CatalogAlbumScreen.tsx src/features/albums/album-model.ts tests/albums-detail.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/albums-detail.test.ts
 ```
 

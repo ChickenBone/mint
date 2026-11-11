@@ -295,11 +295,13 @@
       ],
       "ui": true,
       "paths": [
+        "apps/web/src/lib/catalog-connection*.ts",
         "apps/web/src/lib/catalog-search.ts",
         "apps/web/src/lib/browser-catalog.ts",
         "apps/web/src/lib/artwork-query.ts",
         "apps/web/src/lib/data.ts",
         "apps/web/src/components/app/music-browser.tsx",
+        "apps/web/src/components/app/catalog-artist-albums.tsx",
         "apps/web/src/components/app/music-links.tsx",
         "apps/web/src/components/app/global-search.tsx",
         "apps/web/src/components/library-browser.tsx",
@@ -312,10 +314,13 @@
         "apps/web/src/app/app/music/**",
         "apps/web/src/app/app/search/**",
         "apps/web/src/app/api/music/search/**",
+        "apps/web/src/app/api/catalog/**",
         "apps/web/src/app/api/library/**",
         "apps/web/src/app/api/artwork/**",
         "apps/web/tests/artwork.test.ts",
+        "apps/web/tests/catalog-connection.test.ts",
         "apps/worker/src/library-*.ts",
+        "apps/worker/src/catalog-priority*.ts",
         "apps/worker/src/jobs/library-*.ts",
         "apps/worker/src/artwork*.ts",
         "apps/worker/src/jobs/artwork.ts",
@@ -325,9 +330,11 @@
         "apps/worker/src/services/public-metadata*.ts",
         "apps/worker/src/services/plex.ts",
         "packages/core/src/artwork.ts",
+        "packages/core/src/catalog-bridge*.ts",
         "packages/core/migrations/0003_track_artwork_url.sql",
         "packages/core/migrations/0004_existing_library.sql",
-        "packages/core/migrations/0014_artist_metadata.sql"
+        "packages/core/migrations/0014_artist_metadata.sql",
+        "docs/catalog-connection.md"
       ]
     },
     {
@@ -472,6 +479,10 @@
       "ui": true,
       "paths": [
         "apps/web/src/lib/music-requests.ts",
+        "apps/web/src/lib/admin-failed-jobs.ts",
+        "apps/web/src/lib/failed-pipeline-jobs.ts",
+        "apps/web/tests/admin-failed-jobs.test.ts",
+        "apps/web/tests/failed-pipeline-jobs.test.ts",
         "apps/web/src/lib/backlog.ts",
         "apps/web/src/components/app/downloads.tsx",
         "apps/web/src/components/app/retry-button.tsx",
@@ -573,6 +584,7 @@
         "packages/core/src/devices.ts",
         "packages/core/src/db/devices.ts",
         "packages/core/migrations/0007_devices.sql",
+        "packages/core/migrations/0018_device_lifecycle.sql",
         "docs/devices.md"
       ]
     },
@@ -733,7 +745,7 @@
       "id": "catalog",
       "surface": "server",
       "title": "Standalone metadata catalog",
-      "summary": "Isolated metadata aggregation, evidence-backed recording reconciliation, popularity graph and search",
+      "summary": "Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge",
       "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "embedding atlas"],
       "ui": true,
       "guides": ["services/catalog/README.md"],

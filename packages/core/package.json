@@ -37,6 +37,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
+    "test": "tsx --test src/*.test.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate-cli.ts"
   },

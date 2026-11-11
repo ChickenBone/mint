@@ -60,7 +60,7 @@ npm run typecheck -w @mint/web
 npm run lint -w @mint/web
 npm run typecheck -w @mint/worker
 npm run typecheck -w @mint/core
-npm exec -w @mint/core -- node --test src/public-cache.test.ts
+npm exec -w @mint/core -- tsx --test src/public-cache.test.ts
 ```
 
 > Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).

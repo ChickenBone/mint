@@ -4,8 +4,10 @@
 
 - Owns `services/catalog/**`: standalone Python/Compose, PostgreSQL, Qdrant,
   volumes and dependencies.
-- No Mint imports, databases, routes, playback, acquisition, accounts or runtime
-  integration. Do not expand aggregation into other domains.
+- No Mint imports or database access, playback, acquisition or accounts.
+  The optional authenticated bridge accepts explicit artist IDs with provenance
+  and serves bounded metadata; Mint owns its producer, consumers and networking.
+  Default standalone operation must not require Mint.
 - Start with `services/catalog/README.md`, then `OPERATIONS.md`, the source
   parser, durable store and focused pipeline tests.
 
@@ -60,24 +62,18 @@
 - Recording reconciliation is read-only and provenance-bearing. Metadata ranks
   are review candidates, never identity/probability; preserve version/duration
   conflicts, explicit exclusions, bounded lookup windows and original records.
-- The standalone loopback console shows bounded, actual telemetry and
-  relationships with accessible reduced motion. Source pause, seed and retry
-  controls are same-origin protected; they do not enable environment-disabled
-  sources, cancel in-flight jobs or override host backoff. It is not a public
-  authenticated administration surface.
+- The loopback console retains bounded telemetry, accessible reduced motion and
+  same-origin controls; these never enable disabled sources, cancel active jobs
+  or override backoff. See `OPERATIONS.md`; it is not public administration.
 - Eligible jobs exclude disabled/paused sources and hosts in backoff. Due counts
   are not active workers; an empty embedding outbox can mean caught up. The
   Cytoscape graph has actual edges, bounded offline settling and accessible
   pan/zoom/selection alternatives, not invented live topology.
-- Artist neighborhoods span canonical aliases with attributed shared credits,
-  never inferred friendship/similarity. Retain bounded paging, sampling notices,
-  stale-request fencing and recent mode. Serve pinned MIT Cytoscape locally
-  under existing CSP from the npm lock; preserve canvas alternatives, reduced
-  motion, reversible neighbor focus and stable viewports.
-- Whole catalog partitions every record into bounded provider/type groups,
-  not musical similarity. Retain exact counts/links, coverage times, accessible
-  drilldown and directed record credits/tags. Report measured SQL storage;
-  never guess Qdrant disk use.
+- Neighborhoods show attributed shared credits, not inferred similarity.
+  Preserve bounded paging, stale-request fencing, sampling notices and accessible
+  graph alternatives. Serve pinned Cytoscape locally under CSP.
+- Whole catalog groups by provider/type, not similarity; retain exact counts,
+  attribution, coverage and accessible drilldown. Never guess Qdrant disk use.
 - `/data` reads only allowlisted catalog tables/the configured Qdrant collection.
   Retain bounded keyset/scroll paging, independent errors and raw JSON precision.
   No arbitrary SQL, database writes or connection disclosure.
@@ -93,19 +89,19 @@ quantization or multi-million-item latency; verify those separately.
 
 ## Generated map
 
-- **Scope:** Isolated metadata aggregation, evidence-backed recording reconciliation, popularity graph and search.
+- **Scope:** Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge.
 - **Read before editing:** [services/catalog/README.md](../../services/catalog/README.md) (UI: also check desktop/mobile per DESIGN.md).
 - **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map catalog` (exports, line counts, cross-domain import edges).
 
-### Owned files (90)
+### Owned files (94)
 
-- `services/catalog/` `.dockerignore`, `.env.example`, `.gitignore`, `Dockerfile`, `OPERATIONS.md`, `README.md`, `SOURCES.md`, `compose.yml`, `package-lock.json`, `package.json`, `pyproject.toml`
-- `services/catalog/catalog/` `__init__.py`, `api.py`, `atlas.py`, `browser.py`, `bulk_import.py`, `catalog_network.py`, `config.py`, `console.py`, `crawler.py`, `discogs.py`, `discogs_import.py`, `embedding_map.py`, `graph.py`, `identity.py`, `importer.py`, `indexer.py`, `ingestion.py`, `main.py`, `model.py`, `musicbrainz_import.py`, `omdb_import.py`, `openwhyd.py`, `providers.py`, `public_sources.py`, `ranker.py`, `reconcile.py`, `schema-v2.sql`, `schema-v3.sql`, `schema-v4.sql`, `schema-v5.sql`, `schema-v6.sql`, `schema-v7.sql`, `schema-v8.sql`, `schema.sql`, `snapshot.py`, `sources.py`, `store.py`, `telemetry.py`, `vectors.py`, `workers.py`, `youtube.py`
+- `services/catalog/` `.dockerignore`, `.env.example`, `.gitignore`, `Dockerfile`, `OPERATIONS.md`, `README.md`, `SOURCES.md`, `compose.bridge.yml`, `compose.yml`, `package-lock.json`, `package.json`, `pyproject.toml`
+- `services/catalog/catalog/` `__init__.py`, `api.py`, `atlas.py`, `bridge.py`, `browser.py`, `bulk_import.py`, `catalog_network.py`, `config.py`, `console.py`, `crawler.py`, `discogs.py`, `discogs_import.py`, `embedding_map.py`, `graph.py`, `identity.py`, `importer.py`, `indexer.py`, `ingestion.py`, `main.py`, `model.py`, `musicbrainz_import.py`, `omdb_import.py`, `openwhyd.py`, `providers.py`, `public_sources.py`, `ranker.py`, `reconcile.py`, `schema-v2.sql`, `schema-v3.sql`, `schema-v4.sql`, `schema-v5.sql`, `schema-v6.sql`, `schema-v7.sql`, `schema-v8.sql`, `schema-v9.sql`, `schema.sql`, `snapshot.py`, `sources.py`, `store.py`, `telemetry.py`, `vectors.py`, `workers.py`, `youtube.py`
 - `services/catalog/catalog/static/` `api.html`, `clustering.worker.js`, `console.css`, `console.js`, `cytoscape.LICENSE.txt`, `cytoscape.min.js`, `data.css`, `data.html`, `data.js`, `embedding-atlas.LICENSE.txt`, `embedding-atlas.js`, `embedding-map.js`, `graph-layout.js`, `graph-view.js`, `index.html`
 - `services/catalog/scripts/` `build-atlas.mjs`
-- `services/catalog/tests/` `conftest.py`, `embedding-map.test.cjs`, `graph-layout.test.cjs`, `test_atlas.py`, `test_browser.py`, `test_bulk_import.py`, `test_catalog_network.py`, `test_console.py`, `test_discogs.py`, `test_embedding_map.py`, `test_graph.py`, `test_identity.py`, `test_model.py`, `test_openwhyd.py`, `test_pipeline.py`, `test_public_sources.py`, `test_reconcile.py`, `test_snapshot.py`, `test_sources.py`, `test_store.py`, `test_workers.py`, `test_youtube.py`
+- `services/catalog/tests/` `conftest.py`, `embedding-map.test.cjs`, `graph-layout.test.cjs`, `test_atlas.py`, `test_bridge.py`, `test_browser.py`, `test_bulk_import.py`, `test_catalog_network.py`, `test_console.py`, `test_discogs.py`, `test_embedding_map.py`, `test_graph.py`, `test_identity.py`, `test_model.py`, `test_openwhyd.py`, `test_pipeline.py`, `test_public_sources.py`, `test_reconcile.py`, `test_snapshot.py`, `test_sources.py`, `test_store.py`, `test_workers.py`, `test_youtube.py`
 
 ### Validate
 

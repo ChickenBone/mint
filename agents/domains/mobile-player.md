@@ -27,10 +27,10 @@ Use focused generated presentation checks; engine, offline or native patch chang
 - **Imported by:** [`mobile`](mobile.md)
 - **Live detail:** `npm run agents -- map mobile-player` (exports, line counts, cross-domain import edges).
 
-### Owned files (17)
+### Owned files (18)
 
 - `apps/mobile/app/` `player.tsx`
-- `apps/mobile/src/features/player/` `LyricsPanel.tsx`, `PlayerScreen.tsx`, `PlayerSurface.tsx`, `SeekSlider.native.tsx`, `SeekSlider.tsx`, `SeekSlider.types.ts`, `SeekSlider.web.tsx`, `StatsForNerds.tsx`, `colors.native.ts`, `colors.ts`, `colors.web.ts`, `gesture.ts`, `palette.ts`, `useSeekPreview.ts`
+- `apps/mobile/src/features/player/` `DevicePicker.tsx`, `LyricsPanel.tsx`, `PlayerScreen.tsx`, `PlayerSurface.tsx`, `SeekSlider.native.tsx`, `SeekSlider.tsx`, `SeekSlider.types.ts`, `SeekSlider.web.tsx`, `StatsForNerds.tsx`, `colors.native.ts`, `colors.ts`, `colors.web.ts`, `gesture.ts`, `palette.ts`, `useSeekPreview.ts`
 - `apps/mobile/tests/` `player-gesture.test.ts`, `player-presentation.test.ts`
 
 ### Validate
@@ -39,7 +39,7 @@ Owned tests: 2.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint app/player.tsx src/features/player/LyricsPanel.tsx src/features/player/PlayerScreen.tsx src/features/player/PlayerSurface.tsx src/features/player/SeekSlider.native.tsx src/features/player/SeekSlider.tsx src/features/player/SeekSlider.types.ts src/features/player/SeekSlider.web.tsx src/features/player/StatsForNerds.tsx src/features/player/colors.native.ts src/features/player/colors.ts src/features/player/colors.web.ts src/features/player/gesture.ts src/features/player/palette.ts src/features/player/useSeekPreview.ts tests/player-gesture.test.ts tests/player-presentation.test.ts
+npm exec -w @mint/mobile -- eslint app/player.tsx src/features/player/DevicePicker.tsx src/features/player/LyricsPanel.tsx src/features/player/PlayerScreen.tsx src/features/player/PlayerSurface.tsx src/features/player/SeekSlider.native.tsx src/features/player/SeekSlider.tsx src/features/player/SeekSlider.types.ts src/features/player/SeekSlider.web.tsx src/features/player/StatsForNerds.tsx src/features/player/colors.native.ts src/features/player/colors.ts src/features/player/colors.web.ts src/features/player/gesture.ts src/features/player/palette.ts src/features/player/useSeekPreview.ts tests/player-gesture.test.ts tests/player-presentation.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/player-gesture.test.ts tests/player-presentation.test.ts
 ```
 

@@ -14,6 +14,7 @@
 - Plex tokens and URLs never reach browsers. Fetches have byte and time bounds, validated redirects, safe raster content, coalescing, cooldowns and bounded caches.
 - Stored public artwork URLs remain fallback metadata. Never overwrite them with proxy paths. Album cards group by album identity.
 - Artist metadata resolves MusicBrainz identity only on exact normalized names or existing MBIDs. Ambiguous names stay unresolved. Sources stay explicit and failures retryable. It never opens audio.
+- The optional catalog bridge exchanges bounded metadata and verified library artist MBIDs only. Catalog-only recordings remain requestable metadata, not playable tracks or automatic acquisitions; failed priority syncs must not erase prior state.
 - Public source reads use `services/public-metadata.ts` and server-only shared cache policy, not bearer/private Plex caching. Validate content/redirects, preserve stale age and true no-match versus provider failure, and keep personal data out of shared keys/values. See [coverage](../architecture.md#server-side-public-read-caches).
 - Plex indexing pages in bounded batches and maps paths to the read-only mount. Re-indexing never erases originals or accepted upgrades.
 
@@ -35,32 +36,34 @@ Details: [playback and library](../playback-and-library.md#artwork) and [integra
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map library` (exports, line counts, cross-domain import edges).
 
-### Owned files (43)
+### Owned files (53)
 
 - `apps/web/src/app/(public)/` `browse/page.tsx`
-- `apps/web/src/app/api/` `artwork/[id]/route.ts`, `library/route.ts`, `music/search/route.ts`
+- `apps/web/src/app/api/` `artwork/[id]/route.ts`, `catalog/[...path]/route.ts`, `library/route.ts`, `music/search/route.ts`
 - `apps/web/src/app/app/` `library/albums/[id]/page.tsx`, `library/artists/[id]/page.tsx`, `library/page.tsx`, `music/page.tsx`, `search/page.tsx`
 - `apps/web/src/components/` `art-wall.tsx`, `artwork.tsx`, `fresh-shelf.tsx`, `library-browser.tsx`, `track-list.tsx`
-- `apps/web/src/components/app/` `global-search.tsx`, `music-browser.tsx`, `music-links.tsx`
-- `apps/web/src/lib/` `artwork-query.ts`, `browser-catalog.ts`, `catalog-search.ts`, `data.ts`
-- `apps/web/tests/` `artwork.test.ts`
-- `apps/worker/src/` `artwork-http.ts`, `artwork.integration.test.ts`, `artwork.test.ts`, `artwork.ts`, `library-index.ts`, `library-policy.ts`
+- `apps/web/src/components/app/` `catalog-artist-albums.tsx`, `global-search.tsx`, `music-browser.tsx`, `music-links.tsx`
+- `apps/web/src/lib/` `artwork-query.ts`, `browser-catalog.ts`, `catalog-connection-data.ts`, `catalog-connection.ts`, `catalog-search.ts`, `data.ts`
+- `apps/web/tests/` `artwork.test.ts`, `catalog-connection.test.ts`
+- `apps/worker/src/` `artwork-http.ts`, `artwork.integration.test.ts`, `artwork.test.ts`, `artwork.ts`, `catalog-priority.test.ts`, `catalog-priority.ts`, `library-index.ts`, `library-policy.ts`
 - `apps/worker/src/jobs/` `artist-metadata.ts`, `artwork.ts`, `library-index.integration.test.ts`, `library-policy.test.ts`
 - `apps/worker/src/services/` `artist-metadata.test.ts`, `artist-metadata.ts`, `artwork.test.ts`, `artwork.ts`, `plex.ts`, `public-metadata.test.ts`, `public-metadata.ts`
+- `docs/` `catalog-connection.md`
 - `packages/core/migrations/` `0003_track_artwork_url.sql`, `0004_existing_library.sql`, `0014_artist_metadata.sql`
-- `packages/core/src/` `artwork.ts`
+- `packages/core/src/` `artwork.ts`, `catalog-bridge.test.ts`, `catalog-bridge.ts`
 
 ### Validate
 
-Owned tests: 8.
+Owned tests: 11.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/artwork.test.ts
+npm exec -w @mint/web -- tsx --test tests/artwork.test.ts tests/catalog-connection.test.ts
 npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test src/artwork.integration.test.ts src/artwork.test.ts src/jobs/library-index.integration.test.ts src/jobs/library-policy.test.ts src/services/artist-metadata.test.ts src/services/artwork.test.ts src/services/public-metadata.test.ts
+npm exec -w @mint/worker -- tsx --test src/artwork.integration.test.ts src/artwork.test.ts src/catalog-priority.test.ts src/jobs/library-index.integration.test.ts src/jobs/library-policy.test.ts src/services/artist-metadata.test.ts src/services/artwork.test.ts src/services/public-metadata.test.ts
 npm run typecheck -w @mint/core
+npm exec -w @mint/core -- tsx --test src/catalog-bridge.test.ts
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.
