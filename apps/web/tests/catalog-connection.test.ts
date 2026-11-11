@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ts from "typescript";
 import { CatalogBridge, configuredCatalogBridge } from "@mint/core";
 import { verifyToken } from "@mint/core/crypto";
 import { albumPlayerId, externalCatalogPageSchema, MintApi } from "@mint/client";
@@ -9,6 +14,43 @@ import { readRequestRecording } from "../src/lib/music-requests";
 
 const id = "00000000-0000-4000-8000-000000000001";
 const user = { id: "fixture-user", name: "Fixture listener", email: "fixture@example.invalid", role: "user" as const, status: "active" as const };
+test("the entire artist catalog shelf disappears when disabled or unverified, retaining loading and error feedback", () => {
+  const require = createRequire(import.meta.url);
+  const source = readFileSync(new URL("../src/components/app/catalog-artist-albums.tsx", import.meta.url), "utf8");
+  const compiled = ts.transpileModule(source, {
+    compilerOptions: { jsx: ts.JsxEmit.ReactJSX, module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  const cases = [
+    { page: { configured: false, items: [], nextCursor: null }, hidden: true },
+    { page: { configured: true, identityVerified: false, items: [], nextCursor: null }, hidden: true },
+    { page: { configured: true, items: [], nextCursor: null }, hidden: false },
+    { error: "Fixture catalog unavailable", hidden: false },
+    { loading: true, hidden: false },
+  ];
+  for (const fixture of cases) {
+    let hook = 0;
+    const hooks = {
+      ...React,
+      useEffect() {},
+      useState(initial: unknown) {
+        return [hook++ === 3 ? fixture.loading ? null : { after: null, revision: 0, ...fixture } : initial, () => {}];
+      },
+    };
+    const exports: { CatalogArtistAlbums?: typeof import("../src/components/app/catalog-artist-albums").CatalogArtistAlbums } = {};
+    new Function("require", "exports", compiled)((name: string) => name === "react" ? hooks : require(name), exports);
+    assert.ok(exports.CatalogArtistAlbums);
+    const html = renderToStaticMarkup(React.createElement(exports.CatalogArtistAlbums, { artistMbid: id }));
+    if (fixture.hidden) assert.equal(html, "", "disabled shelves leave no heading, spacing or controls");
+    else {
+      assert.match(html, /Beyond your library/);
+      if (fixture.loading) assert.match(html, /Loading catalog/);
+      if (fixture.error) {
+        assert.match(html, /Fixture catalog unavailable/);
+        assert.match(html, /Try again/);
+      }
+    }
+  }
+});
 test("local album links are decoded canonically without inferring an external identity from names", () => {
   assert.deepEqual(decodeCatalogLibraryAlbum(albumPlayerId("Fixture artist", "Fixture album")), ["Fixture artist", "Fixture album"]);
   for (const bad of ["artist name", `al_${Buffer.from('["artist"]').toString("base64url")}`,

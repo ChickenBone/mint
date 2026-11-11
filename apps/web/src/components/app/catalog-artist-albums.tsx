@@ -18,7 +18,10 @@ async function catalogFetch(url: string, init: RequestInit = {}) {
   return raw;
 }
 
-function CatalogPage({ kind, id, onAlbum }: { kind: "artists" | "albums" | "library-albums"; id: string; onAlbum?(album: ExternalCatalogItem): void }) {
+function CatalogPage({ kind, id, onAlbum, title, onBack }: {
+  kind: "artists" | "albums" | "library-albums"; id: string; onAlbum?(album: ExternalCatalogItem): void;
+  title?: string; onBack?(): void;
+}) {
   const [after, setAfter] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
   const [state, setState] = useState<{ after: string | null; revision: number; page?: ExternalCatalogPage; error?: string } | null>(null);
@@ -54,7 +57,7 @@ function CatalogPage({ kind, id, onAlbum }: { kind: "artists" | "albums" | "libr
     } finally { setPending(null); }
   }
   if (current?.page?.configured === false || current?.page?.identityVerified === false) return null;
-  return <section aria-label={kind === "artists" ? "Catalog albums" : "Catalog album recordings"} aria-busy={!current} className="mt-6 space-y-4">
+  const content = <section aria-label={kind === "artists" ? "Catalog albums" : "Catalog album recordings"} aria-busy={!current} className="mt-6 space-y-4">
     {kind === "library-albums" ? <h2 className="text-xl font-semibold">Catalog album recordings</h2> : null}
     <p className="text-sm text-muted">MusicBrainz catalog metadata, separate from playable library songs. Browsing does not download music. Add only music you are authorized to acquire.</p>
     {!current ? <p role="status" className="text-sm text-muted">Loading catalog...</p> : null}
@@ -73,6 +76,11 @@ function CatalogPage({ kind, id, onAlbum }: { kind: "artists" | "albums" | "libr
       {current?.page?.nextCursor ? <button className={action} disabled={pending !== null} onClick={() => setAfter(current.page!.nextCursor)}>More {kind === "artists" ? "albums" : "recordings"}</button> : null}
     </div>
   </section>;
+  return title ? <div className="mt-8">
+    <h2 className="text-xl font-semibold">{title}</h2>
+    {onBack ? <button className={`${action} mt-4`} onClick={onBack}>Back to catalog albums</button> : null}
+    {content}
+  </div> : content;
 }
 
 export function CatalogArtistAlbums({ artistMbid }: { artistMbid: string | null | undefined }) {
@@ -85,10 +93,6 @@ export function CatalogLibraryAlbum({ albumId }: { albumId: string }) {
 
 function ArtistCatalog({ artistMbid }: { artistMbid: string }) {
   const [album, setAlbum] = useState<ExternalCatalogItem | null>(null);
-  return <div className="mt-8">
-    <h2 className="text-xl font-semibold">{album ? album.title : "Beyond your library"}</h2>
-    {album ? <><button className={`${action} mt-4`} onClick={() => setAlbum(null)}>Back to catalog albums</button>
-      <CatalogPage key={album.id} kind="albums" id={album.id} /></> :
-      <CatalogPage kind="artists" id={artistMbid} onAlbum={setAlbum} />}
-  </div>;
+  return album ? <CatalogPage key={album.id} kind="albums" id={album.id} title={album.title} onBack={() => setAlbum(null)} /> :
+    <CatalogPage kind="artists" id={artistMbid} title="Beyond your library" onAlbum={setAlbum} />;
 }
