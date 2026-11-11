@@ -202,11 +202,12 @@ is CSRF protection for a loopback operator tool, **not user authentication**.
 Do not expose it publicly. Remote operators should use a local tunnel rather
 than publishing the console to a LAN. Use one search replica as configured.
 
-Schema v8 migrates standalone v1/v2/v3/v4/v5/v6/v7 databases automatically during `initialize`,
+Schema v9 migrates standalone v1/v2/v3/v4/v5/v6/v7/v8 databases automatically during `initialize`,
 preserving metadata, queues, counters and pauses, and adding source-host jobs,
 provider links, attribution annotations, reversible artist identity groups and
 per-host dispatch cursors/indexes, source contracts, import checkpoints and indexed
-recording-provider link lookups. Back up
+recording-provider link lookups. It also adds provenance-bearing artist priority
+state and release-expansion job support for bounded album population. Back up
 before upgrading. Rebuild with `docker compose up --build -d`.
 
 ## Large database imports
