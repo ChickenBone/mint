@@ -146,7 +146,6 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
       </div>
     </header>}
     {collection.kind !== "library" && <ActionBar collection={collection} title={title} first={first} empty={!first} />}
-    {collection.kind === "artist" && type === "album" && <ArtistSongs collection={collection} onSeeAll={() => change({ type: "track" })} />}
     <div className="mb-5 flex flex-wrap items-center gap-3">
       {collection.kind === "artist" && <h2 className="mr-2 text-2xl font-bold">{type === "track" ? "All songs" : "Albums"}</h2>}
       {collection.kind === "album" && <h2 className="sr-only">Songs</h2>}
@@ -317,34 +316,6 @@ function ActionBar({ collection, title, first, empty }: { collection: PlayerColl
     {first && <TrackMenuButton item={{ id: collection.kind === "album" || collection.kind === "artist" ? collection.id : first.id, type: collection.kind === "artist" ? "artist" : "album", title, artist: first.artist, artistId: first.artistId, thumb: first.thumb }} />}
     {player.busy && <span role="status" className="text-sm text-muted">Loading…</span>}
   </div>;
-}
-
-function ArtistSongs({ collection, onSeeAll }: { collection: PlayerCollection; onSeeAll: () => void }) {
-  const key = collectionParams(collection).toString();
-  const [state, setState] = useState<{ key: string; page?: CatalogPage; error?: string } | null>(null);
-  useEffect(() => {
-    const controller = new AbortController();
-    const query = new URLSearchParams(key);
-    query.set("type", "track"); query.set("size", "5"); query.set("start", "0");
-    void fetchCatalog(query, controller.signal).then((page) => {
-      if (!controller.signal.aborted) setState({ key, page });
-    }).catch((error: unknown) => {
-      if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : "Songs could not load." });
-    });
-    return () => controller.abort();
-  }, [key]);
-  const current = state?.key === key ? state : null;
-  if (current?.error) return <p role="status" className="mb-8 text-sm text-warn">Songs could not load. {current.error}</p>;
-  if (!current?.page?.items.length) return null;
-  return <section aria-labelledby="artist-songs" className="mb-10">
-    <div className="mb-3 flex items-baseline justify-between gap-4">
-      <h2 id="artist-songs" className="text-2xl font-bold">Songs</h2>
-      {current.page.total > current.page.items.length && <button type="button" onClick={onSeeAll} className="min-h-11 text-sm font-semibold text-muted hover:text-fg hover:underline">
-        Show all {current.page.total.toLocaleString()}
-      </button>}
-    </div>
-    <CatalogTracks items={current.page.items} collection={collection} offset={0} compact />
-  </section>;
 }
 
 type ArtistProfile = NonNullable<CatalogPage["artistProfile"]>;

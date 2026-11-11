@@ -18,3 +18,19 @@ test("mixed search suppresses only conservatively confirmed recordings", () => {
   ];
   assert.deepEqual(uniqueRecordings(local, matches).map((item) => item.id), ["live", "unknown", "long"]);
 });
+
+test("native search hides catalog copies linked to the displayed library track", () => {
+  const local = [{ id: "local", type: "track" as const, title: "Écho", artist: "A Band", album: "First" }];
+  const linked = { id: "recording", title: "Echo", artist: "A Band", album: "Compilation", durationSec: null,
+    existing: { id: "local", playable: true } };
+  assert.deepEqual(uniqueRecordings(local, [linked]), []);
+  assert.equal(uniqueRecordings(local, [{ ...linked, title: "Echo (Live)" }]).length, 1);
+  assert.equal(uniqueRecordings(local, [{ ...linked, existing: { id: "another", playable: true } }]).length, 1);
+});
+
+test("native search deduplicates repeated catalog IDs and prefers the playable copy", () => {
+  const missing = { id: "same", title: "Echo", artist: "A Band", album: "First", durationSec: null };
+  const playable = { ...missing, existing: { id: "local", playable: true } };
+  assert.deepEqual(uniqueRecordings([], [missing, playable, { ...missing, id: "different" }]),
+    [playable, { ...missing, id: "different" }]);
+});

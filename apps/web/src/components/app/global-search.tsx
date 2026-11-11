@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowDownToLine, Disc3, ListMusic, Loader2, MicVocal, Play, Search, TrendingUp } from "lucide-react";
 import type { TrackView } from "@mint/core/events";
@@ -10,7 +10,7 @@ import { fetchCatalog } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import type { RecordingSearchItem } from "@/lib/music-requests";
 import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
-import { searchResponseIsCurrent, uniqueExternalResults } from "@/lib/unified-search";
+import { searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "@/lib/unified-search";
 import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
@@ -28,6 +28,9 @@ const emptyRecent: string[] = [];
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };
 type LocalResult = { query: string; groups: ResultGroup[]; errors: number; loading: boolean };
 type RecordingResult = RecordingSearchItem;
+type TopCandidate = Pick<PlayerItem, "title" | "artist" | "type"> & (
+  { source: "library"; item: PlayerItem } | { source: "recording"; recording: RecordingResult }
+);
 type ExternalResult = { query: string; items: RecordingResult[]; loading: boolean; error: string };
 type RequestState = { trackId: string; stage: string; progress: number; error: string | null };
 const emptyGroups: ResultGroup[] = [];
@@ -73,6 +76,13 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
   const catalogMatches = useMemo(() => groups.find((group) => group.type === "track")?.items ?? [], [groups]);
   const externalItems = activeExternal?.items ?? emptyRecordings;
   const visibleExternal = uniqueExternalResults(catalogMatches, externalItems);
+  const top = topSearchResult<TopCandidate>(normalized, [
+    ...groups.flatMap((group) => group.items.map((item): TopCandidate => ({ ...item, source: "library", item }))),
+    ...visibleExternal.map((recording): TopCandidate => ({
+      type: "track", title: recording.title, artist: recording.artist, source: "recording", recording,
+    })),
+  ]);
+  const moreExternal = top?.source === "recording" ? visibleExternal.filter((item) => item !== top.recording) : visibleExternal;
   const remember = useCallback((value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -285,16 +295,22 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
       Some library results couldn’t load. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
     </p> : null}
     {normalized.length >= 2 && localLoading && !groups.length && <p role="status" className="mt-6 text-sm text-muted">Searching your library…</p>}
-    {!localLoading && !!groups.length && <SearchResults groups={groups} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
+    {!localLoading && top && <SearchResults groups={groups} top={top.source === "library" ? top.item : null}
+      externalTop={top.source === "recording" ? <ol className="rounded-lg bg-elevated px-5">
+        <ExternalRecording item={top.recording} request={requests[top.recording.id]}
+          playable={playable[top.recording.existing?.id ?? ""] ?? (requests[top.recording.id] ? playable[requests[top.recording.id]!.trackId] : undefined)}
+          busy={!online} playDisabled={!player?.ready || !!player?.busy} onPlay={chooseTrack}
+          onAdd={(youtubeUrl) => void addToLibrary(top.recording, youtubeUrl)} />
+      </ol> : null} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
       onPlay={chooseTrack} onNavigate={() => remember(query)} />}
-    {normalized.length >= 2 && <section className="mt-8" aria-labelledby="external-results-heading">
+    {normalized.length >= 2 && (externalLoading || activeExternal?.error || moreExternal.length > 0 || isEmpty) && <section className="mt-8" aria-labelledby="external-results-heading">
       <h2 id="external-results-heading" className="mb-3 text-xl font-bold">More songs</h2>
       {externalLoading && <p role="status" className="text-sm text-muted">Searching more songs…</p>}
       {activeExternal?.error && <p role="alert" className="text-sm text-warn">
         Couldn’t search more songs. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
       </p>}
-      {!externalLoading && !activeExternal?.error && visibleExternal.length > 0 && <ol className="divide-y divide-line">
-        {visibleExternal.map((item) => <ExternalRecording key={item.id} item={item}
+      {!externalLoading && !activeExternal?.error && moreExternal.length > 0 && <ol className="divide-y divide-line">
+        {moreExternal.map((item) => <ExternalRecording key={item.id} item={item}
           request={requests[item.id]} playable={playable[item.existing?.id ?? ""] ?? (requests[item.id] ? playable[requests[item.id]!.trackId] : undefined)}
           busy={!online} playDisabled={!player?.ready || !!player?.busy} onPlay={chooseTrack} onAdd={(youtubeUrl) => void addToLibrary(item, youtubeUrl)} />)}
       </ol>}
@@ -350,27 +366,19 @@ function ExternalRecording({ item, request, playable, busy, playDisabled, onPlay
 const albumHref = (id: string) => `/app/library/albums/${encodeURIComponent(id)}`;
 const artistHref = (id: string) => `/app/library/artists/${encodeURIComponent(id)}`;
 
-function topResult(groups: ResultGroup[]) {
-  const artist = groups.find((group) => group.type === "artist")?.items[0];
-  const track = groups.find((group) => group.type === "track")?.items[0];
-  const album = groups.find((group) => group.type === "album")?.items[0];
-  return artist ?? track ?? album ?? null;
-}
-
-function SearchResults({ groups, canPlay, playDisabled, onPlay, onNavigate }: {
-  groups: ResultGroup[]; canPlay: boolean; playDisabled: boolean;
+function SearchResults({ groups, top, externalTop, canPlay, playDisabled, onPlay, onNavigate }: {
+  groups: ResultGroup[]; top: PlayerItem | null; externalTop: ReactNode; canPlay: boolean; playDisabled: boolean;
   onPlay: (item: PlayerItem) => void; onNavigate: () => void;
 }) {
-  const top = topResult(groups);
   const songs = groups.find((group) => group.type === "track")?.items.slice(0, 6) ?? [];
   const artists = groups.find((group) => group.type === "artist")?.items ?? [];
   const albums = groups.find((group) => group.type === "album")?.items ?? [];
   const typeLabel = (item: PlayerItem) => item.type === "artist" ? "Artist" : item.type === "album" ? "Album" : "Song";
   return <>
     <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-      {top && <section aria-label="Top result">
+      {(top || externalTop) && <section aria-label="Top result">
         <h2 className="mb-3 text-xl font-bold">Top result</h2>
-        <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
+        {top ? <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
           {top.type === "artist" ? <Link href={artistHref(top.id)} onClick={onNavigate} aria-label={`Open ${top.title}`} tabIndex={-1}>
             <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-full shadow-floating" />
           </Link> : <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
@@ -385,7 +393,7 @@ function SearchResults({ groups, canPlay, playDisabled, onPlay, onNavigate }: {
           {top.type === "track" && canPlay && <button type="button" aria-label={`Play ${top.title}`} disabled={playDisabled} onClick={() => onPlay(top)}
             className="absolute bottom-5 right-5 grid size-12 place-items-center rounded-full bg-mint text-mint-ink shadow-floating transition hover:scale-105 disabled:opacity-40"><Play className="size-5 fill-current" aria-hidden /></button>}
           {canPlay && <span className="absolute right-3 top-3"><TrackMenuButton item={top} /></span>}
-        </MusicItem>
+        </MusicItem> : externalTop}
       </section>}
       {!!songs.length && <section aria-label="Songs">
         <h2 className="mb-3 text-xl font-bold">Songs</h2>
