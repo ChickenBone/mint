@@ -79,7 +79,7 @@ test("native music persists isolation, collaboration, duplicates, privacy and li
   const previous = globalDb.__mintDb;
   globalDb.__mintDb = { db, pool };
   try {
-    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale"]) {
+    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale", "0019_source_choices"]) {
       const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
       for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) {
         if (statement.trim()) await pool.query(statement);

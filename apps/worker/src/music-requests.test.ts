@@ -896,7 +896,7 @@ test("import aliases, concurrent placeholders, exact-source merging and re-sync 
     process.env.INDEX_EXISTING_LIBRARY="false";
     const video=${JSON.stringify(video)},audio=${JSON.stringify(audio)};
     try {
-      for (const migration of ["0000_init","0001_workers","0002_drop_previews","0003_track_artwork_url","0004_existing_library","0009_playback_scale","0012_charts"]) {
+      for (const migration of ["0000_init","0001_workers","0002_drop_previews","0003_track_artwork_url","0004_existing_library","0009_playback_scale","0012_charts", "0019_source_choices"]) {
         const source=await readFile(new URL("../../packages/core/migrations/"+migration+".sql",import.meta.url),"utf8");
         for(const statement of source.replaceAll('"public".','"'+namespace+'".').split("--> statement-breakpoint"))
           if(statement.trim()) await pool.query(statement);
