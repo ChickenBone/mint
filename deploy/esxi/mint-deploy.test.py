@@ -292,6 +292,19 @@ class DeploymentTests(unittest.TestCase):
         self.assertLess(worker, web)
         self.assertIn("--wait", commands[worker])
 
+    def test_maintenance_reloads_already_managed_proxy_before_probe(self):
+        state = {"deployed": A, "proxy_ready": True, "slot": "blue"}
+        m.write(m.ROOT / "proxy" / "Caddyfile", "previous")
+        events = []
+        with patch.object(m, "current_config", return_value=fixture()), \
+                patch.object(m, "maintenance_time", return_value=True), patch.object(m, "backup"), \
+                patch.object(m, "compose"), \
+                patch.object(m, "proxy_command", side_effect=lambda path, *a: events.append((path, a[0]))), \
+                patch.object(m, "probe", side_effect=lambda *a: events.append("probe")):
+            m.activate(fixture(), state, B, True)
+        self.assertEqual(events, [(m.ROOT / "next.json", "validate"), (m.ROOT / "next.json", "reload"), "probe"])
+        self.assertEqual(state["deployed"], B)
+
     def test_migration_failure_never_starts_new_web(self):
         state = {"deployed": A, "proxy_ready": True, "slot": "blue"}
         commands = []
