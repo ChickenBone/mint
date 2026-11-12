@@ -16,6 +16,21 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("CI runs required native HTTP contracts after the production build in an isolated database", () => {
+  const ci = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8").replaceAll("\r\n", "\n");
+  assert.match(ci, /apt-get install -y -qq ffmpeg redis-server/);
+  const build = ci.indexOf("      - run: npm run build\n");
+  const database = ci.indexOf("      - name: Create isolated native HTTP integration database\n");
+  const fixture = ci.indexOf("      - name: Verify native HTTP listening contracts (required)\n");
+  assert.ok(build >= 0 && database > build && fixture > database);
+  const step = ci.slice(fixture, ci.indexOf("      - run:", fixture));
+  assert.match(ci.slice(database, fixture), /CREATE DATABASE mint_native_test_http/);
+  assert.match(step, /run: npm exec -w @mint\/web -- tsx --test tests\/native-http\.integration\.test\.ts/);
+  assert.match(step, /NATIVE_HTTP_DATABASE_URL: postgres:\/\/mint:fixture-only@localhost:5432\/mint_native_test_http/);
+  assert.match(step, /NATIVE_HTTP_REQUIRED: "1"/);
+  assert.doesNotMatch(step, /continue-on-error|if:|\|\|/);
+});
+
 test("Cobalt opt-in image and client preserve private defaults across CLI, NAS and volunteer setup", () => {
   const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
   const agent = readFileSync(new URL("../../docker-compose.agent.yml", import.meta.url), "utf8");

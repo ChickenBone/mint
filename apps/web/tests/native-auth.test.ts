@@ -1,10 +1,25 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { currentNativeContext, isNativeTransportRequest, runNativeRequest, validConsumerMutation } from "../src/lib/native-context";
 import { nativeHttp, nativeRouteAllowed, nativeWebOriginAllowed } from "../src/lib/native-http";
 
 const user = { id: "user", email: "listener@example.com", name: "Listener", role: "user" as const, status: "active" as const };
+test("required native HTTP integration fails without fixture configuration instead of skipping", () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--test", "tests/native-http.integration.test.ts"], {
+    cwd: new URL("../", import.meta.url),
+    env: { ...env, NATIVE_HTTP_REQUIRED: "1", NATIVE_HTTP_DATABASE_URL: "" },
+    encoding: "utf8", timeout: 10_000,
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /NATIVE_HTTP_DATABASE_URL is required/);
+  assert.match(result.stdout, /# skipped 0/);
+});
+
 test("native analysis incompatibility logs only a fixed redacted diagnostic before safe 503", () => {
   const source = readFileSync(new URL("../src/app/api/native/[...path]/route.ts", import.meta.url), "utf8");
   assert.match(source, /if \(!parsed\.success\) \{\s*console\.error\("\[native-api\] track analysis response validation failed"\);\s*return json\("Track analysis is unavailable\.", 503\);/);
