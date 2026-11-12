@@ -18,6 +18,7 @@ Agents route each task to one or more **domains** first. See the [domain index](
 | [Browser testing and mocks](browser-testing-and-mocks.md) | Running Playwright, seeding isolated demos, testing real boundaries and capturing screenshots |
 | [Sleeves, shelves and assets](sleeves-and-shelves.md) | Designing virtual playlist covers, album art, discovery rails and public-safe demo assets |
 | [Working at scale](working-at-scale.md) | Routing tasks to domains, decomposing large tasks, adding or splitting domains |
+| [Collaboration](collaboration.md) | Code work: shared GitHub tickets, dispatcher-backed exclusive domain claims, dependencies and handoffs |
 | [Focused mobile features](mobile-features.md) | Working on a mobile capability or coordinating shared foundation/contracts and future seams |
 | [Mint mobile UX skill](../.github/skills/mint-mobile-ux/SKILL.md) | Native UI tasks: read first, then only relevant pinned Expo/native interaction references; no plugin required |
 | [Ignored local memory](local-memory.md) | Explicitly initializing/reusing private domain/task evidence and handoffs; never automatic context |

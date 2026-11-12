@@ -39,9 +39,32 @@ Acceptance: <observable outcome and required verification>
 
 ## Concurrent sessions
 
-Add this to a request when other sessions may be active:
+Code changes use the shared GitHub issue board and
+[dispatcher collaboration protocol](collaboration.md), even when no peer session
+is visible. Reuse an existing matching issue or create one with a goal, acceptance
+criteria and scope; ordinary discussion/read-only research needs no ticket. Route
+and request every touched domain, then wait for an explicit trusted response
+correlated to your request and check current ownership before editing. Issue
+labels, assignment and old `CLAIM` comments are not locks. Stop on conflict,
+staleness, timeout or unavailable dispatcher; do not steal a claim or release
+unfinished work merely because a turn ends.
 
-> Work in a new isolated worktree and feature branch, not another session's dirty checkout. Read the current guides and route this request before editing. Discover active sessions using the available session tools and obtain their explicit owned paths, shared contracts and runtime ownership; session names or an idle status are not proof of no conflicts. Announce your narrow owned paths and any shared-contract needs before editing, negotiate overlaps, and designate one writer for shared manifests, generated domain maps and dependency lockfiles. If session tools are unavailable, request an ownership handoff rather than claiming no conflicts. Do not edit peer worktrees, reset their changes, copy their uncommitted files or cherry-pick their work without authorization. Shared runtimes, databases and ports have an owner: coordinate changes, migrations, restarts and test resources with that owner; prefer isolated fixtures. Preserve public DTO/API compatibility unless a contract change is agreed. Hand off exact changed files/contracts, checks actually run, limitations and integration order. Keep secrets, private logs and transcripts out of the repository. Do not commit, push or deploy unless the current user explicitly authorizes it.
+Use an existing app-managed feature branch/worktree when provided; otherwise
+recommend a short-lived isolated branch/PR per ticket, subject to current-user
+authorization. Do not switch branches, issue raw branch-renaming commands, reset
+unrelated edits or blindly rebase dirty/active shared branches. Inspect open PRs
+and obtain explicit handoffs for existing sessions/unpublished work; neither the
+bot nor GitHub can automatically see local unpublished files. Session discovery
+supplements, never replaces, the dispatcher lock.
+
+Shared contracts land in dependency issues under their owner's claim before
+consumers depend on them. Keep one manifest/generated-sync and dependency-lockfile
+writer. Coordinate shared runtime/database/port ownership separately; prefer
+isolated fixtures. Do not edit peer worktrees or copy/cherry-pick their work
+without authorization. Hand off exact files/contracts, checks actually run,
+limitations, integration order and remaining claim ownership on the ticket.
+Capture unrelated ideas as separate tickets rather than expanding the claim.
+Commit, push, open a PR, merge and deploy still need current-user authorization.
 
 Deployment authorization is separate from Git publication. A passing test, APK
 build, export or workflow is not proof that a running backend or physical device
