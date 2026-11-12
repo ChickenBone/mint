@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
@@ -129,6 +130,96 @@ class DeploymentTests(unittest.TestCase):
             self.assertEqual(m.execute(args), 0)
             prepare.assert_not_called()
         self.assertEqual(m.load(m.ROOT / "deploy-state.json")["pending"]["sha"], B)
+
+    def test_emergency_runs_full_maintenance_outside_window_and_records_authorization(self):
+        state = {"deployed": A, "proxy_ready": False}
+        m.save(m.ROOT / "deploy-state.json", state)
+        args = SimpleNamespace(status=False, maintenance=False, dry_run=False, emergency="Urgent proxy adoption")
+        commands = []
+        with patch.object(m, "eligible", return_value=B), \
+                patch.object(m, "reason_for_maintenance", return_value="worker change"), \
+                patch.object(m, "maintenance_time", return_value=False), \
+                patch.object(m, "current_config", return_value=fixture()), \
+                patch.object(m, "prepare", return_value=fixture()) as prepare, \
+                patch.object(m, "backup") as backup, patch.object(m, "probe"), \
+                patch.object(m, "compose", side_effect=lambda *a, **k: commands.append(a)):
+            self.assertEqual(m.execute(args), 0)
+        prepare.assert_called_once_with(B, fixture(), False)
+        backup.assert_called_once()
+        saved = m.load(m.ROOT / "deploy-state.json")
+        self.assertEqual(saved["deployed"], B)
+        self.assertEqual(saved["last_emergency"]["reason"], args.emergency)
+        self.assertEqual(saved["last_emergency"]["sha"], B)
+        self.assertIn("requested_at", saved["last_emergency"])
+        worker = next(i for i, command in enumerate(commands) if command[-1] == "worker")
+        web = next(i for i, command in enumerate(commands) if command[0] == m.ROOT / "blue.json")
+        self.assertLess(worker, web)
+
+    def test_emergency_cli_rejects_empty_multiline_and_non_deployment_requests(self):
+        for flags in (
+            ["--emergency", ""], ["--emergency", "  "],
+            ["--emergency", "first\nsecond"], ["--emergency", "x" * 501],
+            ["--emergency", "Incident", "--status"],
+            ["--emergency", "Incident", "--check-window"],
+        ):
+            with self.subTest(flags=flags):
+                result = subprocess.run([sys.executable, "-B", str(Path(m.__file__)), *flags],
+                                        capture_output=True, text=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn("--emergency", result.stderr)
+
+    def test_emergency_does_not_bypass_gate_or_failure_latch(self):
+        args = SimpleNamespace(status=False, maintenance=False, dry_run=False, emergency="Incident")
+        for state, gate in (
+            ({"deployed": A}, None),
+            ({"deployed": A, "in_progress": {"sha": B}}, B),
+            ({"deployed": A, "last_error": "migration failed"}, B),
+        ):
+            with self.subTest(state=state):
+                m.save(m.ROOT / "deploy-state.json", state)
+                with patch.object(m, "eligible", return_value=gate), \
+                        patch.object(m, "maintenance_time", return_value=False), \
+                        patch.object(m, "prepare") as prepare, patch.object(m, "compose") as command:
+                    with self.assertRaises(RuntimeError):
+                        m.execute(args)
+                    prepare.assert_not_called()
+                    command.assert_not_called()
+                self.assertNotIn("last_emergency", m.load(m.ROOT / "deploy-state.json"))
+
+    def test_emergency_dry_run_does_not_authorize_or_mutate_deployment(self):
+        state = {"deployed": A}
+        m.save(m.ROOT / "deploy-state.json", state)
+        args = SimpleNamespace(status=False, maintenance=False, dry_run=True, emergency="Incident")
+        with patch.object(m, "eligible", return_value=B), \
+                patch.object(m, "reason_for_maintenance", return_value="worker change"), \
+                patch.object(m, "maintenance_time", return_value=False), \
+                patch.object(m, "prepare") as prepare:
+            self.assertEqual(m.execute(args), 0)
+            prepare.assert_not_called()
+        self.assertEqual(m.load(m.ROOT / "deploy-state.json"), state)
+        self.assertFalse((m.ROOT / "release-jobs.json").exists())
+
+    def test_emergency_migration_failure_still_latches_without_starting_web(self):
+        m.save(m.ROOT / "deploy-state.json", {"deployed": A})
+        args = SimpleNamespace(status=False, maintenance=False, dry_run=False, emergency="Incident")
+        commands = []
+        def compose(*args, **kwargs):
+            commands.append(args)
+            if args[-1] == "worker":
+                raise subprocess.CalledProcessError(1, ["migration-health"])
+        with patch.object(m, "eligible", return_value=B), \
+                patch.object(m, "reason_for_maintenance", return_value="worker change"), \
+                patch.object(m, "maintenance_time", return_value=False), \
+                patch.object(m, "current_config", return_value=fixture()), \
+                patch.object(m, "prepare", return_value=fixture()), patch.object(m, "backup"), \
+                patch.object(m, "compose", side_effect=compose):
+            with self.assertRaises(subprocess.CalledProcessError):
+                m.execute(args)
+        saved = m.load(m.ROOT / "deploy-state.json")
+        self.assertTrue(saved["last_error"])
+        self.assertEqual(saved["in_progress"]["sha"], B)
+        self.assertEqual(saved["deployed"], A)
+        self.assertFalse(any(command[0] == m.ROOT / "blue.json" for command in commands))
 
     def test_dry_run_does_not_change_state_or_cache(self):
         args = SimpleNamespace(status=False, maintenance=True, dry_run=True)
