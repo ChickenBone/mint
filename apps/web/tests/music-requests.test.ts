@@ -345,13 +345,14 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
       ({ email: `${name}@requests.test`, name, status: "active" as const, passwordHash: "fixture" }))).returning();
     const id = randomUUID(), item = { id, title: "First Light", artist: "Mint Fixture", album: "Browser Sessions", durationSec: 90 };
     let catalogCalls = 0;
+    const cacheStore = publicCacheFixture().cache;
     const fetcher: typeof fetch = async (input, init) => {
       catalogCalls++;
       assert.equal(new URL(String(input)).hostname, "musicbrainz.org");
       assert.ok(new Headers(init?.headers).get("user-agent")?.startsWith("Mint/"));
       return Response.json({ recordings: [{ id, title: item.title, length: 90000, "artist-credit": [{ name: item.artist }], releases: [{ title: item.album }] }] });
     };
-    const results = await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true });
+    const results = await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true, cacheStore });
     assert.equal(results.length, 1); assert.equal(results[0]!.existing, null);
     assert.equal(await db.$count(schema.tracks), 0, "metadata search must not create library tracks");
     assert.equal(await db.$count(schema.userTracks), 0, "metadata search must not grant ownership");
@@ -377,13 +378,13 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     const [stored] = await db.select().from(schema.tracks).where(eq(schema.tracks.id, trackId));
     assert.equal(stored!.youtubeVideoId, "abcdefghijk"); assert.equal(stored!.error, null);
     await db.update(schema.tracks).set({ stage: "ready" }).where(eq(schema.tracks.id, trackId));
-    const readyWithoutFile = await searchRecordings(other!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true });
+    const readyWithoutFile = await searchRecordings(other!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true, cacheStore });
     assert.equal(readyWithoutFile[0]!.existing?.playable, false, "a ready-looking stage is not proof of playable audio");
     assert.equal(readRequestRecording(other!.id, readyWithoutFile[0]!.token).id, id);
     assert.throws(() => readRequestRecording(owner!.id, readyWithoutFile[0]!.token), /expired/);
     assert.equal(await db.$count(schema.userTracks), 1, "cached metadata does not become owned by the searching account");
     await db.update(schema.tracks).set({ filePath: "/fixture/audio.flac" }).where(eq(schema.tracks.id, trackId));
-    assert.equal((await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true }))[0]!.existing?.playable, true);
+    assert.equal((await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true, cacheStore }))[0]!.existing?.playable, true);
     assert.equal(catalogCalls, 1, "local playability and signing are refreshed independently of cached metadata");
     const secondToken = signToken("music-request", { userId: other!.id, recording: item }, 60000);
     assert.equal((await requestRecording(other!.id, secondToken)).needsQueue, false);

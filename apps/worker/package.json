@@ -8,7 +8,7 @@
     "build": "esbuild src/index.ts src/hub.ts src/analysis-worker.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:bullmq --external:ioredis --external:pg --external:drizzle-orm --external:pino --external:@node-rs/argon2 --sourcemap",
     "start": "node --enable-source-maps dist/index.js",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "test": "tsx --test --test-force-exit src/*.test.ts src/**/*.test.ts",
     "match-report": "tsx src/match-report.ts",
     "dev:hub": "tsx watch --env-file-if-exists=../../.env src/hub.ts",
     "start:hub": "node --enable-source-maps dist/hub.js"

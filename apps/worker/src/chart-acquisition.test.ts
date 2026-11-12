@@ -11,7 +11,7 @@ test("an explicit MusicBrainz recording is looked up by identity and cannot be r
   t.mock.method(globalThis, "fetch", async (input: string) => {
     const url = new URL(input);
     assert.equal(url.pathname, `/ws/2/recording/${id}`);
-    assert.equal(url.searchParams.get("inc"), "artists+releases+release-groups");
+    assert.equal(url.searchParams.get("inc"), "artists+releases+release-groups+media");
     return Response.json({ id, title, length: duration, "artist-credit": [{ name: "The Paper Moons", artist: { id: "artist", name: "The Paper Moons" } }],
       releases: [{ id: "release", title: "Night Letters", status: "Official", "release-group": { id: "group", "primary-type": "Album" } }] });
   });
