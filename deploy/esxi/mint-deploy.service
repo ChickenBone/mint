@@ -1,0 +1,13 @@
+[Unit]
+Description=Check and deploy health-gated Mint web releases
+Wants=network-online.target
+After=network-online.target docker.service apt-daily-upgrade.service
+Requires=docker.service
+ConditionPathExists=/etc/mint/settings.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/mint/deploy.env
+ExecStart=/usr/bin/python3 /usr/local/sbin/mint-deploy
+TimeoutStartSec=45min
+UMask=0077

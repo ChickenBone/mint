@@ -751,6 +751,7 @@
       ],
       "validate": [
         "docker compose config --quiet",
+        "node --test deploy/esxi/*.test.mjs",
         "node --import tsx --test deploy/mobile/*.test.mjs"
       ]
     },

@@ -11,6 +11,7 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [NAS or Portainer installation](#nas-setup-copy-paste-deploy)
 - [Connect an existing Plex library](#use-an-existing-plex-music-library-read-only)
 - [Linux server and command-line installation](#command-line-setup)
+- [ESXi VM continuous deployment](#esxi-vm-continuous-deployment)
 - [Vercel limitations and setup](#optional-the-website-on-vercel)
 - [Expo app and native updates](#expo-consumer-app-and-browser-sign-in)
 - [Listening features](#native-browser-listening)
@@ -994,14 +995,126 @@ Native development/build prerequisites are in [mobile setup](mobile.md).
 - **`ci.yml`** runs on every `main` push and PR, including mobile-only changes: typecheck, lint, test and build.
 - **`release.yml`** runs on `main`, `v*` tags and manual dispatch. It builds `ghcr.io/chickenbone/mint-{web,worker,realtime,agent,analysis,chart-source}` for amd64 and arm64, with provenance and an SBOM. A `main` push changing **only** `apps/mobile/**`, `deploy/mobile/**`, `docs/mobile.md`, `docs/mobile-design.md`, `docs/mobile-playback.md`, `docs/android-builds.md` or `.github/workflows/android-apk.yml` skips Docker publication and optional server deployment. Any other changed path, including shared `packages/client/**`, `packages/core/**`, native server APIs, root manifests/lockfile, Docker configuration or a mixed mobile/backend change, still triggers Release. Tag pushes and manual releases bypass this path filter; mobile-only commits do not update the server's `latest` images.
 - **`android-apk.yml`** coordinates EAS Build/Update on the default branch: a finished matching native APK baseline gates compatible production JavaScript updates. Stable signing and APK/runtime validation are mandatory. See [Android distribution](android-builds.md); this does not deploy the backend or prove physical-device behavior.
-- **Auto‑deploy (optional).** Set the repository variable `DEPLOY_ENABLED=true` (and optionally `DEPLOY_PATH`), plus these secrets:
+- **ESXi auto-deploy:** use the [VM-local pull updater](#esxi-vm-continuous-deployment). No GitHub deployment credentials, inbound connection, self-hosted Actions runner or Tailscale connection is needed.
+- **SSH wake-up (optional, not required for polling).** Install the VM-local updater first. Set the repository variable `DEPLOY_ENABLED=true`, plus these secrets:
   - `DEPLOY_HOST`
   - `DEPLOY_USER`
   - `DEPLOY_SSH_KEY`
-  - `DEPLOY_KNOWN_HOSTS` (from `ssh-keyscan host`)
+  - `DEPLOY_KNOWN_HOSTS` (verify the host fingerprint through a trusted channel)
 
-  The job then runs `docker compose pull && up -d` over SSH.
+  The job asks systemd to start the same gated updater; it never replaces the stack directly. The SSH user needs narrowly scoped passwordless permission to start `mint-deploy.service`. A successful wake-up does not prove deployment: CI may still be pending or maintenance may be deferred. `DEPLOY_PATH` is no longer used; the VM owns its paths.
 - If the packages are private, run `docker login ghcr.io` on the host with a PAT that has `read:packages`.
+
+### ESXi VM continuous deployment
+
+Run Docker inside a Linux guest, not on the ESXi hypervisor. An Ubuntu 24.04 VM
+with NTP, Docker Compose 2.24+, Python 3.12 and timezone data can use the
+[`deploy/esxi`](../deploy/esxi) updater. Keep the existing NAS Compose project's
+storage and secrets; this is an upgrade strategy for that stack, not a VM
+provisioner or a data migration. Use the [NAS template](#nas-setup-copy-paste-deploy)
+for initial service configuration and back up before adopting the updater.
+
+**Why pull-based:** the guest polls public GitHub Actions results every five
+minutes. Only `main` commits with successful CI and matching published web,
+worker, realtime and chart-source images qualify. A failing CI run intentionally
+keeps the previous release, even if Release published images. Native-only
+changes retain the existing Release exclusions. Images are pulled before
+activation, their OCI revision must match the gated SHA, and selected images
+are then recorded by immutable digest. No production Docker socket or secrets
+are exposed to a public repository's self-hosted Actions runner.
+
+**Two release lanes:**
+
+| Lane | Behavior |
+| --- | --- |
+| Web-only code, with unchanged runtime configuration | Start a standby web container on the existing private networks, wait for health, gracefully reload Caddy, then verify the release header through the proxy. The old container stays running for active HTTP/audio responses and old `/_next/static` assets. Do not recreate the worker, database, Redis, tunnel, hub or realtime service. |
+| Worker, shared core/dependencies, schema, deployment changes, unknown paths or occupied standby | Queue the complete release until **04:00-04:30 America/Chicago** (CST/CDT). Back up PostgreSQL, apply any supported infrastructure configuration changes, update the worker and wait for migration/health, then hub/realtime and web. Proxy adoption and retirement of retained web containers also happen only here. |
+
+Two slots deliberately bound memory usage. Once both are occupied, additional
+commits coalesce into the newest eligible release for the next maintenance
+window instead of killing a potentially active stream to reclaim memory.
+At 4am the previous build is retired and standby capacity is restored even
+when there is no new green release. This is conservative continuous delivery,
+not a promise to deploy every intermediate commit immediately.
+
+The window controls **when disruptive steps may start**, not their maximum
+duration. Large migrations or recovery may extend past 04:30. A missed window
+does not run on the next boot (`Persistent=false`), and manually passing
+`--maintenance` cannot bypass the clock gate. The one-time change from the
+NAS template's admin-disabled Caddy to a reloadable proxy also waits for this
+window; it can adopt the already-running release without deploying failed CI.
+Caddy's admin API is container-loopback-only, with no published port.
+
+**Installation on the guest:**
+
+1. Keep the original NAS project named `mint`, its rendered private
+   `/srv/mint/compose.yml`, and `/srv/mint/compose.vm.yml`. The latter should
+   keep every host port loopback-only, including Plex:
+
+   ```yaml
+   services:
+     plex:
+       ports: !override ["127.0.0.1:32401:32400"]
+   ```
+
+2. Keep the NAS template's edited quoted `x-settings` values in
+   `/etc/mint/settings.env`, as literal `KEY=value` lines. At minimum configure
+   `MINT_DOMAIN` and `TUNNEL_TOKEN`; include **all** non-default settings and
+   existing read-only music mappings. This is not a shell script. Restrict its
+   directory to 0700 and file to 0600. Never commit or upload this file, generated
+   Compose files, database dumps or `/srv/mint/data`.
+3. Copy the reviewed `deploy/esxi` files to the guest. From that directory run
+   `sudo sh install.sh`. It replaces only the updater/units and schedules,
+   not running application containers. Optional `/etc/mint/deploy.env` supports
+   `GITHUB_TOKEN` for read-only GitHub API access if public rate limits are
+   exhausted; keep it root-owned and 0600. The optional GitHub SSH wake-up is
+   unnecessary on a LAN-only guest.
+
+The installer also reschedules Ubuntu's unattended upgrade timer into the same
+Central window, disables missed-run catch-up, adds an execution-time window
+check, and disables surprise automatic reboots. OS security updates stay
+enabled; Docker/service restarts from those updates belong to maintenance.
+Reboots, hypervisor work, database major upgrades, storage moves, network
+topology changes and incompatible bootstrap changes require an operator at
+4am. Check guest NTP; do not rely on an inaccurate hypervisor clock.
+
+**Operations and recovery:**
+
+```bash
+sudo /usr/local/sbin/mint-deploy --status
+sudo /usr/local/sbin/mint-deploy --dry-run
+sudo journalctl -u mint-deploy.service -u mint-maintenance.service --no-pager -n 50
+systemctl list-timers mint-deploy.timer mint-maintenance.timer apt-daily-upgrade.timer
+```
+
+`/srv/mint/deploy-state.json` records the deployed/pending SHA, gate check,
+selected slot and interrupted/failed rollout. `live.json` and `base-state.json`
+are private deployment records, not files to edit casually. A bad standby never
+replaces the live proxy; failed post-switch verification reloads the previous
+proxy configuration. In-progress/failed activation latches for operator
+inspection instead of repeatedly attempting a migration. Preparation/pull/API
+failures are retried by polling without replacing running services.
+
+Before retrying a latched rollout, inspect container health, the proxy file,
+`live.json`, `next.json`, the state and migration logs; reconcile them with
+the actual running containers. Only after resolving the failure, clear
+`in_progress` and `last_error` in the private state and remove an unused failed
+standby through its own Compose file **during maintenance**. Do not fake the
+deployed SHA, bypass CI, delete data, or automatically roll back a database.
+Pre-maintenance `pg_dump` files retain five copies in `/srv/mint/backups`;
+also back up the original secrets and media/configuration separately and keep
+an off-VM copy with a tested restore procedure.
+
+**Availability limits:** this keeps the HTTP entry point available for routine
+web cutovers; it is not an ESXi HA cluster or a guarantee of uninterrupted
+playback through worker/database/host maintenance. Existing WebSockets may
+reconnect (Caddy delays stream closure for 24 hours), and old browser tabs can
+need a reload after retained builds are retired. Incompatible schema changes
+remain maintenance work. True host-failure HA requires another physical host,
+redundant ingress, replicated PostgreSQL/Redis/media and fencing; cloning this
+single VM or running two uncontrolled pipeline workers does not provide it.
+Do not run the old in-place updater or a second deployment system alongside
+these timers.
 
 ## Notes
 
