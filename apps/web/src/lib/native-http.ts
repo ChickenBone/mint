@@ -23,6 +23,11 @@ export async function nativeHttp(request: Request, handle: () => Promise<Respons
 export function nativeRouteAllowed(path: string[], method: string) {
   if (path.some((part) => !part || part === "." || part === ".." || part.includes("/") || part.includes("\\"))) return false;
   const key = path.join("/");
+  const uuid = "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+  if (key === "devices") return method === "GET" || method === "POST";
+  if (key === "devices/transfer" || key === "devices/complete-transfer") return method === "POST";
+  if (new RegExp(`^devices/commands/${uuid}$`).test(key)) return method === "GET";
+  if (new RegExp(`^devices/${uuid}/(poll|ack|disconnect|handoff)$`).test(key)) return method === "POST";
   if (/^player\/(catalog|session|offline)$/.test(key)) return method === "GET";
   if (/^player\/(audio|info|lyrics)\/[^/]+$/.test(key)) return method === "GET" || (path[1] === "audio" && method === "HEAD");
   if (/^player\/analysis\/[^/]+$/.test(key)) return method === "GET";
@@ -30,6 +35,7 @@ export function nativeRouteAllowed(path: string[], method: string) {
   if (key === "player/items") return method === "POST";
   if (key === "issue-reports") return method === "POST";
   if (key === "music/search") return method === "GET" || method === "POST";
+  if (/^catalog\/(artists\/[^/]+\/albums|(albums|library-albums)\/[^/]+\/recordings)$/.test(key)) return method === "GET";
   if (key === "music/search/requests") return method === "GET" || method === "POST";
   if (key === "music/search/collection") return method === "GET";
   // Consumer discovery reads only; chart acquisition and provider setup stay on the cookie web app.

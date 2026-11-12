@@ -7,30 +7,30 @@ Each domain is a bounded context an agent session can hold at once. Cards list o
 | Domain | Scope | Files | Imports from |
 | --- | --- | ---: | --- |
 | [`mobile`](mobile.md) | Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle | 46 | `mobile-contracts` `mobile-playback` `mobile-player` `mobile-playlists` |
-| [`mobile-contracts`](mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions | 19 | `analysis` `collections` `library` `platform` `playback` `providers` `web-shell` |
-| [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage | 23 | `mobile` `mobile-contracts` |
+| [`mobile-contracts`](mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions | 22 | `analysis` `collections` `devices` `library` `platform` `playback` `providers` `web-shell` |
+| [`mobile-playback`](mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage | 24 | `mobile` `mobile-contracts` |
 | [`mobile-home`](mobile-home.md) | Listener Home recommendations, bounded album shelves and recent additions | 4 | `mobile` `mobile-contracts` |
-| [`mobile-artists`](mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation | 4 | `mobile` `mobile-contracts` |
-| [`mobile-albums`](mobile-albums.md) | Album detail navigation, album identity and full-selection playback actions | 4 | `mobile` `mobile-contracts` |
+| [`mobile-artists`](mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation | 5 | `mobile` `mobile-contracts` `mobile-playback` |
+| [`mobile-albums`](mobile-albums.md) | Album detail navigation, album identity and full-selection playback actions | 5 | `mobile` `mobile-contracts` |
 | [`mobile-playlists`](mobile-playlists.md) | Playlist and liked-song details, occurrence-based editing and collection actions | 9 | `mobile` `mobile-contracts` |
 | [`mobile-search`](mobile-search.md) | Local and recording Search, Browse all discovery/categories and read-only chart destinations | 14 | `mobile` `mobile-contracts` `mobile-playback` |
 | [`mobile-your-music`](mobile-your-music.md) | Your Library overview, collection browsing, folders/pins and playlist invitations | 4 | `mobile` `mobile-contracts` |
 | [`mobile-settings`](mobile-settings.md) | Listener settings, privacy/history, local storage, developer options, app information and compatible update checks | 6 | `mobile` `mobile-playback` |
-| [`mobile-player`](mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds | 17 | `mobile` `mobile-contracts` `mobile-home` `mobile-playback` |
+| [`mobile-player`](mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds | 18 | `mobile` `mobile-contracts` `mobile-home` `mobile-playback` |
 | [`mobile-design`](mobile-design.md) | Compact Mint mobile UX skill and pinned official Expo native UI/animation references, loaded on demand | 19 | — |
 | [`platform`](platform.md) | Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime | 47 | `acquisition` `analysis` `library` `playback` `providers` `realtime` `web-shell` `workers` |
-| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 54 | `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `providers` `realtime` `web-shell` |
-| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 46 | `acquisition` `collections` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
+| [`playback`](playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery | 55 | `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `providers` `realtime` `web-shell` |
+| [`library`](library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing | 56 | `acquisition` `collections` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`collections`](collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves | 29 | `acquisition` `analysis` `library` `mobile-contracts` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`providers`](providers.md) | Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth | 42 | `acquisition` `collections` `library` `platform` `playback` `realtime` `web-shell` |
-| [`acquisition`](acquisition.md) | Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages | 43 | `collections` `library` `platform` `playback` `providers` `realtime` `web-shell` |
+| [`acquisition`](acquisition.md) | Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages | 47 | `collections` `library` `platform` `playback` `providers` `realtime` `web-shell` |
 | [`analysis`](analysis.md) | Measured audio analysis (mint-dsp), scheduling/backfills, remote analysis workers and analysis UI | 20 | `acquisition` `library` `platform` `playback` `web-shell` |
-| [`devices`](devices.md) | Device registry, handoff, remote control and single-output listening parties | 16 | `library` `platform` `playback` `realtime` `web-shell` |
+| [`devices`](devices.md) | Device registry, handoff, remote control and single-output listening parties | 17 | `library` `mobile-contracts` `platform` `playback` `realtime` `web-shell` |
 | [`workers`](workers.md) | Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI | 21 | `acquisition` `collections` `platform` `realtime` `web-shell` |
 | [`realtime`](realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components | 9 | `acquisition` `library` `platform` `playback` `web-shell` `workers` |
 | [`web-shell`](web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views | 75 | `acquisition` `analysis` `collections` `devices` `library` `mobile-contracts` `platform` `playback` `providers` `realtime` `workers` |
-| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 27 | — |
-| [`catalog`](catalog.md) | Isolated metadata aggregation, evidence-backed recording reconciliation, popularity graph and search | 95 | — |
+| [`deploy`](deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs | 28 | — |
+| [`catalog`](catalog.md) | Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge | 99 | — |
 | [`library-auditor`](library-auditor.md) | Read-only metadata manifest audits for duplicates, identifier conflicts and tag gaps with optional catalog matching | 16 | — |
 | [`agent-tooling`](agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory | 67 | — |
 | [`handbook`](handbook.md) | README, product/design decisions, curated engineering/topic guides, UX docs and screenshots | 44 | — |

@@ -47,10 +47,59 @@ def refresh_batch(store: Store, after: str = "", batch_size: int = 2000) -> str 
                WHERE e.key=d.key AND e.popularity IS DISTINCT FROM d.score""",
             (keys, keys, keys, keys),
         )
+        if store.settings.musicbrainz_enabled:
+            conn.execute(
+                """WITH pending AS MATERIALIZED (
+                   SELECT count(*) FILTER (WHERE priority>0) AS preferred,
+                     count(*) FILTER (WHERE priority<=0) AS ordinary
+                   FROM jobs WHERE task='mb-releases' AND NOT dead AND (ready OR due_at<=now())
+                   ), candidates AS MATERIALIZED (
+                   SELECT e.key,e.provider_id,
+                     10*ln(1+greatest(e.popularity,coalesce((
+                       SELECT max(a.popularity) FROM edges ed
+                       JOIN entities a ON a.key=ed.target AND a.kind='artist'
+                       WHERE ed.source=e.key AND ed.relation='artist'
+                     ),0))) + CASE WHEN EXISTS (
+                       SELECT 1 FROM edges ed JOIN priority_artists p ON p.entity_key=ed.target
+                       WHERE ed.source=e.key AND ed.relation='artist'
+                     ) THEN 10 ELSE 0 END AS score
+                   FROM entities e WHERE e.key=ANY(%s) AND e.source='musicbrainz'
+                     AND e.kind='album'
+                     AND NOT EXISTS (SELECT 1 FROM jobs j WHERE j.key='mb-releases:'||e.key||':0')
+                   ), ranked AS (
+                   SELECT *,row_number() OVER (PARTITION BY score>0 ORDER BY score DESC,key) AS n
+                   FROM candidates)
+                   INSERT INTO jobs(key,task,entity_key,country,kind,provider_id,source,host,priority)
+                   SELECT 'mb-releases:'||r.key||':0','mb-releases',r.key,'global','album',
+                     r.provider_id,'musicbrainz','musicbrainz.org',r.score
+                   FROM ranked r CROSS JOIN pending p
+                   WHERE (r.score>0 AND r.n<=greatest(0,200-p.preferred))
+                      OR (r.score<=0 AND r.n<=greatest(0,800-p.ordinary))
+                   ORDER BY r.score DESC,r.key
+                   LIMIT greatest(0,least(50,1000-(
+                     SELECT preferred+ordinary FROM pending
+                   )))
+                   ON CONFLICT DO NOTHING""",
+                (keys,),
+            )
         conn.execute(
-            """UPDATE jobs j SET priority=10*ln(1+e.popularity)
-               FROM entities e WHERE e.key=ANY(%s) AND
-               j.entity_key=e.key AND j.priority IS DISTINCT FROM 10*ln(1+e.popularity)""",
+            """WITH desired AS MATERIALIZED (
+               SELECT e.key,
+                 10*ln(1+greatest(e.popularity,coalesce((
+                   SELECT max(a.popularity) FROM edges ed
+                   JOIN entities a ON a.key=ed.target AND a.kind='artist'
+                   WHERE ed.source=e.key AND ed.relation='artist' AND e.kind='album'
+                 ),0))) +
+                 CASE WHEN EXISTS (
+                   SELECT 1 FROM priority_artists p WHERE p.entity_key=e.key
+                 ) OR (e.kind='album' AND EXISTS (
+                   SELECT 1 FROM edges ed JOIN priority_artists p ON p.entity_key=ed.target
+                   WHERE ed.source=e.key AND ed.relation='artist'
+                 )) THEN 10 ELSE 0 END AS priority
+               FROM entities e WHERE e.key=ANY(%s))
+               UPDATE jobs j SET priority=greatest(d.priority,j.demand_priority) FROM desired d
+               WHERE j.entity_key=d.key
+                 AND j.priority IS DISTINCT FROM greatest(d.priority,j.demand_priority)""",
             (keys,),
         )
     log.info(

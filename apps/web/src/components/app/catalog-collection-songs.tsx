@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Disc3 } from "lucide-react";
 import type { CatalogCollectionAlbum, RecordingSearchItem } from "@/lib/music-requests";
 import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
@@ -24,7 +24,10 @@ export function useCatalogCollection(id: string | null) {
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The music catalog could not be reached.");
         if (!Array.isArray(body.items)) throw new Error("The music catalog returned an unexpected response.");
-        setState({ id, data: { items: body.items as RecordingSearchItem[], albums: Array.isArray(body.albums) ? body.albums as CatalogCollectionAlbum[] : [] } });
+        const status = body.catalog?.status;
+        const error = status === "not_configured" ? "The search catalog is not configured." :
+          status === "unavailable" ? "The search catalog is unavailable. Try again shortly." : undefined;
+        setState({ id, data: { items: body.items as RecordingSearchItem[], albums: Array.isArray(body.albums) ? body.albums as CatalogCollectionAlbum[] : [] }, error });
       }).catch((error: unknown) => {
         if (!controller.signal.aborted) setState({ id, error: error instanceof Error ? error.message : "The music catalog could not be reached." });
       });
@@ -34,12 +37,7 @@ export function useCatalogCollection(id: string | null) {
   return { data: current?.data, error: current?.error, loading: !!id && !current, retry: () => setRetry((count) => count + 1) };
 }
 
-/** Every typed word appears in one of the fields, matching the page's "Search in artist/album" box. */
-export function catalogQueryMatches(query: string, ...fields: (string | null | undefined)[]) {
-  const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const text = fields.filter(Boolean).join(" ").toLocaleLowerCase();
-  return words.every((word) => text.includes(word));
-}
+export { catalogQueryMatches } from "./catalog-artist-albums";
 
 /** Not-yet-imported catalog songs continuing the page's song list, with like-and-import and import-only actions. */
 export function CatalogCollectionRows({ items }: { items: RecordingSearchItem[] }) {
@@ -100,7 +98,9 @@ export function CatalogCollectionRows({ items }: { items: RecordingSearchItem[] 
 }
 
 /** Catalog albums the library has nothing from yet; each opens the album page to like or import its songs. */
-export function CatalogAlbumCards({ albums }: { albums: CatalogCollectionAlbum[] }) {
+export function CatalogAlbumCards({ albums, renderActions }: {
+  albums: CatalogCollectionAlbum[]; renderActions?(album: CatalogCollectionAlbum): ReactNode;
+}) {
   return <>{albums.map((album) => {
     const href = `/app/library/albums/${encodeURIComponent(album.id)}?type=track`;
     return <article key={album.id} className="min-w-0 rounded-lg p-3 transition-colors hover:bg-surface focus-within:bg-surface">
@@ -110,6 +110,7 @@ export function CatalogAlbumCards({ albums }: { albums: CatalogCollectionAlbum[]
       <div className="mt-3 min-w-0">
         <h3 className="truncate font-semibold"><Link href={href} tabIndex={-1} className="hover:underline">{album.title}</Link></h3>
         <p className="mt-1 truncate text-sm text-muted">Not imported yet</p>
+        {renderActions?.(album)}
       </div>
     </article>;
   })}</>;

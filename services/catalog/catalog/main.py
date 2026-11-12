@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import re
 import signal
 from threading import Event
 
@@ -15,7 +16,7 @@ from catalog.providers import SOURCES, lookup_task
 def main():
     parser = argparse.ArgumentParser(description="Independent multi-source music metadata catalog")
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "crawl", "index", "rank", "serve", "status", "reindex"):
+    for name in ("init", "crawl", "index", "rank", "serve", "serve-bridge", "status", "reindex"):
         commands.add_parser(name)
     reconcile = commands.add_parser("reconcile-artists")
     reconcile.add_argument(
@@ -34,6 +35,12 @@ def main():
     seed.add_argument("kind", choices=("artist", "album", "song"))
     seed.add_argument("identifier")
     seed.add_argument("--country", default="global")
+    priority_artist = commands.add_parser("priority-artist")
+    priority_artist.add_argument("identifier", help="Explicit MusicBrainz artist UUID")
+    priority_artist.add_argument(
+        "--provenance", required=True, help="Short non-sensitive source label, e.g. library-export"
+    )
+    priority_artist.add_argument("--remove", action="store_true", help="Remove this priority label")
     retry = commands.add_parser("retry")
     retry.add_argument("queue", choices=("jobs", "vector_outbox"))
     retry.add_argument("key")
@@ -59,16 +66,23 @@ def main():
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     settings = Settings.load()
-    if args.command == "serve":
+    if args.command in ("serve", "serve-bridge"):
         import uvicorn
 
+        tls = {}
+        if args.command == "serve-bridge":
+            from catalog.bridge import tls_files
+
+            tls = tls_files()
         uvicorn.run(
-            "catalog.api:app_factory",
+            "catalog.api:app_factory" if args.command == "serve" else "catalog.bridge:app_factory",
             factory=True,
             host="0.0.0.0",
             port=8080,
             limit_concurrency=32,
             timeout_keep_alive=5,
+            access_log=args.command == "serve",
+            **tls,
         )
         return
     store = Store(settings)
@@ -105,6 +119,23 @@ def main():
                     args.identifier,
                     50,
                 )
+        elif args.command == "priority-artist":
+            key = entity_key("global", "artist", args.identifier, "musicbrainz")
+            if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", args.provenance):
+                parser.error("Provenance must be a non-sensitive lowercase label (1-64 characters)")
+            if not settings.musicbrainz_enabled and not args.remove:
+                parser.error("Enable MusicBrainz before prioritizing an artist")
+            with store.transaction() as conn:
+                conn.execute("SELECT entities FROM catalog_budget FOR UPDATE")
+                changed = store.priority_artist(
+                    conn, args.identifier, args.provenance, remove=args.remove
+                )
+                if args.remove and not changed:
+                    parser.error("Priority label does not exist")
+            print(json.dumps({
+                "artist": key, "provenance": args.provenance,
+                "status": "removed" if args.remove else "queued",
+            }))
         elif args.command == "retry":
             from psycopg import sql
 

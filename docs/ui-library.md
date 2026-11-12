@@ -170,6 +170,8 @@ All existing page routes remain in place. Pages currently compose server-rendere
 
 `/app/layout.tsx` owns member navigation, the persistent `PlayerProvider`, stage and transport. `/app/layout.tsx` and `(public)/layout.tsx` are layouts, not additional page routes. Global `error.tsx` and `not-found.tsx` are failure/not-found surfaces.
 
+In the admin portal's **Activity** tab, **Remove** removes one failed acquisition/import attempt and **Clear all failed jobs** covers all currently failed attempts, including those outside the 100-row view. Both require confirmation and server-side admin authorization. Only matching, still-failed acquisition/finalization worker records are deleted; active/waiting jobs, sync/analysis queues, parent/child flows, songs, files and provider-managed playlists remain unchanged. Successful removals are recorded against the exact failure in the existing track timeline, and a later failure appears again. Partial failures stay visible with an error so cleanup can be retried. **Retry failed** skips removed attempts and processes at most 500.
+
 The route handlers under `/api` are non-visual contracts, not redesign targets: agent claim/heartbeat/job failure/progress; app icon, artwork, charts/request; devices and parties; health; library and music/search; Google and Spotify OAuth; player analysis/audio/catalog/info/items/lyrics/offline/queue/session; and realtime ticket endpoints. `/listen`, `/worker.yml` and `/manifest.webmanifest` are also route/metadata handlers, not page surfaces. Preserve their authorization and response contracts while migrating callers.
 
 ## Migration order and status

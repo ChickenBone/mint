@@ -3,6 +3,7 @@ import type { PlayerItem, RecordingSearchItem, SearchRequestView } from "@mint/c
 import { useLocalSearchParams } from "expo-router";
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useApi } from "../../api";
+import { useAuth } from "../../auth";
 import { Button, Field, Notice, Section } from "../../components/ui/primitives";
 import { MusicShelf, TrackRow } from "../../components/ui/music";
 import { SongOptions } from "../../components/ui/SongOptions";
@@ -13,15 +14,21 @@ import { usePlayer } from "../../playback/PlayerProvider";
 import { colors } from "../../theme/tokens";
 import { screenStyles } from "../../components/music/screen-styles";
 import {
-  activeSearchRequest, canCancelSearchRequest, canRetrySearchRequest, catalogText, isCurrentSearch, recordingActionLabel,
-  recordingRequestInput, searchRequestCopy, searchRequestStatusLabel, shouldOfferSearchRequest, uniqueRecordings, visibleCatalogResults,
+  activeSearchRequest, canCancelSearchRequest, canRetrySearchRequest, catalogArtistItems, catalogText, isCurrentSearch,
+  recordingActionLabel, recordingRequestInput, searchRequestCopy, searchRequestStatusLabel, shouldOfferSearchRequest,
+  topSearchResult, uniqueRecordings, visibleCatalogResults,
 } from "./search-model";
 import { usePlaybackAction } from "../../hooks/usePlaybackAction";
 import { BrowseAll } from "./BrowseAll";
-import { CatalogAction, CatalogResults } from "./CatalogResults";
+import { CatalogAction, CatalogResults, CatalogRow } from "./CatalogResults";
 import { CatalogRecordingActions, useCatalogRequests } from "../../components/music/catalog-requests";
 
 export function SearchScreen() {
+  const { serverUrl, user } = useAuth();
+  return <SearchRoute key={JSON.stringify([serverUrl, user?.id])} />;
+}
+
+function SearchRoute() {
   const api = useApi();
   const player = usePlayer();
   const runPlayback = usePlaybackAction();
@@ -138,13 +145,22 @@ export function SearchScreen() {
       busy={catalogRequests.pending === recording.id} disabled={catalogRequests.pending !== null}
       onLike={() => void request(recording, true)} onImport={() => void request(recording, false)} />;
   }
-  const catalogArtists = (answered?.result.artists ?? []).filter((artist) =>
-    !found?.artists.items.some((item) => item.title.trim().toLowerCase() === artist.name.trim().toLowerCase()))
-    .map((artist): PlayerItem => ({ id: artist.id, type: "artist", title: artist.name }));
+  const catalogArtists = catalogArtistItems(found?.artists.items ?? [], answered?.result.artists ?? []);
+  const catalogAnswered = answered?.result.catalog.status === "ok" || answered?.result.catalog.status === "lexical-only";
+  const top = topSearchResult(active,
+    [...localSongs, ...(found?.albums.items ?? []), ...(found?.artists.items ?? [])],
+    catalogArtists, catalogAnswered ? visible?.rows ?? [] : []);
+  const featured = top?.source === "catalog" ? top.row : null;
+  const isTopItem = (item: PlayerItem) => top && top.source !== "catalog" &&
+    top.item.id === item.id && top.item.type === item.type;
+  const songs = localSongs.filter((item) => !isTopItem(item));
+  const albums = (found?.albums.items ?? []).filter((item) => !isTopItem(item));
+  const artists = [...(found?.artists.items ?? []), ...catalogArtists].filter((item) => !isTopItem(item));
+  const catalogRows = visible?.rows.filter((row) => row !== featured) ?? [];
   const catalogSection = active.length < 2 ? <Text style={s.secondary}>{catalogText.shortQuery}</Text> :
     !current || external.loading ? <Notice loading title="Searching Mint's music catalog" /> :
       external.error ? <Notice title="Catalog search couldn't load" message={external.error} retry={external.reload} /> :
-        answered && visible ? <CatalogResults catalog={answered.result.catalog} rows={visible.rows} hiddenCount={visible.hiddenCount}
+        answered && visible ? <CatalogResults catalog={answered.result.catalog} rows={catalogRows} featured={featured} hiddenCount={visible.hiddenCount}
           query={active} now={answered.fetchedAt} requested={requested} onRetry={external.reload} renderAction={recordingAction} /> : null;
   const searchRequestsPanel = <SearchRequestsPanel requests={searchRequests} loading={savedRequests.loading}
     error={savedRequests.error} onRefresh={refreshSearchRequests} onRetry={(item) => void mutateSearchRequest(item, "retry")}
@@ -157,10 +173,15 @@ export function SearchScreen() {
     </View>
     {!active ? <BrowseAll footer={searchRequestsPanel} /> : <ScrollView style={s.screen} contentContainerStyle={screenStyles.page} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
       {!current || local.loading ? <Notice loading title="Searching your music" /> : local.error ? <Notice title="Library search couldn't load" message={local.error} retry={local.reload} /> : null}
-      {found?.songs.items.length ? <Section title="Songs">{found.songs.items.map((item) => <TrackRow key={item.id} item={item} trailing={<SongOptions item={item} />} />)}</Section> : null}
-      {found?.albums.items.length ? <Section title="Albums"><MusicShelf items={found.albums.items} /></Section> : null}
-      {found?.artists.items.length ? <Section title="Artists"><MusicShelf items={found.artists.items} /></Section> : null}
-      {catalogArtists.length ? <Section title={found?.artists.items.length ? "More artists" : "Artists"}><MusicShelf items={catalogArtists} /></Section> : null}
+      {top ? <Section title="Top result">
+        {top.source === "catalog" && answered ? <CatalogRow row={top.row} now={answered.fetchedAt}
+          requestedStage={top.row.recording ? requested.get(top.row.recording.id) : undefined} renderAction={recordingAction} /> :
+          top.source !== "catalog" && top.item.type === "track" ? <TrackRow item={top.item} trailing={<SongOptions item={top.item} />} /> :
+            top.source !== "catalog" ? <MusicShelf items={[top.item]} /> : null}
+      </Section> : null}
+      {songs.length ? <Section title="Songs">{songs.map((item) => <TrackRow key={item.id} item={item} trailing={<SongOptions item={item} />} />)}</Section> : null}
+      {albums.length ? <Section title="Albums"><MusicShelf items={albums} /></Section> : null}
+      {artists.length ? <Section title="Artists"><MusicShelf items={artists} /></Section> : null}
       <Section title="Beyond your library">
         {catalogSection}
         {offerSearchRequest ? <Section title="Can't find it?">

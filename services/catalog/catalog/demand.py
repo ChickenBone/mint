@@ -160,7 +160,9 @@ def record(store, batch: Batch) -> int:
                 key = (task, country, kind, identifier)
                 jobs[key] = max(priority, jobs.get(key, 0))
         for (task, country, kind, identifier), priority in sorted(jobs.items()):
-            store.enqueue(conn, task, country, kind, identifier, priority)
+            store.enqueue(
+                conn, task, country, kind, identifier, priority, demand_priority=priority
+            )
         if jobs:
             store.activity(
                 conn,

@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import { ModuleKind, transpileModule } from "typescript";
 import { MintApi } from "@mint/client";
+import { randomUUID } from "node:crypto";
 import { PlaybackEngine, type MediaSource, type PlaybackApi, type PlaylistPort, type QueueStorage } from "../src/playback/engine";
 import type { QueuePage } from "../src/playback/types";
 
@@ -36,6 +37,7 @@ class FakePlaylist implements PlaylistPort {
       assert.equal(artwork.username, "");
       assert.equal(artwork.password, "");
     }
+
     if (metadata) this.lockMetadata.push(metadata);
     this.active = active;
   }
@@ -99,6 +101,70 @@ function loadNativePlaylist(audio: { createAudioPlaylist: () => unknown; setAudi
   assert.ok(exports.createPlaylist);
   return exports.createPlaylist;
 }
+
+test("native handoff preserves duplicate occurrences and waits for real audio status", async () => {
+  const { engine, playlist } = fixture();
+  const id = randomUUID();
+  const target = { queue: [id, id], currentIndex: 1, position: 12, playing: true, shuffle: false, repeat: 2 as const };
+  const controller = new AbortController();
+  let complete = false;
+  const move = engine.applyDeviceHandoff(target, controller.signal).then(() => { complete = true; });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(complete, false, "Calling play alone cannot acknowledge a handoff");
+  assert.equal(playlist.sources.length, 2);
+  assert.equal(playlist.currentIndex, 1);
+  engine.onStatus({ currentIndex: 1, currentTime: 12, duration: 180, playing: true, isLoaded: true, isBuffering: false });
+  await move;
+  const state = engine.getDeviceState();
+  assert.equal(state.playing, true);
+  assert.deepEqual(state.queue, [id, id]);
+  assert.equal(state.currentIndex, 1);
+  assert.equal(state.repeat, 2);
+  engine.dispose();
+});
+
+test("expired native handoff cannot play late or replace a newly selected local track", async () => {
+  const { engine, playlist, api } = fixture();
+  const id = randomUUID(), chosen = randomUUID();
+  let release!: () => void;
+  api.metadata = async (track) => { await new Promise<void>((resolve) => { release = resolve; }); return { id: track, title: "Remote" }; };
+  const controller = new AbortController();
+  const moving = engine.applyDeviceHandoff({ queue: [id], currentIndex: 0, position: 4, playing: true, shuffle: false, repeat: 0 }, controller.signal);
+  const rejected = assert.rejects(moving);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  await engine.playTrack({ id: chosen, title: "Local choice" });
+  controller.abort();
+  release();
+  await rejected;
+  assert.equal(engine.state.track?.id, chosen);
+  assert.equal(playlist.playing, true, "Expiring an old handoff cannot pause the newer local selection");
+  engine.dispose();
+});
+
+test("native progressive handoff retains the full frozen selection while reporting a bounded window", async () => {
+  const { engine, api, playlist } = fixture();
+  const contextId = randomUUID(), trackId = randomUUID();
+  const items = Array.from({ length: 121 }, () => ({ id: trackId, title: "Duplicate song", occurrenceId: randomUUID() }));
+  api.queuePage = async (_id, position) => {
+    const offset = Math.max(0, position - 20);
+    return { context: { id: contextId, total: 121, position, offset, revision: 2, shuffle: false }, items: items.slice(offset, offset + 100) };
+  };
+  const controller = new AbortController();
+  await engine.applyDeviceHandoff({
+    queue: items.slice(100).map((item) => item.id), currentIndex: 20, position: 25, playing: false, shuffle: false, repeat: 0,
+    queueContext: { id: contextId, total: 121, position: 120, offset: 100, revision: 2, shuffle: false },
+  }, controller.signal);
+  const state = engine.getDeviceState();
+  assert.equal(playlist.sources.length, 121);
+  assert.equal(playlist.currentIndex, 120);
+  assert.equal(state.queueContext?.total, 121);
+  assert.equal(state.queueContext?.position, 120);
+  assert.equal(state.queue.length, 21);
+  assert.equal(new Set(state.queueEntryIds).size, 21);
+  assert.equal(state.playing, false);
+  assert.equal(playlist.currentTime, 25);
+  engine.dispose();
+});
 
 test("Expo Go on Android rejects playback before any native audio call", async () => {
   const calls: string[] = [];

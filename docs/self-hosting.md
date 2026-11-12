@@ -20,6 +20,7 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [Architecture](#architecture)
 - [Services, integrations and troubleshooting](#setup-details)
 - [Optional MusicBrainz metadata mirror](#optional-musicbrainz-metadata-mirror)
+- [Optional standalone catalog connection](catalog-connection.md)
 - [Optional standalone chart metadata API](#optional-standalone-chart-metadata-api)
 - [Volunteer download workers](#volunteer-workers)
 - [Development](#development) and [CI/CD](#cicd)

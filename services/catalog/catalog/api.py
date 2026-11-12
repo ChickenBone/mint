@@ -18,7 +18,7 @@ from catalog.model import fuse
 from catalog.identity import artist_groups
 from catalog.providers import EntitySource
 from catalog.reconcile import ReconciliationBodyLimit
-from catalog.store import Store
+from catalog.store import SCHEMA_VERSION, Store
 from catalog.vectors import Embeddings, Vectors
 
 
@@ -90,7 +90,11 @@ def create_app(
         try:
             with app.state.store.transaction() as conn:
                 conn.execute("SET LOCAL statement_timeout='2000ms'")
-                conn.execute("SELECT version FROM catalog_schema").fetchone()
+                version = conn.execute(
+                    "SELECT max(version) AS version FROM catalog_schema"
+                ).fetchone()
+                if version["version"] != SCHEMA_VERSION:
+                    return JSONResponse({"status": "unavailable"}, status_code=503)
             app.state.vectors.check()
         except (psycopg.Error, *VECTOR_ERRORS, httpx.HTTPError):
             log.exception("search_not_ready")
@@ -225,8 +229,8 @@ def create_app(
         token = app.state.store.settings.demand_token
         if not token:
             raise HTTPException(404, "Not Found")
-        supplied = (authorization or "").removeprefix("Bearer ").encode()
-        if not secrets.compare_digest(supplied, token.encode()):
+        supplied = (authorization or "").encode()
+        if not secrets.compare_digest(supplied, f"Bearer {token}".encode()):
             raise HTTPException(401, "Invalid demand token")
         if not demand_limit.allow():
             raise HTTPException(429, "Demand rate limit reached", headers={"Retry-After": "30"})

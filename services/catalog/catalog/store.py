@@ -13,11 +13,10 @@ from catalog.config import Settings
 from catalog.model import Entity, chart_weight, entity_key
 from catalog.providers import HOSTS, SOURCES, lookup_task, task_source
 
-
-# Demand-only search/related jobs share the expansion lanes, and their high priority orders them first
-# there, so a listener's search is crawled within a few host turns rather than behind oldest-due backlog.
+
+SCHEMA_VERSION = 10
 DEMAND_FLOOR = 75
-BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','deezer-albums',
+BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','mb-releases','mb-release','deezer-albums',
     'deezer-tracks','audius-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums',
     'ytm-search','apple-search','mb-search','ytm-related')
     OR (task IN ('lookup','deezer-lookup') AND kind IN ('artist','album')))"""
@@ -56,9 +55,9 @@ class Store:
             conn.execute("SELECT pg_advisory_xact_lock(71628401)")
             conn.execute(Path(__file__).with_name("schema.sql").read_text())
             version = conn.execute("SELECT max(version) AS version FROM catalog_schema").fetchone()
-            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
+            if version["version"] not in range(1, SCHEMA_VERSION + 1):
                 raise ValueError("Unsupported catalog schema version")
-            for target in range(version["version"] + 1, 10):
+            for target in range(version["version"] + 1, SCHEMA_VERSION + 1):
                 conn.execute(Path(__file__).with_name(f"schema-v{target}.sql").read_text())
                 if target == 4:
                     from catalog.identity import rebuild_artists
@@ -74,7 +73,10 @@ class Store:
         with self.pool.connection() as conn, conn.transaction():
             yield conn
 
-    def enqueue(self, conn, task, country, kind, identifier, priority=0.0, page=0):
+    def enqueue(
+        self, conn, task, country, kind, identifier, priority=0.0, page=0, *,
+        album_key=None, demand_priority=0.0,
+    ):
         source = task_source(task)
         if task == "chart" or task.endswith("-chart"):
             key = f"{task}:{country}"
@@ -89,15 +91,27 @@ class Store:
             digest = hashlib.sha256(identifier.encode()).hexdigest()[:32]
             key = f"{task}:{country}:{kind}:{digest}"
             target_key = None
+        elif task == "mb-release":
+            from catalog.model import provider_id
+
+            identifier = provider_id(identifier, "musicbrainz")
+            if not album_key or entity_key("global", "album", album_key.split(":")[-1], "musicbrainz") != album_key:
+                raise ValueError("Release jobs require a MusicBrainz album key")
+            target_key = album_key
+            key = f"{task}:{album_key}:{identifier}:{page}"
         else:
             target_key = entity_key(
                 country, kind, identifier, "musicbrainz" if source == "listenbrainz" else source
             )
             key = f"{task}:{target_key}:{page}"
         conn.execute(
-            """INSERT INTO jobs(key, task, entity_key, country, kind, provider_id, priority, page,source,host)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(key) DO UPDATE
-               SET priority = excluded.priority WHERE jobs.priority<excluded.priority""",
+            """INSERT INTO jobs(
+                 key,task,entity_key,country,kind,provider_id,priority,page,source,host,demand_priority)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(key) DO UPDATE
+               SET priority=greatest(jobs.priority,excluded.priority),
+                   demand_priority=greatest(jobs.demand_priority,excluded.demand_priority)
+               WHERE jobs.priority<excluded.priority
+                  OR jobs.demand_priority<excluded.demand_priority""",
             (
                 key,
                 task,
@@ -105,10 +119,11 @@ class Store:
                 country,
                 kind,
                 identifier,
-                priority,
+                max(priority, demand_priority),
                 page,
                 source,
                 "rss.marketingtools.apple.com" if task == "chart" else HOSTS[source],
+                demand_priority,
             ),
         )
 
@@ -135,6 +150,31 @@ class Store:
                         "",
                         100,
                     )
+
+    def priority_artist(self, conn, identifier, provenance, *, remove=False):
+        key = entity_key("global", "artist", identifier, "musicbrainz")
+        if remove:
+            return conn.execute(
+                "DELETE FROM priority_artists WHERE entity_key=%s AND provenance=%s",
+                (key, provenance),
+            ).rowcount
+        inserted = conn.execute(
+            """INSERT INTO priority_artists(entity_key,provenance) VALUES (%s,%s)
+               ON CONFLICT DO NOTHING""",
+            (key, provenance),
+        ).rowcount
+        self.enqueue(conn, "mb-lookup", "global", "artist", identifier, 10)
+        if inserted:
+            conn.execute(
+                """UPDATE jobs SET priority=greatest(priority,10),due_at=now(),ready=true
+                   WHERE NOT dead AND lease_until<=now() AND attempts=0 AND last_error IS NULL AND (
+                     entity_key=%s OR entity_key IN (
+                       SELECT source FROM edges WHERE target=%s AND relation='artist'
+                     )
+                   )""",
+                (key, key),
+            )
+        return inserted
 
     def ingest(self, conn, entities: list[Entity], *, schedule=True, merge_relationships=False):
         from catalog.ingestion import ingest
@@ -428,18 +468,26 @@ class Store:
     def lock_job(self, conn, job, table="jobs"):
         row = conn.execute(
             sql.SQL(
-                "SELECT key FROM {} WHERE key=%s AND lease_token=%s AND lease_until>now() FOR UPDATE"
-            ).format(sql.Identifier(table)),
+                "SELECT {} FROM {} WHERE key=%s AND lease_token=%s AND lease_until>now() FOR UPDATE"
+            ).format(
+                sql.SQL("key,priority,demand_priority" if table == "jobs" else "key"),
+                sql.Identifier(table),
+            ),
             (job["key"], job["lease_token"]),
         ).fetchone()
         if row is None:
             raise LeaseLost("Work lease expired or was reclaimed")
+        if table == "jobs":
+            job.update(priority=row["priority"], demand_priority=row["demand_priority"])
 
     def complete(self, conn, job, interval):
         self.lock_job(conn, job)
         conn.execute(
             """UPDATE jobs SET due_at=now()+make_interval(secs=>%s),
-               ready=false, lease_until='-infinity', lease_token=NULL, attempts=0, last_error=NULL
+               ready=false, lease_until='-infinity', lease_token=NULL, attempts=0, last_error=NULL,
+               priority=CASE WHEN demand_priority>0 AND priority<=demand_priority
+                 THEN 0 ELSE priority END,
+               demand_priority=0
                WHERE key=%s""",
             (interval, job["key"]),
         )

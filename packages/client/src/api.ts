@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { connectableDeviceSchema, deviceCommandStatusSchema, deviceEnvelopeSchema, deviceRegistrationSchema,
+  type DeviceState } from "./devices";
 import { trackAnalysisResponseSchema } from "./analysis";
 import { connectionErrorMessage, nativeTokenSchema, normalizeServerUrl } from "./auth";
 import { catalogPageSchema, queuePageSchema, type QueueEdit, type PlayerCollection } from "./playback";
@@ -35,6 +37,39 @@ export class MintApi {
     this.transport = (input, init) => transport(input, init);
   }
   setUnauthorizedHandler(handler?: () => void | Promise<void>) { this.options.onUnauthorized = handler; }
+  devices(signal?: AbortSignal) { return this.request("devices", z.array(connectableDeviceSchema).max(30), { signal }); }
+  registerDevice(state: DeviceState, signal?: AbortSignal, kind: "web" | "native" = "native") {
+    return this.json("devices", deviceRegistrationSchema, "POST", { name: kind === "web" ? "Web player" : "Mint app", kind, state }, signal);
+  }
+  pollDevice(id: string, token: string, state: DeviceState, signal?: AbortSignal) {
+    z.uuid().parse(id);
+    return this.json(`devices/${id}/poll`, z.object({ command: deviceEnvelopeSchema.nullable() }), "POST", { token, state }, signal);
+  }
+  acknowledgeDevice(id: string, input: { token: string; id: string; sequence: number; success: boolean; error?: string; state: DeviceState }, signal?: AbortSignal) {
+    z.uuid().parse(id);
+    return this.json(`devices/${id}/ack`, okSchema, "POST", input, signal);
+  }
+  disconnectDevice(id: string, token: string, signal?: AbortSignal) {
+    z.uuid().parse(id);
+    return this.request(`devices/${id}/disconnect`, okSchema, { method: "POST", signal, keepalive: true,
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+  }
+  handoffDevice(id: string, token: string, destinationId: string, state: DeviceState, signal?: AbortSignal) {
+    z.uuid().parse(id); z.uuid().parse(destinationId);
+    return this.json(`devices/${id}/handoff`, deviceCommandStatusSchema, "POST", { token, destinationId, state }, signal);
+  }
+  deviceCommandStatus(id: string, signal?: AbortSignal) {
+    z.uuid().parse(id);
+    return this.request(`devices/commands/${id}`, deviceCommandStatusSchema, { signal });
+  }
+  transferDevice(destinationId: string, signal?: AbortSignal) {
+    z.uuid().parse(destinationId);
+    return this.json("devices/transfer", deviceCommandStatusSchema, "POST", { destinationId }, signal);
+  }
+  completeDeviceTransfer(commandId: string, signal?: AbortSignal) {
+    z.uuid().parse(commandId);
+    return this.json("devices/complete-transfer", deviceCommandStatusSchema, "POST", { commandId }, signal);
+  }
   async request<T>(path: string, schema: z.ZodType<T>, init: RequestInit = {}): Promise<T> {
     if (!/^[a-zA-Z0-9/_-]+(?:\?[^#]*)?$/.test(path)) throw new Error("Invalid consumer API path.");
     const headers = new Headers(init.headers);

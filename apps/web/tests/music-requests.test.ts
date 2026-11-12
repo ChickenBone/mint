@@ -7,7 +7,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, eq } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
-import { catalogRecordingMetadata, readRequestRecording, requestRecording, searchCatalogRecordings, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
+import { catalogCollectionRecordings, catalogRecordingMetadata, groupRecordingVersions, readRequestRecording, requestRecording,
+  searchCatalogRecordings, searchRecordingMetadata, searchRecordings, youtubeSource, type RecordingVersionCandidate } from "../src/lib/music-requests";
+import { albumPlayerId, artistPlayerId } from "../src/lib/player-protocol";
 import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const catalogFixture = () => ({ recordings: [{
@@ -68,11 +70,11 @@ test("catalog search collapses duplicate recordings of one song onto its own-alb
     "mb:album:first": albumRow("mb:album:first", "First Album", "Mint Fixture"),
     "mb:album:second": albumRow("mb:album:second", "Second Album", "Mint Fixture"),
   };
-  const songs = [song(mix, "RNP", "Cordae feat. Anderson .Paak"), song(single, "RNP", "YBN Cordae feat. Anderson .Paak"),
+  const songs = [song(mix, "RNP", "YBN Cordae feat. Anderson .Paak"), song(single, "RNP", "YBN Cordae feat. Anderson .Paak"),
     song(album, "RNP", "YBN Cordae feat. Anderson .Paak"), song(introA, "Intro", "Mint Fixture"), song(introB, "Intro", "Mint Fixture")];
   const links: Record<string, { artists: string[]; albums: string[]; ms?: number }> = {
-    [mix]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:mix"], ms: 166_000 },
-    [single]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:single", "mb:album:lost"] },
+    [mix]: { artists: ["a:cordae", "a:paak"], albums: [], ms: 176_000 },
+    [single]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:single", "mb:album:lost"], ms: 176_000 },
     [album]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:lost"], ms: 176_000 },
     [introA]: { artists: ["a:mint"], albums: ["mb:album:first"] },
     [introB]: { artists: ["a:mint"], albums: ["mb:album:second"] },
@@ -89,7 +91,248 @@ test("catalog search collapses duplicate recordings of one song onto its own-alb
   }) as typeof fetch;
   const items = await catalogRecordingMetadata("rnp", { catalog: { env, fetcher } });
   assert.deepEqual(items?.map((item) => [item.id, item.album]), [[single, "The Lost Boy"], [introA, "First Album"], [introB, "Second Album"]],
-    "the DJ-mix and album cuts fold into the own-album version; same-title songs on different albums stay apart");
+    "compatible recordings with a missing album fold into the own-album version; distinct albums stay apart");
+  links[mix]!.ms = 166_000;
+  const globalDb = globalThis as unknown as { __mintDb?: unknown }, previous = globalDb.__mintDb;
+  const secret = process.env.MINT_SIGNING_SECRET;
+  globalDb.__mintDb = { db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }) } };
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const answer = await searchCatalogRecordings("owner", "rnp", { catalog: { env, fetcher } });
+    assert.deepEqual(answer.items.map((item) => item.id), [mix, single, introA, introB]);
+    assert.deepEqual(answer.results.map((row) => row.recording.id), [mix, single, introA, introB],
+      "the relevant conflicting-length version remains visible through the search response");
+  } finally {
+    globalDb.__mintDb = previous;
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
+
+test("recording groups preserve explicit version and duration conflicts without transitive unknown-length bridges", () => {
+  const album = { key: "album:one", title: "First Album", artist: "Fixture Artist" };
+  const otherAlbum = { key: "album:two", title: "First Album (Deluxe)", artist: "Fixture Artist" };
+  const compilation = { key: "album:compilation", title: "Compilation", artist: "Various Artists" };
+  const candidate = (id: string, durationSec: number | null, albums: typeof album[], title = "Song",
+    artistKeys = ["artist:fixture"]): RecordingVersionCandidate => ({
+    item: { id, title, artist: "Fixture Artist", album: null, durationSec }, artistKeys, albums,
+  });
+  const [original, unknown, compatible, long, bridge, edition, compilationCut, noAlbum, loose, live, remaster] =
+    Array.from({ length: 11 }, () => randomUUID());
+  const groups = groupRecordingVersions([
+    candidate(original!, 180, [album]), candidate(unknown!, null, [album]), candidate(compatible!, 182.5, [album]),
+    candidate(long!, 240, [album]), candidate(bridge!, 180, [album, otherAlbum]), candidate(edition!, 180, [otherAlbum]),
+    candidate(compilationCut!, 180, [compilation]), candidate(noAlbum!, 180, []), candidate(loose!, null, []),
+    candidate(live!, 180, [album], "Song (feat. Guest live)"),
+    candidate(remaster!, 180, [album], "Song (feat. Guest remastered)"),
+  ]).map((group) => group.map((item) => item.id));
+  const originalGroup = groups.find((group) => group.includes(original!))!;
+  assert.ok([compatible, bridge, noAlbum].every((id) => originalGroup.includes(id!)));
+  assert.ok([unknown, long, edition, compilationCut, loose, live, remaster].every((id) => !originalGroup.includes(id!)));
+  assert.ok(groups.find((group) => group.includes(long!))!.every((id) => id !== original && id !== compatible),
+    "a missing duration cannot bridge known incompatible durations");
+  assert.ok(!originalGroup.includes(edition!), "a multi-album candidate cannot merge distinct album identities");
+
+  const sameTitle = [candidate(randomUUID(), 180, [], "Name only", []), candidate(randomUUID(), 180, [], "Name only", [])];
+  assert.equal(groupRecordingVersions(sameTitle).length, 2, "names and equal durations without a graph identity are insufficient");
+  const exactId = randomUUID();
+  const exact = groupRecordingVersions([candidate(exactId, 180, [album]), candidate(exactId, null, [otherAlbum]),
+    candidate(exactId, 240, [album])]);
+  assert.deepEqual(exact.map((group) => group.length), [2, 1],
+    "only an exact link permits incomplete duration or album metadata, never a known duration conflict");
+  const first = candidate(randomUUID(), 180, []), second = candidate(randomUUID(), 180, []);
+  first.item.album = "First Album"; second.item.album = "First Album (Deluxe)";
+  assert.equal(groupRecordingVersions([first, second]).length, 2, "known album edition metadata cannot be disregarded");
+  const labelled = candidate(randomUUID(), 180, [album]);
+  labelled.item.album = "First Album (Live)";
+  assert.equal(groupRecordingVersions([labelled])[0]![0]!.album, labelled.item.album,
+    "a graph album must not overwrite an explicitly labelled edition");
+  const credited = candidate(randomUUID(), 180, [album], "Song (feat. Guest)");
+  const otherCredit = candidate(randomUUID(), 180, [album], "Song (feat. Other)");
+  const wrongArtist = candidate(randomUUID(), 180, [album], "Song (feat. Guest)");
+  wrongArtist.item.artist = "Different Artist";
+  assert.equal(groupRecordingVersions([credited, otherCredit, wrongArtist]).length, 3,
+    "matching artist keys cannot override explicit title or artist conflicts");
+});
+
+test("artist collection keeps unrelated recordings and omits unrepresentable album-name collisions", async () => {
+  const env = { MINT_CATALOG_URL: "http://catalog.test" }, artist = "Fixture Artist";
+  const [ownedAlbumId, sameNameId, liveId, uniqueId, twinAId, twinBId, unknownId] =
+    Array.from({ length: 7 }, () => randomUUID());
+  const album = (id: string, title: string) => ({ key: `musicbrainz:global:album:${id}`, source: "musicbrainz",
+    kind: "album", provider_id: id, title, artist, album: null });
+  const albums = [album(ownedAlbumId!, "Same Name"), album(sameNameId!, "Same Name"), album(liveId!, "Same Name (Live)"),
+    album(uniqueId!, "Unique"), album(twinAId!, "Catalog Twin"), album(twinBId!, "Catalog Twin"), album(unknownId!, "Unknown Local")];
+  const [playedId, alternateId, conflictId, orphanId] = Array.from({ length: 4 }, () => randomUUID());
+  const song = (id: string, title: string, albumTitle: string | null) => ({ key: `musicbrainz:global:song:${id}`,
+    source: "musicbrainz", kind: "song", provider_id: id, title, artist, album: albumTitle });
+  const played = song(playedId!, "Shared Song", "Same Name"), alternate = song(alternateId!, "Shared Song", "Same Name");
+  const conflict = song(conflictId!, "Conflict Song", null), orphan = song(orphanId!, "Orphan Song", null);
+  const songs = [played, alternate, conflict, orphan];
+  const unrelated = { key: "ytmusic:global:song:unrelated", source: "ytmusic", kind: "song", provider_id: "unrelated",
+    title: "Orphan Song", artist, album: "Unrelated Album" };
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v1/search") return Response.json({ mode: "hybrid",
+      results: url.searchParams.get("kind") === "album" ? albums : [...songs, unrelated] });
+    const key = decodeURIComponent(url.pathname.slice("/v1/entities/".length));
+    const selectedAlbum = albums.find((item) => item.key === key);
+    if (selectedAlbum) return Response.json({ entity: selectedAlbum });
+    const selected = songs.find((item) => item.key === key)!;
+    return Response.json({ entity: selected, annotations: { duration_ms: 180_000 }, edges: [
+      { source: key, target: "artist:fixture", relation: "artist" },
+      ...([played.key, alternate.key].includes(key) ? [{ source: key, target: albums[0]!.key, relation: "album" }] : []),
+    ] });
+  };
+  const globalDb = globalThis as unknown as { __mintDb?: unknown }, previous = globalDb.__mintDb;
+  const secret = process.env.MINT_SIGNING_SECRET;
+  const playable = { id: randomUUID(), recordingId: playedId!, title: "Shared Song", artist, durationSec: 180,
+    stage: "ready", error: null, detail: null, playable: true };
+  const mismatched = { ...playable, id: randomUUID(), recordingId: conflictId!, title: "Another Song" };
+  globalDb.__mintDb = { db: { select: (selection: Record<string, unknown>) => ({ from: () => ({ where: () => ({
+    limit: async () => "recordingId" in selection ? [playable, mismatched] :
+      [{ album: "Same Name", releaseGroupId: ownedAlbumId }, { album: "Unknown Local", releaseGroupId: null }],
+  }) }) }) } };
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const result = await catalogCollectionRecordings("owner", artistPlayerId(artist), { catalog: { env, fetcher } });
+    assert.deepEqual(result.items.map((item) => item.id), [alternateId, conflictId, orphanId]);
+    assert.equal(result.items.find((item) => item.id === conflictId)!.existing, null);
+    assert.equal(result.items.find((item) => item.id === orphanId)!.album, null,
+      "an unrelated same-title provider row must not supply album metadata");
+    assert.deepEqual(result.albums.map((item) => [item.title, item.verifiedReleaseGroupId]), [
+      ["Same Name (Live)", liveId], ["Unique", uniqueId],
+    ]);
+    assert.equal(new Set(result.albums.map((item) => item.id)).size, result.albums.length,
+      "different same-name release groups cannot create duplicate legacy destinations");
+  } finally {
+    globalDb.__mintDb = previous;
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
+
+test("album pages preserve edition labels and do not combine same-name release groups", async () => {
+  const env = { MINT_CATALOG_URL: "http://catalog.test" }, artist = "Fixture Artist";
+  const album = (id: string, title: string) => ({ key: `musicbrainz:global:album:${id}`, source: "musicbrainz",
+    kind: "album", provider_id: id, title, artist, album: null });
+  const song = (id: string, title: string, albumTitle: string) => ({ key: `musicbrainz:global:song:${id}`,
+    source: "musicbrainz", kind: "song", provider_id: id, title, artist, album: albumTitle });
+  const standard = album(randomUUID(), "Fixture Album"), live = album(randomUUID(), "Fixture Album (Live)");
+  const otherLive = album(randomUUID(), "Fixture Album (Live)");
+  const studioSong = song(randomUUID(), "Studio Cut", standard.title), liveSong = song(randomUUID(), "Live Cut", live.title);
+  let ambiguous = false, searches = 0;
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v1/search") {
+      searches++;
+      return Response.json({ mode: "hybrid", results: url.searchParams.get("kind") === "album"
+        ? [standard, live, ...(ambiguous ? [otherLive] : [])] : [studioSong, liveSong] });
+    }
+    const key = decodeURIComponent(url.pathname.slice("/v1/entities/".length));
+    const selectedAlbum = [standard, live, otherLive].find((item) => item.key === key);
+    if (selectedAlbum) return Response.json({ entity: selectedAlbum, edges: [{ source: selectedAlbum.key === standard.key
+      ? studioSong.key : liveSong.key, target: key, relation: "album" }] });
+    const selectedSong = [studioSong, liveSong].find((item) => item.key === key)!;
+    return Response.json({ entity: selectedSong, annotations: { duration_ms: 180_000 }, edges: [
+      { source: key, target: selectedSong.key === studioSong.key ? standard.key : live.key, relation: "album" },
+    ] });
+  };
+  const globalDb = globalThis as unknown as { __mintDb?: unknown }, previous = globalDb.__mintDb;
+  const secret = process.env.MINT_SIGNING_SECRET;
+  let owned: Array<{ album: string; releaseGroupId: string | null }> = [], localIds: Array<{ id: string }> = [];
+  globalDb.__mintDb = { db: {
+    select: (selection: Record<string, unknown>) => ({ from: () => ({ where: () => ({
+      limit: async () => "recordingId" in selection ? [] : owned,
+    }) }) }),
+    execute: async () => ({ rows: localIds }),
+  } };
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const id = albumPlayerId(artist, live.title);
+    const result = await catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } });
+    assert.deepEqual(result.items.map((item) => item.id), [liveSong.provider_id], "studio album songs do not leak into a live edition");
+    ambiguous = true; searches = 0;
+    const collision = await catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } });
+    assert.deepEqual(collision.items, [], "a name-only route cannot select either distinct release group safely");
+    assert.equal(searches, 1, "an ambiguous album must not fall back to a name-only recording search");
+    owned = [{ album: live.title, releaseGroupId: live.provider_id }];
+    localIds = [{ id: live.provider_id }];
+    const verified = await catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } });
+    assert.deepEqual(verified.items.map((item) => item.id), [liveSong.provider_id],
+      "a verified local release group selects only its exact catalog identity");
+    localIds = [];
+    assert.deepEqual((await catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } })).items, [],
+      "a local album without a verified release group cannot borrow a name-matched catalog album");
+    localIds = [{ id: live.provider_id }, { id: otherLive.provider_id }];
+    assert.deepEqual((await catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } })).items, [],
+      "multiple local release groups remain ambiguous");
+  } finally {
+    globalDb.__mintDb = previous;
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
+
+test("graph-only album tracks require shared release evidence before binding a recording", async () => {
+  const env = { MINT_CATALOG_URL: "http://catalog.test" }, artist = "Fixture Artist";
+  const album = { key: "ytmusic:global:album:one", source: "ytmusic", kind: "album", provider_id: "one",
+    title: "Fixture Album", artist, album: null };
+  const otherAlbum = { ...album, key: "ytmusic:global:album:other", provider_id: "other", title: "Other Album" };
+  const graphSong = { key: "ytmusic:global:song:one", source: "ytmusic", kind: "song", provider_id: "one",
+    title: "Fixture Song", artist, album: album.title };
+  const identified = Array.from({ length: 2 }, () => {
+    const id = randomUUID();
+    return { key: `musicbrainz:global:song:${id}`, source: "musicbrainz", kind: "song", provider_id: id,
+      title: graphSong.title, artist, album: album.title };
+  });
+  const extraId = randomUUID(), extra = { ...identified[0]!, key: `musicbrainz:global:song:${extraId}`, provider_id: extraId };
+  let mode: "match" | "unlinked" | "ambiguous" | "stale" | "missing" | "many" | "more" = "match";
+  let candidateLookups = 0;
+  const fetcher: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v1/search") {
+      if (url.searchParams.get("kind") === "album") return Response.json({ mode: "hybrid", results: [album] });
+      const isArtistFallback = url.searchParams.get("q") === artist;
+      return Response.json({ mode: "hybrid", has_more: mode === "more",
+        results: isArtistFallback && mode !== "unlinked" ? [] : mode === "many" ? [...identified, extra] : identified });
+    }
+    const key = decodeURIComponent(url.pathname.slice("/v1/entities/".length));
+    if (key === album.key) return Response.json({ entity: album, edges: [{ source: graphSong.key, target: key, relation: "album" }] });
+    if (key === otherAlbum.key) return Response.json({ entity: otherAlbum });
+    if (identified.some((item) => item.key === key) || key === extra.key) candidateLookups++;
+    const original = [graphSong, ...identified].find((item) => item.key === key)!;
+    const selected = mode === "stale" && key === identified[0]!.key ? { ...original, title: `${original.title} (Live)` } : original;
+    const shared = selected.key === graphSong.key || mode !== "unlinked";
+    const duration = selected.key === identified[1]!.key && mode !== "ambiguous" ? 240_000 : 180_000;
+    return Response.json({ entity: selected, annotations: mode === "missing" && key === graphSong.key ? {} : { duration_ms: duration }, edges: [
+      { source: key, target: shared ? album.key : otherAlbum.key, relation: "album" },
+      ...(key === graphSong.key && mode === "unlinked" ? [{ source: key, target: otherAlbum.key, relation: "album" }] : []),
+    ] });
+  };
+  const globalDb = globalThis as unknown as { __mintDb?: unknown }, previous = globalDb.__mintDb;
+  const secret = process.env.MINT_SIGNING_SECRET;
+  globalDb.__mintDb = { db: { select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }) } };
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const id = albumPlayerId(artist, album.title);
+    const search = () => catalogCollectionRecordings("owner", id, { catalog: { env, fetcher } });
+    assert.deepEqual((await search()).items.map((item) => item.id), [identified[0]!.provider_id],
+      "a shared album edge and compatible duration identify the candidate");
+    mode = "unlinked";
+    assert.deepEqual((await search()).items, [], "a shared edge to a different album cannot bind a recording to this album");
+    mode = "ambiguous";
+    assert.deepEqual((await search()).items, [], "two compatible recording identities must not be arbitrarily attached");
+    mode = "stale";
+    assert.deepEqual((await search()).items, [], "conflicting detail metadata cannot validate a stale search row");
+    mode = "missing";
+    assert.deepEqual((await search()).items, [], "an unlinked provider row needs duration evidence");
+    for (mode of ["many", "more"] as const) {
+      candidateLookups = 0;
+      assert.deepEqual((await search()).items, [], "large or incomplete candidate sets are not guessed");
+      assert.equal(candidateLookups, 0, "ambiguous sets do not trigger unbounded detail lookups");
+    }
+  } finally {
+    globalDb.__mintDb = previous;
+    if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
 });
 
 test("pinned recording sources fail closed before any database write when metadata or audio safety is missing", async () => {
@@ -292,7 +535,8 @@ test("public recording searches coalesce across stores and do not share signed/l
 test("cached metadata still resolves local status and signs for each searching account without acquiring tracks", async () => {
   const fixture = catalogFixture(), globalDb = globalThis as unknown as { __mintDb?: unknown };
   const previous = globalDb.__mintDb, secret = process.env.MINT_SIGNING_SECRET;
-  let local: Array<{ id: string; recordingId: string; stage: "ready"; error: null; detail: null; playable: boolean }> = [];
+  let local: Array<{ id: string; recordingId: string; title: string; artist: string; durationSec: number | null;
+    stage: "ready"; error: null; detail: null; playable: boolean }> = [];
   let reads = 0, fetches = 0;
   globalDb.__mintDb = { db: {
     select: () => ({ from: () => ({ where: () => ({ limit: async () => { reads++; return local; } }) }) }),
@@ -304,14 +548,24 @@ test("cached metadata still resolves local status and signs for each searching a
     const first = await searchRecordings("owner", "fixture", fetcher, undefined, options);
     assert.equal(first[0]!.existing, null);
     assert.equal(readRequestRecording("owner", first[0]!.token).id, fixture.recordings[0]!.id);
-    local = [{ id: randomUUID(), recordingId: fixture.recordings[0]!.id, stage: "ready", error: null, detail: null, playable: false }];
+    local = [{ id: randomUUID(), recordingId: fixture.recordings[0]!.id, title: fixture.recordings[0]!.title,
+      artist: fixture.recordings[0]!["artist-credit"][0]!.name, durationSec: 90,
+      stage: "ready", error: null, detail: null, playable: false }];
     const second = await searchRecordings("other", "fixture", fetcher, undefined, options);
     assert.equal(second[0]!.existing?.playable, false);
     assert.equal(readRequestRecording("other", second[0]!.token).id, fixture.recordings[0]!.id);
     assert.throws(() => readRequestRecording("owner", second[0]!.token), /expired/);
     local = [{ ...local[0]!, playable: true }];
     assert.equal((await searchRecordings("owner", "fixture", fetcher, undefined, options))[0]!.existing?.playable, true);
-    assert.equal(fetches, 1); assert.equal(reads, 3);
+    for (const conflict of [{ title: "First Light (Live)" }, { artist: "Different Artist" }, { durationSec: 93 }]) {
+      local = [{ ...local[0]!, title: "First Light", artist: "Mint Fixture", durationSec: 90, ...conflict }];
+      assert.equal((await searchRecordings("owner", "fixture", fetcher, undefined, options))[0]!.existing, null,
+        "an exact MBID does not hide a known title, artist or duration conflict");
+    }
+    local = [{ ...local[0]!, title: "First Light", artist: "Mint Fixture", durationSec: null }];
+    assert.equal((await searchRecordings("owner", "fixture", fetcher, undefined, options))[0]!.existing?.playable, true,
+      "missing duration does not veto an otherwise compatible exact link");
+    assert.equal(fetches, 1); assert.equal(reads, 7);
   } finally {
     globalDb.__mintDb = previous;
     if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
@@ -386,6 +640,34 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     await db.update(schema.tracks).set({ filePath: "/fixture/audio.flac" }).where(eq(schema.tracks.id, trackId));
     assert.equal((await searchRecordings(owner!.id, "first light", fetcher, undefined, { mirrorUrl: "", cache: true, cacheStore }))[0]!.existing?.playable, true);
     assert.equal(catalogCalls, 1, "local playability and signing are refreshed independently of cached metadata");
+    const releaseId = randomUUID(), alternateId = randomUUID();
+    await db.update(schema.tracks).set({ mbReleaseGroupId: releaseId }).where(eq(schema.tracks.id, trackId));
+    const release = { key: `musicbrainz:global:album:${releaseId}`, source: "musicbrainz", kind: "album",
+      provider_id: releaseId, title: item.album, artist: item.artist, album: null };
+    const catalogSongs = [id, alternateId].map((recordingId) => ({ key: `musicbrainz:global:song:${recordingId}`,
+      source: "musicbrainz", kind: "song", provider_id: recordingId, title: item.title, artist: item.artist, album: item.album }));
+    const catalogFetcher: typeof fetch = async (input) => {
+      const target = new URL(String(input));
+      if (target.pathname === "/v1/search") return Response.json({ mode: "hybrid",
+        results: target.searchParams.get("kind") === "album" ? [release] : catalogSongs });
+      const key = decodeURIComponent(target.pathname.slice("/v1/entities/".length));
+      if (key === release.key) return Response.json({ entity: release, edges: catalogSongs.map((song) =>
+        ({ source: song.key, target: key, relation: "album" })) });
+      return Response.json({ entity: catalogSongs.find((song) => song.key === key),
+        annotations: { duration_ms: 90_000 }, edges: [{ source: key, target: release.key, relation: "album" }] });
+    };
+    const collection = await catalogCollectionRecordings(owner!.id, artistPlayerId(item.artist),
+      { catalog: { env: { MINT_CATALOG_URL: "http://catalog.test" }, fetcher: catalogFetcher } });
+    assert.deepEqual(collection.items.map((row) => row.id), [alternateId],
+      "the real playable query suppresses only the exact recording, not its same-title alternative");
+    assert.deepEqual(collection.albums, [], "the exact playable release-group identity is not presented as an unowned album");
+    const albumCollection = () => catalogCollectionRecordings(owner!.id, albumPlayerId(item.artist, item.album),
+      { catalog: { env: { MINT_CATALOG_URL: "http://catalog.test" }, fetcher: catalogFetcher } });
+    assert.deepEqual((await albumCollection()).items.map((row) => row.id), [alternateId],
+      "the real distinct-ID query attaches the verified local album only");
+    await db.update(schema.tracks).set({ mbReleaseGroupId: null }).where(eq(schema.tracks.id, trackId));
+    assert.deepEqual((await albumCollection()).items, [], "an unverified local album cannot borrow catalog recordings by name");
+    await db.update(schema.tracks).set({ mbReleaseGroupId: releaseId }).where(eq(schema.tracks.id, trackId));
     const secondToken = signToken("music-request", { userId: other!.id, recording: item }, 60000);
     assert.equal((await requestRecording(other!.id, secondToken)).needsQueue, false);
     const wrongRecording = signToken("music-request", { userId: owner!.id, recording: { ...item, id: randomUUID(), title: "Other Recording" } }, 60000);

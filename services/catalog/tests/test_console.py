@@ -217,5 +217,5 @@ def test_v1_migration_preserves_existing_data_and_bootstraps_counters(store):
         assert conn.execute("SELECT entities FROM source_metrics").fetchone()["entities"] == 1
         assert (
             conn.execute("SELECT max(version) AS version FROM catalog_schema").fetchone()["version"]
-            == 9
+            == 10
         )

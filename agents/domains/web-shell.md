@@ -17,6 +17,7 @@
 - Issue reports contain only what the member sees and explicitly sends (category, message and optional human-readable context). Never attach audio, lyrics, internal IDs, device or environment data automatically. Only admins can list or resolve reports.
 - An account request is not playback approval. Authorization checks stay server-side. Private HTML and APIs must never become shared cache entries.
 - Public copy describes native Mint playback, never embedded Plexamp. Never invent metrics.
+- Failed-job removal dismisses one failure version and only matching failed worker records; preserve songs, memberships and running jobs. Later failures reappear.
 
 Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 

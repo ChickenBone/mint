@@ -20,6 +20,7 @@ import { SeekSlider } from "./SeekSlider";
 import { StatsForNerds } from "./StatsForNerds";
 import { useSongLike } from "../../hooks/useSongLike";
 import { useSeekPreview } from "./useSeekPreview";
+import { DevicePicker } from "./DevicePicker";
 
 type IconName = ComponentProps<typeof Ionicons>["name"];
 function Action({ label, icon, onPress, active = false, large = false, disabled = false, busy = false }: {
@@ -313,6 +314,7 @@ export function PlayerSurface({ bottomInset = 0, onPresentationChange }: { botto
               <View style={s.controls}>{controls}</View>
               {player.state.repeat === "one" ? <Text style={s.repeatHint}>Repeating this song</Text> : null}
               <View style={s.tools}>
+                <DevicePicker />
                 <Pressable accessibilityRole="button" accessibilityLabel="Lyrics" onPress={() => setPanel("lyrics")} style={({ pressed }) => [s.tool, pressed && s.pressed]}><Ionicons name="text" size={22} color={colors.text} /><Text style={s.toolText}>Lyrics</Text></Pressable>
                 <Pressable accessibilityRole="button" accessibilityLabel="Queue" onPress={() => setPanel("queue")} style={({ pressed }) => [s.tool, pressed && s.pressed]}><Ionicons name="list" size={22} color={colors.text} /><Text style={s.toolText}>Queue</Text></Pressable>
                 {player.capabilities.offline ? <Pressable accessibilityRole="button" accessibilityLabel={download?.status === "ready" ? "Remove download" : download?.status === "failed" ? "Retry download" : "Download song"}

@@ -1,7 +1,11 @@
 import {
   deviceCommandSchema, deviceStateSchema, confirmsHandoff,
+  matchesDevicePlayback,
   type DeviceCommand, type DeviceCommandEnvelope, type DeviceHandoff, type DeviceState,
 } from "@mint/core/devices";
+import { playbackSource } from "@mint/client/devices";
+
+export { playbackSource } from "@mint/client/devices";
 
 type DeviceMemory = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type BridgeOptions = {
@@ -16,7 +20,6 @@ type BridgeOptions = {
   /** Remembers this tab's device across refresh. Defaults to sessionStorage in the browser. */
   storage?: DeviceMemory | null;
 };
-const registrations = new Map<string, Promise<{ id: string; token: string }>>();
 function tabStore(): DeviceMemory | null {
   try { return typeof sessionStorage === "undefined" ? null : sessionStorage; }
   catch { return null; }
@@ -38,7 +41,7 @@ const playbackIdentity = (state: DeviceState) => JSON.stringify([state.trackId, 
 
 export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
   const load = options.fetcher ?? fetch;
-  let stopped = false, device: { id: string; token: string } | null = null;
+  let stopped = false, suspended = false, running = false, device: { id: string; token: string } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let inFlight: AbortController | null = null;
   let executing: AbortController | null = null;
@@ -46,6 +49,12 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
   const seen = new Set<string>();
   const storage = options.storage === undefined ? tabStore() : options.storage;
   const storageKey = `mint:device:${options.memberId}`;
+  function disconnect(receiver: { id: string; token: string }) {
+    if (storage?.getItem(storageKey) === receiver.id) storage.removeItem(storageKey);
+    void request(`/${receiver.id}/disconnect`, { token: receiver.token }, undefined, true).catch((error) => {
+      options.error(message(error));
+    });
+  }
 
   function report(error: unknown) {
     const text = message(error);
@@ -75,19 +84,15 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
         storage?.removeItem(storageKey);
       }
     }
-    const pending = registrations.get(storageKey);
-    if (pending) return pending;
     const created = request<{ id: string; token: string }>("", { name: browserName(), state: state() }).then((registration) => {
       storage?.setItem(storageKey, registration.id);
       return registration;
-    }).finally(() => { if (registrations.get(storageKey) === created) registrations.delete(storageKey); });
-    registrations.set(storageKey, created);
+    });
     return created;
   }
   function browserName() {
     if (options.name) return options.name;
-    if (typeof navigator === "undefined") return "Mint browser";
-    return /Android/i.test(navigator.userAgent) ? "Android · Mint" : /iPhone|iPad/i.test(navigator.userAgent) ? "iPhone / iPad · Mint" : "Computer · Mint";
+    return "Web player";
   }
 
   async function deliver(envelope: DeviceCommandEnvelope) {
@@ -101,6 +106,11 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
     const remaining = Date.parse(envelope.expiresAt) - Date.now();
     if (!Number.isFinite(remaining) || remaining <= 0) throw new Error("A device command expired before delivery.");
     const command = deviceCommandSchema.parse(envelope.command);
+    if (command.action === "pause" && command.expected && !matchesDevicePlayback(state(), command.expected)) {
+      await request(`/${device.id}/ack`, { token: device.token, id: envelope.id, sequence: envelope.sequence,
+        success: false, error: "Source changed tracks during the move. Choose which device to pause.", state: state() });
+      return;
+    }
     const controller = new AbortController();
     executing = controller;
     const deadline = setTimeout(() => controller.abort(new Error("Device command expired.")), remaining);
@@ -129,13 +139,14 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
   }
 
   async function tick() {
-    if (stopped) return;
+    if (stopped || suspended || running) return;
+    running = true;
     const controller = new AbortController();
     inFlight = controller;
     try {
       if (!device) {
         device = await connect();
-        if (stopped) return;
+        if (stopped || suspended) { disconnect(device); device = null; return; }
       }
       const snapshot = state(), queueIdentity = JSON.stringify(snapshot.queue);
       const { queue, ...playback } = snapshot;
@@ -156,7 +167,8 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
       }
     } finally {
       inFlight = null;
-      if (!stopped) timer = setTimeout(tick, options.pollMs ?? 2000);
+      running = false;
+      if (!stopped && !suspended) timer = setTimeout(tick, options.pollMs ?? 2000);
     }
   }
 
@@ -167,7 +179,12 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
       if (timer) clearTimeout(timer);
       inFlight?.abort();
       executing?.abort();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("pagehide", pageHide);
+        window.removeEventListener("pageshow", pageShow);
+      }
       if (activeBridge === bridge) activeBridge = null;
+      if (device) disconnect(device);
       device = null;
     },
     async handoffTo(destinationId: string) {
@@ -181,8 +198,9 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
           token: device.token, destinationId, state: original,
         });
         const deadline = Date.parse(admitted.expiresAt);
-        while (!stopped && Date.now() <= deadline) {
+        while (!stopped && !suspended && Date.now() <= deadline) {
           const result = await request<{ status: string; error?: string | null }>(`/commands/${admitted.id}`);
+          if (stopped || suspended) throw new Error("This player disconnected during the move.");
           if (result.status === "succeeded") {
             if (playbackIdentity(state()) !== identity) {
               throw new Error("Playback moved, but this tab changed tracks. Pause either device manually.");
@@ -199,8 +217,22 @@ export function startDeviceBridge(options: BridgeOptions): DeviceBridge {
       } finally { handoffBusy = false; }
     },
   };
+  function pageHide() {
+    suspended = true;
+    if (timer) clearTimeout(timer);
+    inFlight?.abort(); executing?.abort();
+    if (device) disconnect(device);
+    device = null;
+  }
+  function pageShow(event: PageTransitionEvent) {
+    if (event.persisted && !stopped) { suspended = false; lastQueue = ""; void tick(); }
+  }
   if (activeBridge) activeBridge.dispose();
   activeBridge = bridge;
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", pageHide);
+    window.addEventListener("pageshow", pageShow);
+  }
   void tick();
   return bridge;
 }
@@ -222,13 +254,6 @@ async function deviceRequest<T>(path: string, value?: unknown): Promise<T> {
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Device service did not respond.");
   return result as T;
-}
-
-export function playbackSource<T extends { id: string; online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[], destinationId: string) {
-  const ready = devices.filter((device) => device.online && device.state.queueLength > 0);
-  const playing = ready.find((device) => device.state.playing);
-  if (playing) return playing.id === destinationId ? null : playing;
-  return [...ready].filter((device) => device.id !== destinationId).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
 }
 
 export function activeOutput<T extends { online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[]) {
@@ -269,7 +294,7 @@ export async function connectToDevice(destinationId: string) {
   }
   const admitted = await deviceRequest<{ id: string; sourceId: string }>("/transfer", { destinationId });
   await waitForCommand(admitted.id);
-  const paused = await deviceRequest<{ id: string }>(`/${admitted.sourceId}/commands`, { action: "pause" });
+  const paused = await deviceRequest<{ id: string }>("/complete-transfer", { commandId: admitted.id });
   await waitForCommand(paused.id);
 }
 

@@ -24,6 +24,7 @@
 - Keep requested, processing, failed and ambiguous states distinct and observable with retry. Do not advertise broken indexers as configured.
 - Do not bypass CAPTCHAs or entitlements. Support only acquisition the operator is authorized to perform.
 - Add-only integration wiring never overwrites operator settings.
+- Admin dismissal is failure-version-specific; only matching failed acquire/finalize records may be removed. Preserve tracks, memberships, live jobs and flow dependencies; expose partial cleanup failures.
 
 Details: [integrations and charts](../integrations-and-charts.md).
 
@@ -43,13 +44,13 @@ Details: [integrations and charts](../integrations-and-charts.md).
 - **Imported by:** [`analysis`](analysis.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map acquisition` (exports, line counts, cross-domain import edges).
 
-### Owned files (43)
+### Owned files (47)
 
 - `apps/web/src/app/app/` `downloads/page.tsx`, `jobs/page.tsx`
 - `apps/web/src/components/` `pipeline-board.tsx`, `stage-badge.tsx`
 - `apps/web/src/components/app/` `downloads.tsx`, `retry-button.tsx`, `track-source-actions.tsx`
-- `apps/web/src/lib/` `backlog.ts`, `music-requests.ts`, `track-sources.ts`
-- `apps/web/tests/` `backlog.test.ts`, `music-requests.test.ts`
+- `apps/web/src/lib/` `admin-failed-jobs.ts`, `backlog.ts`, `failed-pipeline-jobs.ts`, `music-requests.ts`, `track-sources.ts`
+- `apps/web/tests/` `admin-failed-jobs.test.ts`, `backlog.test.ts`, `failed-pipeline-jobs.test.ts`, `music-requests.test.ts`
 - `apps/worker/src/` `audio-regression-capture.ts`, `audio-regression.test.ts`, `audio-regression.ts`, `existing-track.ts`, `integrations.ts`, `match-report.ts`, `media.ts`, `music-requests.test.ts`, `parse.test.ts`, `parse.ts`, `track-state.ts`
 - `apps/worker/src/fixtures/` `audio-regression.json`
 - `apps/worker/src/jobs/` `acquire.ts`, `finalize.ts`, `media.integration.test.ts`, `search-request-enrichment.ts`, `torbox-bridge.integration.test.ts`, `torbox-bridge.ts`
@@ -59,12 +60,12 @@ Details: [integrations and charts](../integrations-and-charts.md).
 
 ### Validate
 
-Owned tests: 10.
+Owned tests: 12.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/backlog.test.ts tests/music-requests.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/admin-failed-jobs.test.ts tests/backlog.test.ts tests/failed-pipeline-jobs.test.ts tests/music-requests.test.ts
 npm run typecheck -w @mint/worker
 npm exec -w @mint/worker -- tsx --test --test-force-exit src/audio-regression.test.ts src/jobs/media.integration.test.ts src/jobs/torbox-bridge.integration.test.ts src/music-requests.test.ts src/parse.test.ts src/services/prowlarr.test.ts src/services/torbox.test.ts
 npm run typecheck -w @mint/core

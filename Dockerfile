@@ -11,6 +11,7 @@ WORKDIR /repo
 FROM base AS deps
 COPY package.json package-lock.json ./
 COPY packages/core/package.json packages/core/
+COPY packages/client/package.json packages/client/
 COPY apps/web/package.json apps/web/
 COPY apps/worker/package.json apps/worker/
 COPY apps/realtime/package.json apps/realtime/
@@ -34,6 +35,7 @@ RUN --mount=type=cache,target=/root/.npm rm -rf node_modules && npm ci --omit=de
 # Separate build avoids requiring a Next.js build for the metadata-only service.
 FROM deps AS chart-source-build
 COPY tsconfig.base.json ./
+COPY packages/core/src ./packages/core/src
 COPY services/chart-source ./services/chart-source
 COPY apps/web/src/lib/charts.ts apps/web/src/lib/chart-cache.ts apps/web/src/lib/chart-providers.ts ./apps/web/src/lib/
 RUN ./node_modules/.bin/esbuild services/chart-source/main.mts --bundle --platform=node --target=node22 --format=cjs --outfile=chart-source.cjs

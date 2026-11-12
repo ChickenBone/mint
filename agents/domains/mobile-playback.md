@@ -28,13 +28,13 @@ Use the focused generated engine/offline checks below; presentation-only tests a
 - **Scope:** Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage.
 - **Read before editing:** [docs/mobile-playback.md](../../docs/mobile-playback.md).
 - **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md)
-- **Imported by:** [`mobile`](mobile.md), [`mobile-player`](mobile-player.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md)
+- **Imported by:** [`mobile`](mobile.md), [`mobile-artists`](mobile-artists.md), [`mobile-player`](mobile-player.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md)
 - **Live detail:** `npm run agents -- map mobile-playback` (exports, line counts, cross-domain import edges).
 
-### Owned files (23)
+### Owned files (24)
 
 - `apps/mobile/src/offline/` `files.native.ts`, `files.ts`, `files.web.ts`, `store.ts`
-- `apps/mobile/src/playback/` `PlayerProvider.tsx`, `account-cleanup.ts`, `analysis-request.ts`, `diagnostics-preference.ts`, `diagnostics.ts`, `engine.ts`, `lyrics.ts`, `playlist.native.ts`, `playlist.ts`, `playlist.web.ts`, `queue.ts`, `types.ts`, `with-audio-playlist.cjs`
+- `apps/mobile/src/playback/` `PlayerProvider.tsx`, `account-cleanup.ts`, `analysis-request.ts`, `device-bridge.ts`, `diagnostics-preference.ts`, `diagnostics.ts`, `engine.ts`, `lyrics.ts`, `playlist.native.ts`, `playlist.ts`, `playlist.web.ts`, `queue.ts`, `types.ts`, `with-audio-playlist.cjs`
 - `apps/mobile/tests/` `offline-native.test.ts`, `playback-diagnostics.test.ts`, `playback-engine.test.ts`, `playback-native-patch.test.ts`, `playback.test.ts`
 - `docs/` `mobile-playback.md`
 

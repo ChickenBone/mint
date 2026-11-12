@@ -75,8 +75,13 @@ export const catalogSearchResponseSchema = z.object({
   artists: z.array(catalogArtistSchema).max(20).optional().default([]),
 });
 export type CatalogSearchResponse = z.infer<typeof catalogSearchResponseSchema>;
-/** A catalog album page link; the library may have none of its songs yet. */
-export const catalogCollectionAlbumSchema = z.object({ id: z.string().min(4).max(4000), title: z.string().min(1).max(1000), artist: z.string().min(1).max(1000) });
+/** A catalog album page link; the library may have none of its songs yet.
+ * The optional release-group identity is verified by the server, not inferred from its title.
+ */
+export const catalogCollectionAlbumSchema = z.object({
+  id: z.string().min(4).max(4000), title: z.string().min(1).max(1000), artist: z.string().min(1).max(1000),
+  verifiedReleaseGroupId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).optional(),
+});
 export type CatalogCollectionAlbum = z.infer<typeof catalogCollectionAlbumSchema>;
 /** Catalog songs for an artist or album page that the library cannot play yet, plus correlated albums not imported. */
 export const catalogCollectionResponseSchema = z.object({

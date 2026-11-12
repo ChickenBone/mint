@@ -15,6 +15,7 @@ import { torboxEnabled } from "../services/torbox";
 import { torboxTick } from "./torbox-bridge";
 import { backfillArtwork } from "./artwork";
 import { scheduleArtistMetadata } from "./artist-metadata";
+import { scheduleCatalogPriority } from "../catalog-priority";
 import { processSearchRequestEnrichment } from "./search-request-enrichment";
 
 let lastStats = "";
@@ -116,6 +117,7 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
     case "artwork":
       return backfillArtwork();
     case "artist-metadata":
+      await scheduleCatalogPriority();
       return scheduleArtistMetadata();
     case "leases":
       return reapLeases();

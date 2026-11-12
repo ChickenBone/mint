@@ -16,6 +16,8 @@ import { SidebarPlaylistLinks } from "../src/components/app/sidebar-nav";
 import { Artwork, ArtworkAtmosphere } from "../src/components/artwork";
 import { PageHeader } from "../src/components/app/page-header";
 import { ExternalRecording, SearchResults } from "../src/components/app/global-search";
+import { BridgeAlbumActions } from "../src/components/app/music-browser";
+import { uniqueExternalResults } from "../src/lib/unified-search";
 
 const searchSong = { id: "catalog-song", title: "Imaginary Signal", artist: "The Paper Moons", album: "Fictional Nights",
   durationSec: 180, token: "fixture-token", existing: null };
@@ -23,7 +25,7 @@ const searchTrack = { id: "library-song", title: "Quiet Orbit", artist: "The Pap
 const searchProps = {
   groups: [{ label: "Songs", type: "track" as const, items: [searchTrack] }],
   recordings: [searchSong], requests: {}, playable: {}, filter: "Songs" as const,
-  offline: false, canPlay: false, playDisabled: false, onPlay: () => undefined,
+  query: "quiet orbit", localLoading: false, offline: false, canPlay: false, playDisabled: false, onPlay: () => undefined,
   onNavigate: () => undefined, onAdd: () => undefined,
 };
 
@@ -61,6 +63,70 @@ test("search type filters hide unrelated result sections", () => {
     assert.match(html, new RegExp(`aria-label="${filter}"`));
     assert.doesNotMatch(html, /aria-label="Songs"|Quiet Orbit|Imaginary Signal|Top result/);
   }
+});
+
+test("linked search recordings retain version and duration conflicts but collapse incomplete metadata", () => {
+  const linked = { ...searchSong, title: searchTrack.title, album: null, durationSec: null,
+    existing: { id: searchTrack.id, recordingId: searchSong.id, stage: "ready" as const, error: null, detail: null, playable: true } };
+  const live = { ...linked, title: "Quiet Orbit (Live)" };
+  const longer = { ...linked, durationSec: 240 };
+  const otherArtist = { ...linked, artist: "Another artist" };
+  assert.deepEqual(uniqueExternalResults([searchTrack], [linked]), []);
+  for (const conflict of [live, longer, otherArtist]) {
+    assert.deepEqual(uniqueExternalResults([searchTrack], [conflict]), [conflict]);
+  }
+  const html = renderSearch(createElement(SearchResults, { ...searchProps, recordings: uniqueExternalResults([searchTrack], [live]) }));
+  assert.match(html, /Quiet Orbit \(Live\)/);
+});
+
+test("the relevant catalog recording stays visible while library results load and when Songs is selected", () => {
+  const props = { ...searchProps, groups: [], query: "imaginary signal", filter: "All" as const };
+  const loading = renderSearch(createElement(SearchResults, { ...props, localLoading: true }));
+  assert.doesNotMatch(loading, /aria-label="Top result"/);
+  assert.match(loading, /aria-label="Songs"/);
+  assert.match(loading, /aria-label="Like and add: Imaginary Signal by The Paper Moons"/);
+
+  const loaded = renderSearch(createElement(SearchResults, { ...props, localLoading: false }));
+  assert.match(loaded, /aria-label="Top result"/);
+  assert.doesNotMatch(loaded, /aria-label="Songs"/);
+  assert.equal((loaded.match(/aria-label="Like and add: Imaginary Signal by The Paper Moons"/g) ?? []).length, 1);
+  assert.match(loaded, /Import without liking/);
+
+  const songs = renderSearch(createElement(SearchResults, { ...props, filter: "Songs", localLoading: false }));
+  assert.doesNotMatch(songs, /aria-label="Top result"/);
+  assert.match(songs, /aria-label="Songs"/);
+  assert.match(songs, /aria-label="Like and add: Imaginary Signal by The Paper Moons"/);
+});
+
+test("top result ranks library and catalog artists and recordings by the query", () => {
+  const artist = { id: "artist", type: "artist" as const, title: "Imaginary Signal Ensemble" };
+  const props = { ...searchProps, query: "imaginary signal", filter: "All" as const,
+    groups: [...searchProps.groups, { label: "Artists", type: "artist" as const, items: [artist] }] };
+  const recordingTop = renderSearch(createElement(SearchResults, props));
+  assert.match(recordingTop, /aria-label="Top result"[\s\S]*?Imaginary Signal/);
+  assert.equal((recordingTop.match(/aria-label="Like and add: Imaginary Signal by The Paper Moons"/g) ?? []).length, 1);
+
+  const artistTop = renderSearch(createElement(SearchResults, { ...props, query: "fictional ensemble", recordings: [],
+    catalogArtists: [{ id: "catalog-artist", name: "Fictional Ensemble" }] }));
+  assert.match(artistTop, /aria-label="Top result"[\s\S]*?href="\/app\/library\/artists\/catalog-artist"/);
+  assert.match(artistTop, /Fictional Ensemble/);
+});
+
+test("album cards attach bridge actions only for a verified release-group ID", () => {
+  const item = (id: string, title: string) => ({ id, title, artist: "Fixture artist",
+    source: "musicbrainz" as const, playable: false as const, url: `https://musicbrainz.org/release-group/${id}` });
+  const first = item("00000000-0000-4000-8000-000000000001", "Fixture album");
+  const second = item("00000000-0000-4000-8000-000000000002", "Fixture album");
+  const live = item("00000000-0000-4000-8000-000000000003", "Fixture album (Live)");
+  const album = { title: first.title, artist: first.artist };
+  assert.equal(renderSearch(createElement(BridgeAlbumActions, { album, items: [first, second, live], onSelect: () => undefined })), "");
+  assert.equal(renderSearch(createElement(BridgeAlbumActions, {
+    album: { ...album, verifiedReleaseGroupId: first.id }, items: [second], onSelect: () => undefined,
+  })), "");
+  const html = renderSearch(createElement(BridgeAlbumActions, { album: { ...album, verifiedReleaseGroupId: second.id }, items: [first, second, live],
+    selectedId: second.id, onSelect: () => undefined }));
+  assert.match(html, /aria-label="Browse catalog recordings for Fixture album" aria-expanded="true"/);
+  assert.equal((html.match(/<button/g) ?? []).length, 1);
 });
 
 test("catalog song rows keep processing, retry and playable states honest", () => {

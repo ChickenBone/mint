@@ -168,6 +168,7 @@ def test_demand_endpoint_is_disabled_without_a_token_and_rejects_bad_tokens(sett
         assert app.post("/v1/demand", json=body).status_code == 401
         wrong = {"Authorization": "Bearer " + "x" * 40}
         assert app.post("/v1/demand", json=body, headers=wrong).status_code == 401
+        assert app.post("/v1/demand", json=body, headers={"Authorization": TOKEN}).status_code == 401
         headers = {"Authorization": f"Bearer {TOKEN}"}
         response = app.post("/v1/demand", json=body, headers=headers)
         assert response.status_code == 202 and response.json() == {"queued": 3}
@@ -190,11 +191,13 @@ def test_demand_is_recorded_as_priority_jobs(store):
     assert queued == 3
     with store.transaction() as conn:
         rows = conn.execute(
-            "SELECT task,provider_id,priority FROM jobs WHERE task LIKE '%search' ORDER BY task"
+            """SELECT task,provider_id,priority,demand_priority
+               FROM jobs WHERE task LIKE '%search' ORDER BY task"""
         ).fetchall()
     assert [row["task"] for row in rows] == ["apple-search", "mb-search", "ytm-search"]
     assert all(row["provider_id"] == "rnp cordae" for row in rows)
     assert all(row["priority"] == demand.SEARCH_PRIORITY for row in rows)
+    assert all(row["demand_priority"] == demand.SEARCH_PRIORITY for row in rows)
 
 
 def replace_settings(store, **changes):
@@ -228,3 +231,105 @@ def test_served_search_demand_ingests_results_then_decays(store):
             (job["key"],),
         ).fetchone()
     assert served == {"priority": 0, "later": True}
+
+
+def test_album_demand_survives_ranking_and_propagates_through_repair(store):
+    from catalog.crawler import process
+    from catalog.model import musicbrainz_entity
+    from catalog.ranker import refresh_batch
+    from conftest import ALBUM_ID, ARTIST_ID, SONG_ID
+
+    release_id = "00000000-0000-4000-8000-000000000004"
+    credit = [{"artist": {"id": ARTIST_ID, "name": "Example Artist"}}]
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Example Artist"})
+    album = musicbrainz_entity(
+        "album", {"id": ALBUM_ID, "title": "Example Album", "artist-credit": credit}
+    )
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, album], schedule=False)
+        store.priority_artist(conn, ARTIST_ID, "mint-library")
+        store.enqueue(conn, "mb-lookup", "global", "album", ALBUM_ID, 10)
+
+    def claim(task, kind=None):
+        jobs = store.claim(count=100)
+        selected = next(
+            row for row in jobs if row["task"] == task and (kind is None or row["kind"] == kind)
+        )
+        with store.transaction() as conn:
+            for other in jobs:
+                if other["key"] != selected["key"]:
+                    conn.execute(
+                        "UPDATE jobs SET lease_token=NULL,lease_until='-infinity' WHERE key=%s",
+                        (other["key"],),
+                    )
+        return selected
+
+    lookup = claim("mb-lookup", "album")
+    assert lookup["demand_priority"] == 0
+    demand.record(
+        store,
+        demand.Batch(signals=[{
+            "type": "album", "title": "Example Album", "artist": "Example Artist"
+        }]),
+    )
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE key=%s", (lookup["key"],)
+        ).fetchone() == {"priority": demand.PAGE_PRIORITY, "demand_priority": demand.PAGE_PRIORITY}
+
+    sources = MagicMock()
+    sources.fetch.return_value = {"id": ALBUM_ID, "title": "Example Album", "artist-credit": credit}
+    process(store, sources, lookup)
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE key=%s", (lookup["key"],)
+        ).fetchone() == {"priority": 10, "demand_priority": 0}
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE task='mb-releases' AND entity_key=%s",
+            (album.key,),
+        ).fetchone() == {"priority": demand.PAGE_PRIORITY, "demand_priority": demand.PAGE_PRIORITY}
+
+    sources.fetch.return_value = {"releases": [{"id": release_id}]}
+    process(store, sources, claim("mb-releases"))
+    with store.transaction() as conn:
+        store.priority_artist(conn, ARTIST_ID, "mint-library", remove=True)
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE task='mb-release' AND page=0"
+        ).fetchone() == {"priority": demand.PAGE_PRIORITY, "demand_priority": demand.PAGE_PRIORITY}
+        assert conn.execute(
+            "SELECT priority FROM jobs WHERE key=%s", (lookup["key"],)
+        ).fetchone()["priority"] == 0
+
+    sources.fetch.return_value = {
+        "recording-count": 2,
+        "recordings": [{"id": SONG_ID, "title": "First", "artist-credit": credit}],
+    }
+    process(store, sources, claim("mb-release"))
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE task='mb-release' AND page=1"
+        ).fetchone() == {"priority": demand.PAGE_PRIORITY, "demand_priority": demand.PAGE_PRIORITY}
+        assert conn.execute(
+            "SELECT 1 FROM edges WHERE target=%s AND relation='album'", (album.key,)
+        ).fetchone()
+
+
+def test_non_demand_high_priority_does_not_decay_on_completion(store):
+    from catalog.crawler import process
+    from conftest import ARTIST_ID
+
+    with store.transaction() as conn:
+        store.enqueue(conn, "mb-lookup", "global", "artist", ARTIST_ID, 100)
+    job = store.claim()[0]
+    sources = MagicMock()
+    sources.fetch.return_value = {"id": ARTIST_ID, "name": "Popular Artist"}
+    process(store, sources, job)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority,demand_priority FROM jobs WHERE key=%s", (job["key"],)
+        ).fetchone() == {"priority": 100, "demand_priority": 0}

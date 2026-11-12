@@ -11,7 +11,7 @@ import { fetchCatalog } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import type { RecordingSearchItem } from "@/lib/music-requests";
 import { playerItemSchema, type PlayerItem } from "@/lib/player-protocol";
-import { searchResponseIsCurrent, uniqueExternalResults } from "@/lib/unified-search";
+import { recordingsOutsideTop, searchResponseIsCurrent, topSearchResult, uniqueExternalResults } from "@/lib/unified-search";
 import { useRealtime } from "@/components/realtime";
 import { TrackMenuButton, usePlayer } from "./player";
 import { ArtistLink } from "./music-links";
@@ -40,6 +40,9 @@ export async function requestCatalogRecording(token: string, youtubeUrl?: string
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };
 type LocalResult = { query: string; groups: ResultGroup[]; errors: number; loading: boolean };
 type RecordingResult = RecordingSearchItem;
+type TopCandidate = Pick<PlayerItem, "title" | "artist" | "type"> & (
+  { source: "library" | "catalog-artist"; item: PlayerItem } | { source: "recording"; recording: RecordingResult }
+);
 type CatalogArtist = { id: string; name: string };
 type ExternalResult = { query: string; items: RecordingResult[]; artists: CatalogArtist[]; loading: boolean; error: string };
 export type RequestState = { trackId: string; stage: string; progress: number; error: string | null; liked?: boolean };
@@ -313,7 +316,7 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
     </p> : null}
     {normalized.length >= 2 && <>
       <SearchResults groups={groups} recordings={visibleExternal} requests={requests} playable={playable} filter={filter}
-        catalogArtists={activeExternal?.artists ?? emptyArtists}
+        query={normalized} localLoading={localLoading} catalogArtists={activeExternal?.artists ?? emptyArtists}
         canPlay={!!player} playDisabled={!player?.ready || !!player?.busy} offline={!online}
         onPlay={chooseTrack} onNavigate={() => remember(query)} onAdd={(item, youtubeUrl, like) => void addToLibrary(item, youtubeUrl, like)} />
       {(localLoading || externalLoading) && <p role="status" className="mt-5 text-sm text-muted">Searching music…</p>}
@@ -401,21 +404,14 @@ export function ExternalRecording({ item, request, playable, busy, playDisabled,
 const albumHref = (id: string) => `/app/library/albums/${encodeURIComponent(id)}`;
 const artistHref = (id: string) => `/app/library/artists/${encodeURIComponent(id)}`;
 
-function topResult(groups: ResultGroup[]) {
-  const artist = groups.find((group) => group.type === "artist")?.items[0];
-  const track = groups.find((group) => group.type === "track")?.items[0];
-  const album = groups.find((group) => group.type === "album")?.items[0];
-  return artist ?? track ?? album ?? null;
-}
-
-export function SearchResults({ groups, recordings, requests, playable, filter, offline, canPlay, playDisabled, onPlay, onNavigate, onAdd,
-  catalogArtists = emptyArtists }: {
+export function SearchResults({ groups, recordings, requests, playable, filter, query, localLoading, offline, canPlay, playDisabled,
+  onPlay, onNavigate, onAdd, catalogArtists = emptyArtists }: {
   groups: ResultGroup[]; canPlay: boolean; playDisabled: boolean; catalogArtists?: CatalogArtist[];
   recordings: RecordingResult[]; requests: Record<string, RequestState>; playable: Record<string, PlayerItem>;
-  filter: ResultFilter; offline: boolean; onAdd: (item: RecordingResult, youtubeUrl?: string, like?: boolean) => void;
+  filter: ResultFilter; query: string; localLoading: boolean; offline: boolean;
+  onAdd: (item: RecordingResult, youtubeUrl?: string, like?: boolean) => void;
   onPlay: (item: PlayerItem) => void; onNavigate: () => void;
 }) {
-  const top = filter === "All" ? topResult(groups) : null;
   const songs = groups.find((group) => group.type === "track")?.items ?? [];
   const localArtists = groups.find((group) => group.type === "artist")?.items ?? [];
   const localNames = new Set(localArtists.map((item) => item.title.trim().toLowerCase()));
@@ -424,29 +420,44 @@ export function SearchResults({ groups, recordings, requests, playable, filter, 
   const catalogIds = new Set(catalogOnly.map((item) => item.id));
   const artists = [...localArtists, ...catalogOnly];
   const albums = groups.find((group) => group.type === "album")?.items ?? [];
+  const top = filter === "All" && !localLoading ? topSearchResult<TopCandidate>(query, [
+    ...groups.flatMap((group) => group.items.map((item): TopCandidate => ({ ...item, source: "library", item }))),
+    ...catalogOnly.map((item): TopCandidate => ({ ...item, source: "catalog-artist", item })),
+    ...recordings.map((recording): TopCandidate => ({
+      type: "track", title: recording.title, artist: recording.artist, source: "recording", recording,
+    })),
+  ]) : null;
+  const topItem = top && top.source !== "recording" ? top.item : null;
+  const topRecording = top?.source === "recording" ? top.recording : null;
+  const remainingRecordings = recordingsOutsideTop(recordings, topRecording, !!topRecording);
   const typeLabel = (item: PlayerItem) => item.type === "artist" ? "Artist" : item.type === "album" ? "Album" : "Song";
   return <>
     <div className={`mt-6 grid items-start gap-6 ${top ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : ""}`}>
       {top && <section aria-label="Top result">
         <h2 className="mb-3 text-xl font-bold">Top result</h2>
-        <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
-          {top.type === "artist" ? <Link href={artistHref(top.id)} onClick={onNavigate} aria-label={`Open ${top.title}`} tabIndex={-1}>
-            <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-full! shadow-floating" />
-          </Link> : <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
+        {topItem ? <MusicItem item={top.source === "library" ? topItem : null} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
+          {topItem.type === "artist" ? <Link href={artistHref(topItem.id)} onClick={onNavigate} aria-label={`Open ${topItem.title}`} tabIndex={-1}>
+            <Artwork track={{ artworkUrl: topItem.thumb ?? "" }} className="size-24 rounded-full! shadow-floating" />
+          </Link> : <Artwork track={{ artworkUrl: topItem.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
           <div className="min-w-0">
-            {top.type === "track" ? <button type="button" disabled={playDisabled} onClick={() => onPlay(top)} className="block max-w-full truncate text-left text-3xl font-bold tracking-tight hover:underline disabled:opacity-40">{top.title}</button>
-              : <Link href={top.type === "album" ? albumHref(top.id) : artistHref(top.id)} onClick={onNavigate} className="block truncate text-3xl font-bold tracking-tight hover:underline">{top.title}</Link>}
+            {topItem.type === "track" ? <button type="button" disabled={playDisabled} onClick={() => onPlay(topItem)} className="block max-w-full truncate text-left text-3xl font-bold tracking-tight hover:underline disabled:opacity-40">{topItem.title}</button>
+              : <Link href={topItem.type === "album" ? albumHref(topItem.id) : artistHref(topItem.id)} onClick={onNavigate} className="block truncate text-3xl font-bold tracking-tight hover:underline">{topItem.title}</Link>}
             <p className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted">
-              {top.type !== "artist" && <span onClick={onNavigate} className="min-w-0 truncate"><ArtistLink item={top} /></span>}
-              <span className="shrink-0 rounded-full bg-bg/60 px-3 py-1 text-xs font-semibold text-fg">{typeLabel(top)}</span>
+              {topItem.type !== "artist" && <span onClick={onNavigate} className="min-w-0 truncate"><ArtistLink item={topItem} /></span>}
+              <span className="shrink-0 rounded-full bg-bg/60 px-3 py-1 text-xs font-semibold text-fg">{typeLabel(topItem)}</span>
             </p>
           </div>
-          {top.type === "track" && canPlay && <button type="button" aria-label={`Play ${top.title}`} disabled={playDisabled} onClick={() => onPlay(top)}
+          {topItem.type === "track" && canPlay && <button type="button" aria-label={`Play ${topItem.title}`} disabled={playDisabled} onClick={() => onPlay(topItem)}
             className="absolute bottom-5 right-5 grid size-12 place-items-center rounded-full bg-mint text-mint-ink shadow-floating transition hover:scale-105 disabled:opacity-40"><Play className="size-5 fill-current" aria-hidden /></button>}
-          {canPlay && <span className="absolute right-3 top-3"><TrackMenuButton item={top} /></span>}
-        </MusicItem>
+          {canPlay && top.source === "library" && <span className="absolute right-3 top-3"><TrackMenuButton item={topItem} /></span>}
+        </MusicItem> : topRecording && <ul className="rounded-lg bg-elevated px-5">
+          <ExternalRecording item={topRecording} request={requests[topRecording.id]}
+            playable={playable[topRecording.existing?.id ?? ""] ?? playable[requests[topRecording.id]?.trackId ?? ""]}
+            busy={offline} playDisabled={playDisabled} onPlay={onPlay}
+            onAdd={(youtubeUrl, like) => onAdd(topRecording, youtubeUrl, like)} />
+        </ul>}
       </section>}
-      {(filter === "All" || filter === "Songs") && (!!songs.length || !!recordings.length) && <section aria-label="Songs" className="min-w-0">
+      {(filter === "All" || filter === "Songs") && (!!songs.length || !!remainingRecordings.length) && <section aria-label="Songs" className="min-w-0">
         <h2 className="mb-3 text-xl font-bold">Songs</h2>
         <ul>{songs.map((item) => <MusicItem as="li" item={item} key={item.id} className={songRowClass}>
           <span className="relative shrink-0"><Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-12 rounded" /></span>
@@ -455,11 +466,11 @@ export function SearchResults({ groups, recordings, requests, playable, filter, 
             <p onClick={onNavigate} className="truncate text-sm text-muted"><ArtistLink item={item} />{item.album ? ` · ${item.album}` : ""}</p>
           </div>
           {item.duration ? <span className="hidden text-xs tabular-nums text-muted sm:inline">{formatDuration(item.duration / 1000)}</span> : null}
-          {item !== top && canPlay && <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(item)}
+          {item !== topItem && canPlay && <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(item)}
             className={songActionClass}><Play className="size-4 fill-current" aria-hidden /></button>}
           {canPlay && <TrackMenuButton item={item} />}
         </MusicItem>)}
-        {recordings.map((item) => <ExternalRecording key={`recording:${item.id}`} item={item} request={requests[item.id]}
+        {remainingRecordings.map((item) => <ExternalRecording key={`recording:${item.id}`} item={item} request={requests[item.id]}
           playable={playable[item.existing?.id ?? ""] ?? playable[requests[item.id]?.trackId ?? ""]}
           busy={offline} playDisabled={playDisabled} onPlay={onPlay} onAdd={(youtubeUrl, like) => onAdd(item, youtubeUrl, like)} />)}
         </ul>

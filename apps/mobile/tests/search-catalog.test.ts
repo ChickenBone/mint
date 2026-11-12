@@ -59,6 +59,23 @@ test("catalog rows hide only confirmed library duplicates and keep the server or
   assert.equal(visibleCatalogResults([], []).hiddenCount, 0);
 });
 
+test("repeated catalog recording IDs appear once, preferring their playable copy without reordering", () => {
+  const missing = row({ key: "missing", recording: recording() });
+  const another = row({ key: "another", recording: recording({ id: "00000000-0000-4000-8000-0000000000a2" }) });
+  const playable = row({ key: "playable", recording: recording({
+    existing: { id: "00000000-0000-4000-8000-0000000000b1", recordingId: "00000000-0000-4000-8000-0000000000a1",
+      stage: "ready", error: null, detail: null, playable: true },
+  }) });
+  const shown = visibleCatalogResults([], [missing, another, playable]);
+  assert.deepEqual(shown.rows.map((item) => item.key), ["playable", "another"]);
+  assert.equal(shown.hiddenCount, 1);
+  const preferredRelated = visibleCatalogResults([], [missing, { ...playable, matched: false }]);
+  assert.equal(preferredRelated.rows[0]?.matched, true, "A matched version remains matched when its playable copy is preferred.");
+  assert.deepEqual(visibleCatalogResults([{
+    id: playable.recording!.existing!.id, type: "track", title: "Echo", artist: "A Band",
+  }], [missing, playable]).rows, []);
+});
+
 test("matched and related rows keep server order and are never ranked by popularity", () => {
   const popular = { score: 99, basis: "catalog-derived" as const, observedAt: null };
   const rows = [

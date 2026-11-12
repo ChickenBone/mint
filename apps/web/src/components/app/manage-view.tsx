@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import type { TrackView } from "@mint/core/events";
 import type { WorkerView } from "@mint/core";
@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import {
   decideRequest,
+  clearAllFailedJobs,
+  removeFailedJob,
   retryAllFailed,
   setIssueReportResolved,
   setMemberRole,
@@ -26,12 +28,16 @@ import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
 import { Badge } from "@/components/ui/primitives";
 import { resolveManageTab, type ManageTab } from "@/lib/app-routes";
 import type { Health } from "@/lib/data";
+import type { AdminFailedTrack } from "@/lib/admin-failed-jobs";
 import { issueCategoryLabel, type IssueReportView } from "@/lib/issue-report-model";
 import { formatCount, timeAgo } from "@/lib/format";
 import { ActionButton } from "./admin-controls";
 import { AnalysisPanel } from "./analysis-panel";
 import { MatchingPanel } from "./matching-panel";
 import { LiveTrackList } from "./live-track-list";
+import { RetryButton } from "./retry-button";
+import { TrackList } from "../track-list";
+import { useRealtime } from "../realtime";
 import { AdminWorkers, WorkersPanel } from "./workers-panel";
 
 type AdminWorkerRow = WorkerView & {
@@ -66,7 +72,7 @@ export interface ManageViewProps {
     linked: boolean;
     last_synced_at: string | null;
   }>;
-  failedTracks: TrackView[];
+  failedTracks: AdminFailedTrack[];
   activeTracks: TrackView[];
   health: Health | null;
   allWorkers: AdminWorkerRow[];
@@ -116,9 +122,25 @@ export function ManageView({
   remotePoolSize,
   issueReports,
 }: ManageViewProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const tab = resolveManageTab(searchParams.get("tab"));
   const [now, setNow] = useState<number | null>(null);
+  const [queueNotice, setQueueNotice] = useState<string | null>(null);
+  useRealtime((event) => {
+    if (tab === "jobs" && event.type === "track" &&
+      (event.data.stage === "failed" || failedTracks.some((track) => track.id === event.data.id))) {
+      router.refresh();
+    }
+  });
+
+  useEffect(() => {
+    if (tab !== "jobs") return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [router, tab]);
 
   useEffect(() => {
     const initial = setTimeout(() => setNow(Date.now()), 0);
@@ -569,25 +591,70 @@ export function ManageView({
                       <h2 id="manage-failed-jobs" className="text-xl font-bold">
                         Failed jobs{" "}
                         {failedTracks.length > 0 && (
-                          <span className="text-danger tabular">({formatCount(failedTracks.length)})</span>
+                          <span className="text-danger tabular">({formatCount(failedTracks.length)} shown)</span>
                         )}
                       </h2>
                       <p className="mt-1 max-w-prose text-sm text-muted">
-                        Songs across every member that could not be matched, downloaded or finalized. Review the failure reason under each track and retry once resolved.
+                        Failed acquisition and import attempts across every member, showing up to 100.
+                        Remove an attempt from this admin list or clear all currently failed attempts, including those not shown.
+                        Only matching failed acquisition/finalization worker records are removed.
+                        Songs, files, playlists and running jobs are kept. A later failure will appear again.
                       </p>
                     </div>
                     {failedTracks.length > 0 && (
-                      <ActionButton action={retryAllFailed}>
-                        Retry all {formatCount(failedTracks.length)}
-                      </ActionButton>
+                      <div className="flex flex-wrap gap-2">
+                        <ActionButton action={async () => {
+                          setQueueNotice(null);
+                          const result = await retryAllFailed();
+                          setQueueNotice(`Retried ${formatCount(result.retried)} failed attempts.`);
+                        }}>
+                          Retry failed (up to 500)
+                        </ActionButton>
+                        <ActionButton tone="danger" confirmTitle="Clear all failed jobs?"
+                          confirm="Remove every currently failed attempt and its matching failed acquisition/finalization worker records, including rows not shown? Songs, files, playlists, active/waiting jobs and sync/analysis queues are kept. Later failures will appear again."
+                          action={async () => {
+                            setQueueNotice(null);
+                            try {
+                              const result = await clearAllFailedJobs();
+                              setQueueNotice(`Removed ${formatCount(result.removed)} failed attempts and ${formatCount(result.removedQueueJobs)} worker queue records.`);
+                            } finally {
+                              router.refresh();
+                            }
+                          }}>
+                          Clear all failed jobs
+                        </ActionButton>
+                      </div>
                     )}
                   </div>
-                  <LiveTrackList
-                    initial={failedTracks}
-                    mode="jobs"
+                  {queueNotice && <p role="status" className="mb-3 text-sm text-muted">{queueNotice}</p>}
+                  <TrackList
+                    tracks={failedTracks}
+                    showStage
+                    actions={(track) => {
+                      const failed = failedTracks.find((item) => item.id === track.id);
+                      if (!failed) return null;
+                      return (
+                        <div className="flex flex-col items-end gap-2">
+                          <RetryButton trackId={track.id} />
+                          <ActionButton tone="danger" confirmTitle={`Remove failed job: ${track.title}?`}
+                            confirm="Remove this failed attempt and its matching failed acquisition/finalization worker records? The song, files, playlists and active/waiting jobs are kept. A later failure will appear again."
+                            action={async () => {
+                              setQueueNotice(null);
+                              try {
+                                await removeFailedJob(track.id, failed.failureVersion);
+                                setQueueNotice("Removed the failed attempt and its matching failed worker records.");
+                              } finally {
+                                router.refresh();
+                              }
+                            }}>
+                            Remove
+                          </ActionButton>
+                        </div>
+                      );
+                    }}
                     empty={
                       <p className="rounded-xl border border-line/60 bg-elevated/50 p-5 text-sm text-muted">
-                        Nothing has failed.
+                        No failed attempts remain in the admin queue.
                       </p>
                     }
                   />

@@ -1,5 +1,6 @@
 import { emptyPlayerState, type MobileTrack, type PlayerCollection, type PlayerState, type QueueContext, type QueueEntry, type QueuePage, type RepeatMode } from "./types";
 import { editUpcoming, queueEntries, shuffleUpcoming } from "./queue";
+import { confirmsHandoff, deviceStateSchema, handoffSchema, type DeviceCommand, type DeviceHandoff, type DeviceState } from "@mint/client";
 
 export interface MediaSource { uri: string; headers?: Record<string, string>; name?: string }
 export interface PlaylistStatus {
@@ -83,6 +84,87 @@ export class PlaybackEngine {
     return () => { this.listeners.delete(listener); };
   };
   getSnapshot = () => this.state;
+  getDeviceState(): DeviceState {
+    const position = this.playlist.currentIndex;
+    const offset = this.context && !this.edited ? Math.max(0, position - 20) : 0;
+    const entries = this.context && !this.edited ? this.entries.slice(offset, offset + 100) : this.entries;
+    return deviceStateSchema.parse({
+      playing: this.state.playing, time: this.state.time, duration: this.state.duration, volume: 100,
+      trackId: this.entries[position]?.id ?? null, queue: entries.map((entry) => entry.id),
+      currentIndex: Math.max(0, position - offset), shuffle: this.state.shuffle,
+      repeat: this.state.repeat === "one" ? 1 : this.state.repeat === "all" ? 2 : 0,
+      queueContext: this.context && !this.edited ? { ...this.context, offset, position, shuffle: this.state.shuffle } : null,
+      queueEntryIds: this.context && !this.edited ? entries.map((entry) => entry.occurrenceId) : null,
+    });
+  }
+  async executeDevice(command: DeviceCommand, signal?: AbortSignal) {
+    signal?.throwIfAborted();
+    if (command.action === "pause") { this.playlist.pause(); this.publish({ playing: false }); }
+    else if (command.action === "play") { if (!this.state.playing) await this.toggle(signal); }
+    else if (command.action === "next") await this.next();
+    else if (command.action === "previous") await this.previous();
+    else if (command.action === "seek") await this.seek(command.value);
+    else if (command.action === "clear") { this.begin(); this.playlist.pause(); this.playlist.clear(); this.entries = []; this.publish(emptyPlayerState); }
+    else throw new Error("This installed player supports playback moves and transport controls, not remote volume or queue editing.");
+    signal?.throwIfAborted();
+  }
+  async applyDeviceHandoff(input: DeviceHandoff, signal: AbortSignal) {
+    const target = handoffSchema.parse(input);
+    signal.throwIfAborted();
+    const generation = this.begin();
+    const cancel = () => {
+      if (generation !== this.generation) return;
+      this.generation++; this.request.abort(); this.playlist.pause(); this.publish({ playing: false, loading: false });
+    };
+    const current = () => {
+      signal.throwIfAborted();
+      if (this.disposed || generation !== this.generation) throw new Error("Playback changed during the move.");
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      await this.api.validate(this.request.signal);
+      current();
+      if (target.queueContext) {
+        const context = target.queueContext;
+        if (context.total > 50_000) throw new Error("This native queue exceeds 50,000 songs.");
+        const first = await this.api.queuePage(context.id, 0, this.request.signal);
+        if (first.context.revision !== context.revision || first.context.total !== context.total) throw new Error("The playback queue changed. Try moving it again.");
+        current();
+        await this.replace(queueEntries(first), Math.min(context.position, first.items.length - 1), false);
+        current();
+        this.context = context;
+        this.publish({ shuffle: target.shuffle });
+        await this.prepareRemaining(context, generation, first.items.length, context.position < first.items.length, context.position, false);
+      } else {
+        const entries: QueueEntry[] = [];
+        for (const id of target.queue) {
+          signal.throwIfAborted();
+          if (!this.api.metadata) throw new Error("Song details are unavailable.");
+          const track = await this.api.metadata(id, this.request.signal);
+          current();
+          entries.push({ ...track, occurrenceId: this.uuid() });
+        }
+        await this.replace(entries, target.currentIndex, false);
+        this.publish({ shuffle: target.shuffle });
+      }
+      current();
+      this.setRepeat(target.repeat === 1 ? "one" : target.repeat === 2 ? "all" : "off");
+      await this.playlist.seekTo(target.position);
+      current();
+      this.publish({ time: target.position, playing: false });
+      if (target.playing) this.playlist.play();
+      // Status from the audio port, not play() admission, confirms destination playback.
+      while (!confirmsHandoff(this.getDeviceState(), target) || (target.playing && this.state.loading)) {
+        signal.throwIfAborted();
+        if (this.disposed || generation !== this.generation || this.state.error) throw new Error(this.state.error || "Playback changed during the move.");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      this.persist();
+    } catch (error) {
+      if (generation === this.generation) { this.playlist.pause(); this.publish({ playing: false, loading: false }); }
+      throw error;
+    } finally { signal.removeEventListener("abort", cancel); }
+  }
   private publish(patch: Partial<PlayerState>) {
     if (this.disposed) return;
     this.state = { ...this.state, ...patch };
@@ -344,14 +426,17 @@ export class PlaybackEngine {
       else this.fail(error);
     }
   }
-  async toggle() {
+  async toggle(signal?: AbortSignal) {
+    signal?.throwIfAborted();
     if (!this.entries.length) return;
     const generation = this.generation;
     if (this.playlist.playing) this.playlist.pause();
     else {
       await this.api.validate(this.request.signal);
+      signal?.throwIfAborted();
       if (generation === this.generation && !this.disposed) {
         if (this.state.error) await this.reloadSources();
+        signal?.throwIfAborted();
         if (generation !== this.generation || this.disposed) return;
         this.publish({ error: null });
         this.playlist.setActiveForLockScreen(true, this.lockMetadata(this.state.track!));

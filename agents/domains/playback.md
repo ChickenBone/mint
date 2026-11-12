@@ -35,13 +35,13 @@ Details: [playback and library](../playback-and-library.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map playback` (exports, line counts, cross-domain import edges).
 
-### Owned files (54)
+### Owned files (55)
 
 - `apps/web/public/` `.gitkeep`, `offline.css`, `offline.html`, `offline.js`, `sw.js`
 - `apps/web/src/app/api/` `player/audio/[id]/route.ts`, `player/catalog/route.ts`, `player/info/[id]/route.ts`, `player/items/route.ts`, `player/lyrics/[id]/matches/route.ts`, `player/lyrics/[id]/route.ts`, `player/offline/logout/route.ts`, `player/offline/route.ts`, `player/queue/[[...path]]/route.ts`, `player/session/route.ts`
 - `apps/web/src/app/app/` `history/page.tsx`, `now-playing/page.tsx`
 - `apps/web/src/app/listen/` `route.ts`
-- `apps/web/src/components/app/` `listening-history.tsx`, `listening-spotlight.tsx`, `lyrics-match.tsx`, `now-playing.tsx`, `player-controls.tsx`, `player-panels.tsx`, `player-sheet-gesture.ts`, `player.tsx`
+- `apps/web/src/components/app/` `listening-history.tsx`, `listening-spotlight.tsx`, `lyrics-match.tsx`, `now-playing.tsx`, `player-controls.tsx`, `player-devices.tsx`, `player-panels.tsx`, `player-sheet-gesture.ts`, `player.tsx`
 - `apps/web/src/lib/` `browser-dsp.ts`, `listening-history.ts`, `lyrics-provider.ts`, `lyrics.ts`, `native-player.ts`, `offline.ts`, `playback-queue-store.ts`, `player-catalog.ts`, `player-protocol.ts`, `progressive-queue.ts`, `smart-fades.ts`
 - `apps/web/tests/` `listening.test.ts`, `lyrics.test.ts`, `native-player.test.ts`, `offline.test.ts`, `playback-scale.test.ts`, `player-sheet.test.ts`
 - `apps/worker/src/` `playback.integration.test.ts`, `playback.test.ts`, `playback.ts`, `player-features.test.ts`, `transcode.test.ts`, `transcode.ts`

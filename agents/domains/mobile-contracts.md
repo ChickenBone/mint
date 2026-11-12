@@ -23,17 +23,17 @@ Use the generated focused checks below and inspect current allowlists before add
 
 - **Scope:** Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions.
 - **Read before editing:** [agents/architecture.md](../architecture.md), [docs/mobile.md](../../docs/mobile.md).
-- **Imports from:** [`analysis`](analysis.md), [`collections`](collections.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`collections`](collections.md), [`library`](library.md), [`mobile`](mobile.md), [`mobile-albums`](mobile-albums.md), [`mobile-artists`](mobile-artists.md), [`mobile-home`](mobile-home.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md), [`mobile-playlists`](mobile-playlists.md), [`mobile-search`](mobile-search.md), [`mobile-your-music`](mobile-your-music.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile`](mobile.md), [`mobile-albums`](mobile-albums.md), [`mobile-artists`](mobile-artists.md), [`mobile-home`](mobile-home.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md), [`mobile-playlists`](mobile-playlists.md), [`mobile-search`](mobile-search.md), [`mobile-your-music`](mobile-your-music.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map mobile-contracts` (exports, line counts, cross-domain import edges).
 
-### Owned files (19)
+### Owned files (22)
 
 - `apps/web/src/app/api/` `native/[...path]/route.ts`, `native/auth/[action]/route.ts`
 - `apps/web/src/lib/` `native-browse.ts`, `native-context.ts`, `native-http.ts`, `native-sessions.ts`
 - `apps/web/tests/` `native-auth.test.ts`, `native-http.integration.test.ts`, `native-sessions.test.ts`
 - `packages/client/` `package.json`, `tsconfig.json`
-- `packages/client/src/` `analysis.ts`, `api.ts`, `auth.ts`, `index.ts`, `music.ts`, `playback.ts`
+- `packages/client/src/` `analysis.ts`, `api.ts`, `auth.ts`, `catalog.ts`, `devices.ts`, `index.ts`, `music.ts`, `playback.ts`, `search-identity.ts`
 - `packages/client/tests/` `analysis.test.ts`, `client.test.ts`
 
 ### Validate

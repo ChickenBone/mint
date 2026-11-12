@@ -9,9 +9,10 @@ import {
 } from "./search-model";
 
 /** Presentational only: the screen that owns library actions supplies each identified row's action. */
-export function CatalogResults({ catalog, rows, hiddenCount, query, now, requested, onRetry, renderAction }: {
+export function CatalogResults({ catalog, rows, featured, hiddenCount, query, now, requested, onRetry, renderAction }: {
   catalog: CatalogCoverage;
   rows: readonly CatalogResult[];
+  featured?: CatalogResult | null;
   hiddenCount: number;
   query: string;
   now: number;
@@ -19,7 +20,7 @@ export function CatalogResults({ catalog, rows, hiddenCount, query, now, request
   onRetry: () => void;
   renderAction: (recording: RecordingSearchItem) => ReactNode;
 }) {
-  const state = catalogState(catalog, rows, hiddenCount);
+  const state = catalogState(catalog, featured ? [...rows, featured] : rows, hiddenCount);
   if (state === "not-configured") return <Notice title={catalogText.notConfiguredTitle} message={catalogText.notConfigured} />;
   if (state === "unavailable") {
     return <Notice title={catalogText.unavailableTitle} message={catalogUnavailableMessage(catalog.retryAfterSeconds)} retry={onRetry} />;
@@ -43,7 +44,7 @@ export function CatalogResults({ catalog, rows, hiddenCount, query, now, request
   </>;
 }
 
-function CatalogRow({ row, now, requestedStage, renderAction }: {
+export function CatalogRow({ row, now, requestedStage, renderAction }: {
   row: CatalogResult; now: number; requestedStage: string | undefined; renderAction: (recording: RecordingSearchItem) => ReactNode;
 }) {
   const popularity = popularityLabel(row.popularity);

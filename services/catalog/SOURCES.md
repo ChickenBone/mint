@@ -10,7 +10,7 @@ downloads or access-control workarounds are used.
 
 | Source / reference | Actual no-key coverage | Discovery / popularity |
 | --- | --- | --- |
-| [MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API) / [JSON dumps](https://musicbrainz.org/doc/Development/JSON_Data_Dumps) | Artist, release-group and recording metadata and public genres; paginated artist discographies; explicit provider links; streaming official JSON/tar.xz imports, including recordings nested in releases | Bulk population without per-ID API calls. Core metadata is CC0; dump genres are CC BY-NC-SA 3.0 and explicitly annotated. |
+| [MusicBrainz](https://musicbrainz.org/doc/MusicBrainz_API) / [JSON dumps](https://musicbrainz.org/doc/Development/JSON_Data_Dumps) | Artist, release-group and recording metadata and public genres; paginated artist discographies; up to three releases per group with bounded recording pages; explicit provider links; streaming official JSON/tar.xz imports, including recordings nested in releases | Bulk population without per-ID API calls. Core metadata is CC0; dump genres are CC BY-NC-SA 3.0 and explicitly annotated. |
 | [ListenBrainz](https://listenbrainz.readthedocs.io/en/latest/users/api/statistics.html) | Sitewide weekly recording statistics with explicit MusicBrainz IDs | Community-scoped ranking, not worldwide play counts |
 | [Apple Music / iTunes](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/) | Opt-in public storefront chart feeds and bounded lookups; not the credentialed Apple Music API | Storefront chart ranks |
 | [YouTube](https://www.youtube.com/oembed) | Public video oEmbed and channel Atom feeds; recent uploads, not entire channel histories | Available public feed view observations |

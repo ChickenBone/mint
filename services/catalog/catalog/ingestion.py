@@ -122,11 +122,12 @@ def ingest(conn, entities, capacity, *, merge_relationships=False):
     conn.execute(
         """INSERT INTO edges(source,target,relation)
            SELECT s.key,t.target,'artist' FROM pg_temp.catalog_ingest_stage s
-             CROSS JOIN LATERAL unnest(s.artist_keys) t(target) WHERE s.accepted
+             CROSS JOIN LATERAL unnest(s.artist_keys) t(target) WHERE s.accepted OR %s
            UNION ALL
            SELECT s.key,t.target,'album' FROM pg_temp.catalog_ingest_stage s
-             CROSS JOIN LATERAL unnest(s.album_keys) t(target) WHERE s.accepted
-           ON CONFLICT DO NOTHING"""
+             CROSS JOIN LATERAL unnest(s.album_keys) t(target) WHERE s.accepted OR %s
+           ON CONFLICT DO NOTHING""",
+        (merge_relationships, merge_relationships),
     )
     if inserted:
         conn.execute("UPDATE catalog_budget SET entities=entities+%s", (inserted,))

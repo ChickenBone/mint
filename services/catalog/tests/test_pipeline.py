@@ -10,8 +10,8 @@ from catalog.api import create_app
 from catalog.crawler import process
 from catalog.importer import import_jsonl
 from catalog.indexer import index_batch
-from catalog.model import DIMENSIONS
-from conftest import ARTIST_ID, SONG_ID
+from catalog.model import DIMENSIONS, entity_key, musicbrainz_entity
+from conftest import ALBUM_ID, ARTIST_ID, SONG_ID
 from test_model import chart
 
 
@@ -127,6 +127,202 @@ def test_mb_artist_expands_into_independently_paged_discography(store):
             ).fetchone()["n"]
             == 1
         )
+
+
+def test_mb_album_release_browse_repairs_partial_album_and_preserves_existing_memberships(store):
+    release_id = "00000000-0000-4000-8000-000000000004"
+    other_album = "00000000-0000-4000-8000-000000000005"
+    album_key = entity_key("global", "album", ALBUM_ID, "musicbrainz")
+    other_key = entity_key("global", "album", other_album, "musicbrainz")
+    song = musicbrainz_entity("song", {
+        "id": SONG_ID, "title": "Enriched",
+        "artist-credit": [{"artist": {"id": ARTIST_ID, "name": "Artist"}}],
+        "releases": [{"release-group": {"id": other_album}}],
+    })
+    with store.transaction() as conn:
+        store.ingest(conn, [song], schedule=False)
+        store.enqueue(conn, "mb-releases", "global", "album", ALBUM_ID)
+    sources = Mock()
+    sources.fetch.return_value = {"releases": [{"id": release_id}]}
+    process(store, sources, store.claim()[0])
+    sources.fetch.return_value = {
+        "recording-count": 2,
+        "recordings": [{"id": SONG_ID, "title": "Partial"}],
+    }
+    process(store, sources, store.claim()[0])
+    with store.transaction() as conn:
+        rows = conn.execute(
+            "SELECT target FROM edges WHERE source=%s AND relation='album'", (song.key,)
+        ).fetchall()
+        assert {row["target"] for row in rows} == {album_key, other_key}
+        assert conn.execute("SELECT title FROM entities WHERE key=%s", (song.key,)).fetchone()[
+            "title"
+        ] == "Enriched"
+        assert conn.execute(
+            "SELECT count(*) AS n FROM jobs WHERE task='mb-release' AND page=1"
+        ).fetchone()["n"] == 1
+
+
+def test_mb_artist_discography_reaches_album_recordings(store):
+    release_id = "00000000-0000-4000-8000-000000000004"
+    sources = Mock()
+
+    def run(task, payload, kind=None):
+        jobs = store.claim(count=100)
+        selected = next(row for row in jobs if row["task"] == task and (
+            kind is None or row["kind"] == kind
+        ))
+        with store.transaction() as conn:
+            for other in jobs:
+                if other["key"] != selected["key"]:
+                    conn.execute(
+                        "UPDATE jobs SET lease_token=NULL,lease_until='-infinity' WHERE key=%s",
+                        (other["key"],),
+                    )
+        sources.fetch.return_value = payload
+        process(store, sources, selected)
+
+    credit = [{"artist": {"id": ARTIST_ID, "name": "Artist"}}]
+    with store.transaction() as conn:
+        store.enqueue(conn, "mb-lookup", "global", "artist", ARTIST_ID)
+    run("mb-lookup", {"id": ARTIST_ID, "name": "Artist"}, "artist")
+    run("mb-albums", {
+        "release-group-count": 1,
+        "release-groups": [{"id": ALBUM_ID, "title": "Album", "artist-credit": credit}],
+    })
+    run("mb-lookup", {"id": ALBUM_ID, "title": "Album", "artist-credit": credit}, "album")
+    run("mb-releases", {"releases": [{"id": release_id}]})
+    run("mb-release", {
+        "recording-count": 1,
+        "recordings": [{"id": SONG_ID, "title": "Song", "artist-credit": credit}],
+    })
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT count(*) AS n FROM edges WHERE source=%s AND target=%s AND relation='album'",
+            (entity_key("global", "song", SONG_ID, "musicbrainz"),
+             entity_key("global", "album", ALBUM_ID, "musicbrainz")),
+        ).fetchone()["n"] == 1
+
+
+def test_ranker_schedules_bounded_existing_albums_and_prioritizes_observed_artist(store):
+    from catalog.ranker import refresh_batch
+
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Artist"})
+    albums = [
+        musicbrainz_entity("album", {
+            "id": album_id, "title": "Album",
+            "artist-credit": [{"artist": {"id": ARTIST_ID, "name": "Artist"}}],
+        })
+        for album_id in (ALBUM_ID, "00000000-0000-4000-8000-000000000005")
+    ]
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, *albums], schedule=False)
+        conn.execute(
+            """INSERT INTO chart_signals(chart,key,rank,weight,observed_at)
+               VALUES ('fixture',%s,1,1,now())""",
+            (artist.key,),
+        )
+    refresh_batch(store)
+    refresh_batch(store)
+    with store.transaction() as conn:
+        jobs = conn.execute(
+            "SELECT entity_key,priority FROM jobs WHERE task='mb-releases' ORDER BY entity_key"
+        ).fetchall()
+        assert len(jobs) == 2 and all(row["priority"] > 0 for row in jobs)
+        assert conn.execute(
+            "SELECT count(*) AS n FROM jobs WHERE task='mb-releases'"
+        ).fetchone()["n"] == 2
+
+
+def test_repair_admission_is_bounded_and_preferred_artist_wins_without_starving_others(store):
+    from catalog.ranker import refresh_batch
+
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Artist"})
+    albums = [
+        musicbrainz_entity("album", {
+            "id": f"10000000-0000-4000-8000-{number:012d}", "title": f"Album {number}",
+            "artist-credit": (
+                [{"artist": {"id": ARTIST_ID, "name": "Artist"}}] if number == 50 else []
+            ),
+        })
+        for number in range(51)
+    ]
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, *albums], schedule=False)
+        conn.execute(
+            "INSERT INTO priority_artists(entity_key,provenance) VALUES (%s,'library-export')",
+            (artist.key,),
+        )
+    refresh_batch(store)
+    with store.transaction() as conn:
+        jobs = conn.execute(
+            "SELECT entity_key,priority FROM jobs WHERE task='mb-releases'"
+        ).fetchall()
+    assert len(jobs) == 50
+    preferred = next(row for row in jobs if row["entity_key"] == albums[-1].key)
+    assert preferred["priority"] == 10
+    assert any(row["priority"] == 0 for row in jobs)
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT count(*) AS n FROM jobs WHERE task='mb-releases'"
+        ).fetchone()["n"] == 51
+
+
+def test_repair_reserves_admission_for_popular_albums_when_unranked_queue_is_full(store):
+    from catalog.ranker import refresh_batch
+
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Artist"})
+    album = musicbrainz_entity("album", {
+        "id": ALBUM_ID, "title": "Album",
+        "artist-credit": [{"artist": {"id": ARTIST_ID, "name": "Artist"}}],
+    })
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, album], schedule=False)
+        conn.execute(
+            """INSERT INTO chart_signals(chart,key,rank,weight,observed_at)
+               VALUES ('fixture',%s,1,1,now())""",
+            (artist.key,),
+        )
+        conn.execute(
+            """INSERT INTO jobs(key,task,country,kind,provider_id,source,host,priority)
+               SELECT 'unranked:'||n,'mb-releases','global','album','unused',
+                 'musicbrainz','musicbrainz.org',0 FROM generate_series(1,800) n"""
+        )
+    refresh_batch(store)
+    with store.transaction() as conn:
+        job = conn.execute(
+            "SELECT priority FROM jobs WHERE task='mb-releases' AND entity_key=%s",
+            (album.key,),
+        ).fetchone()
+    assert job is not None and job["priority"] > 0
+
+
+def test_artist_priority_labels_are_independent_and_recalculate_album_jobs(store):
+    from catalog.ranker import refresh_batch
+
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Artist"})
+    album = musicbrainz_entity("album", {
+        "id": ALBUM_ID, "title": "Album",
+        "artist-credit": [{"artist": {"id": ARTIST_ID, "name": "Artist"}}],
+    })
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, album], schedule=False)
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library") == 1
+        assert store.priority_artist(conn, ARTIST_ID, "library-export") == 1
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library") == 0
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library", remove=True) == 1
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority FROM jobs WHERE task='mb-releases' AND entity_key=%s", (album.key,)
+        ).fetchone()["priority"] == 10
+        assert store.priority_artist(conn, ARTIST_ID, "library-export", remove=True) == 1
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority FROM jobs WHERE task='mb-releases' AND entity_key=%s", (album.key,)
+        ).fetchone()["priority"] == 0
 
 
 def test_musicbrainz_genre_enrichment_updates_document_and_graph_without_inventing_tags(

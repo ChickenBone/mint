@@ -1,17 +1,63 @@
+import { normalizeSearchText, uniqueRecordingResults } from "@mint/client";
 import type { CatalogCoverage, CatalogResult, PlayerItem, RecordingSearchItem, SearchRequestView } from "@mint/client";
 
-type Recording = { title: string; artist: string; album: string | null; durationSec: number | null };
-export const normalizeSearchQuery = (value: string) => value.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-
-export function uniqueRecordings<T extends Recording>(local: PlayerItem[], external: T[]): T[] {
-  return external.filter((recording) => !local.some((item) => item.type === "track" &&
-    normalizeSearchQuery(item.title) === normalizeSearchQuery(recording.title) && normalizeSearchQuery(item.artist ?? "") === normalizeSearchQuery(recording.artist) &&
-    item.duration && recording.durationSec && Math.abs(item.duration / 1000 - recording.durationSec) <= 2.5 &&
-    (!item.album || !recording.album || normalizeSearchQuery(item.album) === normalizeSearchQuery(recording.album))));
-}
+export const normalizeSearchQuery = normalizeSearchText;
+export { uniqueRecordingResults as uniqueRecordings };
 
 export function isCurrentSearch(request: string, active: string, aborted = false) {
   return !aborted && request === active;
+}
+
+export type SearchTopResult =
+  | { source: "library" | "catalog-artist"; item: PlayerItem }
+  | { source: "catalog"; row: CatalogResult };
+
+function textRelevance(value: string, query: string) {
+  const text = normalizeSearchText(value);
+  if (!text) return 0;
+  if (text === query) return 100;
+  if (text.startsWith(`${query} `)) return 80;
+  if (text.includes(query)) return 70;
+  const words = text.split(" ");
+  const terms = query.split(" ");
+  return 60 * terms.filter((term) => words.some((word) => word.startsWith(term))).length / terms.length;
+}
+
+/** Rank across sources; a catalog neighbour that did not match the query is not a top result. */
+export function topSearchResult(query: string, library: readonly PlayerItem[], artists: readonly PlayerItem[],
+  catalog: readonly CatalogResult[]): SearchTopResult | null {
+  const normalized = normalizeSearchText(query);
+  if (!normalized) return null;
+  const candidates: SearchTopResult[] = [
+    ...library.map((item): SearchTopResult => ({ source: "library", item })),
+    ...artists.map((item): SearchTopResult => ({ source: "catalog-artist", item })),
+    ...catalog.filter((row) => row.matched).map((row): SearchTopResult => ({ source: "catalog", row })),
+  ];
+  let best: SearchTopResult | null = null;
+  let bestScore = 0;
+  for (const candidate of candidates) {
+    const item = candidate.source === "catalog" ? candidate.row : candidate.item;
+    const title = item.title;
+    const artist = item.artist ?? "";
+    const type = candidate.source === "catalog" ? candidate.row.kind : candidate.item.type;
+    const relevance = Math.max(textRelevance(title, normalized),
+      type === "artist" ? 0 : textRelevance(`${title} ${artist}`, normalized));
+    if (!relevance) continue;
+    const score = relevance + (type === "track" || type === "song" ? 1 : 0) +
+      (candidate.source === "library" ? 0.1 : 0);
+    if (score > bestScore) { best = candidate; bestScore = score; }
+  }
+  return best;
+}
+
+export function catalogArtistItems(local: readonly PlayerItem[], artists: readonly { id: string; name: string }[]) {
+  const seen = new Set(local.map((item) => normalizeSearchText(item.title)).filter(Boolean));
+  return artists.flatMap((artist): PlayerItem[] => {
+    const key = normalizeSearchText(artist.name);
+    if (!key || seen.has(key)) return [];
+    seen.add(key);
+    return [{ id: artist.id, type: "artist", title: artist.name }];
+  });
 }
 
 export function activeSearchRequest(requests: SearchRequestView[], query: string) {
@@ -103,9 +149,26 @@ export function catalogState(catalog: CatalogCoverage, rows: readonly CatalogRes
   return catalog.relevance === "matched" ? "matched" : "related-only";
 }
 
-/** Hides only rows confirmed to be a library song already listed above; the server's relevance order is kept. */
+/** Keep server order while collapsing repeated recording IDs and confirmed library copies. */
 export function visibleCatalogResults(local: PlayerItem[], results: readonly CatalogResult[]) {
-  const rows = results.filter((row) => !row.recording || uniqueRecordings(local, [row.recording]).length > 0);
+  const preferred = new Map(uniqueRecordingResults(local, results.flatMap((row) => row.recording ? [row.recording] : []))
+    .map((recording) => [recording.id, recording]));
+  const preferredRows = new Map<string, CatalogResult>();
+  const matchedIds = new Set(results.flatMap((row) => row.recording && row.matched ? [row.recording.id] : []));
+  for (const row of results) {
+    if (row.recording && preferred.get(row.recording.id) === row.recording && !preferredRows.has(row.recording.id)) {
+      preferredRows.set(row.recording.id, row);
+    }
+  }
+  const emitted = new Set<string>();
+  const rows = results.flatMap((row) => {
+    if (!row.recording) return [row];
+    const id = row.recording.id;
+    if (emitted.has(id) || !preferred.has(id)) return [];
+    emitted.add(id);
+    const selected = preferredRows.get(id);
+    return selected ? [!selected.matched && matchedIds.has(id) ? { ...selected, matched: true } : selected] : [];
+  });
   return { rows, hiddenCount: results.length - rows.length };
 }
 

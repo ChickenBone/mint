@@ -3,11 +3,11 @@ import { signToken, verifyToken } from "@mint/core/crypto";
 import { getDb, schema } from "@mint/core/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { MusicError } from "@mint/core/music";
-import { PLAYABLE } from "@mint/core/playback";
+import { PLAYABLE, UUID as MBID } from "@mint/core/playback";
 import type { Stage } from "@mint/core/stages";
 import { audioSourceRejection, sameRecordingVersion, sourceSelectionMessage } from "@mint/core/matching";
 import { youtubeScrapingAuthorized } from "@mint/core/youtube-scrape";
-import { lookupCatalogEntity, searchCatalog, type CatalogItem, type CatalogRequestOptions, type CatalogSearch } from "@mint/core/catalog-client";
+import { lookupCatalogEntity, searchCatalog, type CatalogEntity, type CatalogItem, type CatalogRequestOptions, type CatalogSearch } from "@mint/core/catalog-client";
 import { albumPlayerId, artistPlayerId } from "./player-protocol";
 import type { CatalogVideo } from "./request-match";
 import { canonicalPublicUrl, getPublicReadCache, PublicProviderBusyError, publicCacheKey, publicRetryAfter,
@@ -41,8 +41,12 @@ export interface CatalogResultRow {
 export interface RecordingSearchResponse {
   items: RecordingSearchItem[]; results: CatalogResultRow[]; catalog: CatalogCoverage; artists: CatalogArtist[];
 }
-export interface CatalogCollectionAlbum { id: string; title: string; artist: string }
-/** `albums` are catalog albums correlated with an artist that the library has no playable copy of yet. */
+export interface CatalogCollectionAlbum {
+  id: string; title: string; artist: string;
+  /** Canonical MusicBrainz release-group ID, never inferred from the album name. */
+  verifiedReleaseGroupId?: string;
+}
+/** `albums` are catalog albums without an explicitly identified playable library copy. */
 export interface CatalogCollectionResponse { items: RecordingSearchItem[]; albums: CatalogCollectionAlbum[]; catalog: CatalogCoverage }
 interface RecordingSearchOptions { signal?: AbortSignal; mirrorUrl?: string; cache?: boolean; cacheStore?: PublicReadCache }
 const catalogResponse = z.object({
@@ -183,10 +187,16 @@ async function withRequestState(userId: string, items: RequestRecording[], optio
   const existing = items.length ? await getDb().select({
     id: schema.tracks.id, recordingId: schema.tracks.mbRecordingId, stage: schema.tracks.stage,
     error: schema.tracks.error, detail: schema.tracks.detail, playable: sql<boolean>`(${PLAYABLE}) is true`,
+    title: schema.tracks.title, artist: schema.tracks.artist, durationSec: schema.tracks.durationSec,
   }).from(schema.tracks).where(inArray(schema.tracks.mbRecordingId, items.map((item) => item.id))).limit(210) : [];
   options.signal?.throwIfAborted();
-  return items.map((item) => ({ ...item, existing: existing.find((track) => track.recordingId === item.id) ?? null,
-    token: signToken("music-request", { userId, recording: item }, 15 * 60_000) }));
+  return items.map((item) => {
+    const matches = existing.filter((track) => track.recordingId === item.id && sameRecordingMetadata(track, item));
+    const track = matches.find((entry) => entry.playable) ?? matches.find((entry) => entry.stage !== "failed") ?? matches[0];
+    return { ...item, existing: track ? { id: track.id, recordingId: track.recordingId, stage: track.stage,
+      error: track.error, detail: track.detail, playable: track.playable } : null,
+      token: signToken("music-request", { userId, recording: item }, 15 * 60_000) };
+  });
 }
 export function readRequestRecording(userId: string, token: string) {
   const raw = verifyToken<{ userId: string; recording: unknown }>("music-request", token);
@@ -261,7 +271,13 @@ export async function catalogRecordingMetadata(query: string, options: Recording
 export interface RecordingVersionCandidate {
   item: RequestRecording;
   artistKeys: string[];
-  albums: { key: string; title: string; artist: string }[];
+  albums: CatalogAlbumCandidate[];
+}
+interface CatalogAlbumCandidate { key: string; title: string; artist: string; verifiedReleaseGroupId?: string }
+function catalogAlbum(entity: CatalogEntity): CatalogAlbumCandidate {
+  const verifiedReleaseGroupId = entity.source === "musicbrainz" && entity.kind === "album" && MBID.test(entity.providerId)
+    ? entity.providerId.toLowerCase() : undefined;
+  return { key: entity.key, title: entity.title, artist: entity.artist, ...(verifiedReleaseGroupId ? { verifiedReleaseGroupId } : {}) };
 }
 const CREDIT = /\s*[([](?:feat\.?|ft\.?|featuring|with)\s[^)\]]*[)\]]/giu;
 const baseTitle = (title: string) => normalize(title.replace(CREDIT, ""));
@@ -276,39 +292,49 @@ function ownAlbums(candidate: RecordingVersionCandidate) {
 }
 
 /**
- * MusicBrainz keeps every distinct cut of a song (album, single, DJ-mix, compilation edit) as its own recording.
- * Same-artist, same-title recordings collapse to one result: copies sharing a release or a length are one song,
- * and a copy known only from another artist's compilation joins the artist's own release. The canonical version
- * is the one on the artist's own album, then single, then the most releases; distinct songs that merely share
- * a title (such as "Intro" on two albums) stay separate.
+ * Group compatible cuts only with release-graph evidence, or matching duration and an identified artist when
+ * album evidence is incomplete. Distinct recording IDs need matching durations; conflicting versions, lengths
+ * and album editions must never be joined, even through an incomplete row.
  */
 export function groupRecordingVersions(candidates: RecordingVersionCandidate[]): RequestRecording[][] {
   const byKey = new Map<string, number[]>();
   candidates.forEach((candidate, index) => {
-    const artist = candidate.artistKeys.length ? candidate.artistKeys.join(",") : `name:${normalize(candidate.item.artist)}`;
-    const key = `${artist}|${baseTitle(candidate.item.title)}`;
+    const artist = candidate.artistKeys.length ? ["keys", [...new Set(candidate.artistKeys)].sort()] :
+      ["name", normalize(candidate.item.artist)];
+    const key = JSON.stringify([artist, baseTitle(candidate.item.title)]);
     byKey.set(key, [...byKey.get(key) ?? [], index]);
   });
   const own = candidates.map(ownAlbums);
   const lengthsAgree = (a: number, b: number) => {
     const x = candidates[a]!.item.durationSec, y = candidates[b]!.item.durationSec;
-    return !!x && !!y && Math.abs(x - y) <= 3;
+    return !!x && !!y && Math.abs(x - y) <= 2.5;
   };
-  const sameSong = (a: number, b: number) => lengthsAgree(a, b) ||
-    own[a]!.some((album) => own[b]!.some((other) => other.key === album.key));
+  const compatible = (a: number, b: number) => {
+    const x = candidates[a]!.item, y = candidates[b]!.item;
+    if (normalize(x.title) !== normalize(y.title) || normalize(x.artist) !== normalize(y.artist) ||
+      !sameRecordingVersion(x.title, y.title) || (x.durationSec && y.durationSec && !lengthsAgree(a, b))) return false;
+    if (x.id === y.id) return true;
+    return lengthsAgree(a, b) && (!x.album || !y.album || normalize(x.album) === normalize(y.album)) &&
+      (!own[a]!.length || !own[b]!.length ||
+        own[a]!.some((album) => own[b]!.some((other) => other.key === album.key)));
+  };
+  const sameSong = (a: number, b: number) => {
+    const x = candidates[a]!, y = candidates[b]!;
+    if (x.item.id === y.item.id) return true;
+    const bothOwn = own[a]!.length > 0 && own[b]!.length > 0;
+    const left = bothOwn ? own[a]! : x.albums, right = bothOwn ? own[b]! : y.albums;
+    if (left.some((album) => right.some((other) => other.key === album.key))) return true;
+    return !bothOwn && (!x.albums.length || !y.albums.length) && x.artistKeys.length > 0 && lengthsAgree(a, b);
+  };
   const groups: number[][] = [];
   for (const members of byKey.values()) {
-    const owned: number[][] = [];
-    for (const index of members.filter((member) => own[member]!.length)) {
-      const linked = owned.filter((group) => group.some((member) => sameSong(member, index)));
-      owned.splice(0, owned.length, ...owned.filter((group) => !linked.includes(group)), [...linked.flat(), index]);
+    const related: number[][] = [];
+    for (const index of [...members.filter((member) => own[member]!.length), ...members.filter((member) => !own[member]!.length)]) {
+      const target = related.find((group) => group.every((member) => compatible(member, index)) &&
+        group.some((member) => sameSong(member, index)));
+      if (target) target.push(index); else related.push([index]);
     }
-    const loose: number[] = [];
-    for (const index of members.filter((member) => !own[member]!.length)) {
-      const target = owned.length === 1 ? owned[0] : owned.find((group) => group.some((member) => lengthsAgree(member, index)));
-      if (target) target.push(index); else loose.push(index);
-    }
-    groups.push(...owned, ...loose.length ? [loose] : []);
+    groups.push(...related);
   }
   const fullAlbums = (index: number) => own[index]!.filter((album) => normalize(album.title) !== baseTitle(candidates[index]!.item.title));
   const strength = (index: number) => [fullAlbums(index).length ? 2 : own[index]!.length ? 1 : 0, own[index]!.length,
@@ -321,7 +347,7 @@ export function groupRecordingVersions(candidates: RecordingVersionCandidate[]):
   return groups.sort((a, b) => Math.min(...a) - Math.min(...b)).map((group) => group.sort(better).map((index) => {
     const candidate = candidates[index]!;
     const album = fullAlbums(index)[0] ?? own[index]![0];
-    return { ...candidate.item, album: album?.title || candidate.item.album };
+    return { ...candidate.item, album: candidate.item.album || album?.title || null };
   }));
 }
 
@@ -337,7 +363,7 @@ interface CatalogGroupOptions extends RecordingSearchOptions {
   accept?: (item: CatalogItem) => boolean;
   keep?: (candidate: RecordingVersionCandidate) => boolean;
   /** Collects the artist's own full albums (not singles) linked to kept songs, keyed by catalog album key. */
-  albums?: Map<string, { title: string; artist: string }>;
+  albums?: Map<string, CatalogAlbumCandidate>;
 }
 
 async function catalogRecordingSearch(query: string, options: CatalogGroupOptions = {}): Promise<{ found: CatalogSearch; groups: RequestRecording[][] | null }> {
@@ -359,8 +385,8 @@ async function catalogGroups(items: CatalogItem[], options: CatalogGroupOptions)
   const albumKeys = [...new Set(details.flatMap((detail) => detail?.albumKeys.slice(0, 8) ?? []))].slice(0, 60);
   const albums = new Map((await Promise.all(albumKeys.map(async (key) => {
     const detail = await lookupCatalogEntity(key, catalog).catch(() => null);
-    return detail?.status === "ok" && detail.entity.kind === "album"
-      ? [[key, { key, title: detail.entity.title, artist: detail.entity.artist }] as const] : [];
+    return detail?.status === "ok" && detail.entity.kind === "album" && detail.entity.key === key
+      ? [[key, catalogAlbum(detail.entity)] as const] : [];
   }))).flat());
   options.signal?.throwIfAborted();
   const candidates = songs.flatMap((item, index) => {
@@ -371,7 +397,7 @@ async function catalogGroups(items: CatalogItem[], options: CatalogGroupOptions)
       albums: (detail?.albumKeys ?? []).flatMap((key) => albums.get(key) ?? []) }] : [];
   }).filter((candidate) => options.keep?.(candidate) ?? true);
   if (options.albums) for (const candidate of candidates) for (const album of ownAlbums(candidate)) {
-    if (normalize(album.title) !== baseTitle(candidate.item.title)) options.albums.set(album.key, { title: album.title, artist: album.artist });
+    if (normalize(album.title) !== baseTitle(candidate.item.title)) options.albums.set(album.key, album);
   }
   return groupRecordingVersions(candidates).slice(0, options.groupLimit ?? 10);
 }
@@ -454,36 +480,62 @@ function decodeCollection(id: string): { artist: string; album: string | null } 
   throw new MusicError("Choose a valid artist or album.", 400);
 }
 
-/** Album titles compare without edition suffixes such as "(Deluxe)" or "[Remastered]". */
-const albumTitleKey = (title: string) => normalize(title.replace(/\s*[([][^)\]]*[)\]]/gu, "")) || normalize(title);
+/** Edition labels are part of an album title, not presentation noise. */
+const albumTitleKey = (title: string) => normalize(title);
 
 /** Songs linked to the matching catalog album(s) through graph edges, which text search over song titles cannot find. */
-async function catalogAlbumSongs(artist: string, album: string, byArtist: (value: string) => boolean, options: CatalogGroupOptions): Promise<{ found: CatalogSearch; items: CatalogItem[] }> {
+async function catalogAlbumSongs(artist: string, album: string, byArtist: (value: string) => boolean, options: CatalogGroupOptions,
+  localReleaseGroupId?: string | null):
+  Promise<{ found: CatalogSearch; items: CatalogItem[]; albumKeys: string[]; ambiguous: boolean }> {
   const catalog = { ...options.catalog, signal: options.signal };
   const found = await searchCatalog(`${album} ${artist}`, { ...catalog, kind: "album", limit: 10, timeoutMs: catalog.timeoutMs ?? 5_000 });
-  if (found.status !== "ok" && found.status !== "lexical-only") return { found, items: [] };
+  if (found.status !== "ok" && found.status !== "lexical-only") return { found, items: [], albumKeys: [], ambiguous: false };
+  if (localReleaseGroupId === null) return { found, items: [], albumKeys: [], ambiguous: true };
   const albumKey = albumTitleKey(album);
-  const albums = found.items.filter((item) => item.kind === "album" && albumTitleKey(item.title) === albumKey &&
-    (!item.artist || byArtist(item.artist))).slice(0, 4);
+  const matches = found.items.filter((item) => item.kind === "album" && albumTitleKey(item.title) === albumKey &&
+    item.artist && byArtist(item.artist) &&
+    (localReleaseGroupId === undefined || catalogAlbum(item).verifiedReleaseGroupId === localReleaseGroupId));
+  const identities = new Set(matches.map((item) => {
+    const entry = catalogAlbum(item);
+    return entry.verifiedReleaseGroupId ? `mb:${entry.verifiedReleaseGroupId}` : `catalog:${entry.key}`;
+  }));
+  if (identities.size > 1) return { found, items: [], albumKeys: [], ambiguous: true };
+  const albums = matches.slice(0, 4);
+  const albumKeys = albums.map((item) => item.key);
   const linked = await Promise.all(albums.map((item) => lookupCatalogEntity(item.key, catalog).catch(() => null)));
   const songKeys = [...new Set(linked.flatMap((detail) => detail?.status === "ok" ? detail.songKeys : []))].slice(0, 60);
   const songs = await mapLimited(songKeys, 6, async (key) => {
     const detail = await lookupCatalogEntity(key, catalog).catch(() => null);
-    return detail?.status === "ok" && detail.entity.kind === "song" ? detail.entity : null;
+    return detail?.status === "ok" && detail.entity.kind === "song" && detail.entity.key === key ? detail : null;
   });
-  // Graph-only sources (YouTube Music) carry no recording id, so bridge each to an identified catalog song of the same name.
-  const items = await mapLimited(songs.filter((song) => song !== null).slice(0, 40), 4, async (song): Promise<CatalogItem | null> => {
+  // Graph-only songs need a shared album edge, not just a similarly named identified recording.
+  const items = await mapLimited(songs.filter((song) => song !== null).slice(0, 40), 4, async (detail): Promise<CatalogItem | null> => {
+    const song = detail.entity;
     if (song.musicBrainzRecordingId) return { ...song, album: song.album ?? album, matched: true };
-    const title = baseTitle(song.title);
-    if (!title) return null;
+    const title = normalize(song.title);
+    if (!title || !song.artist || !detail.albumKeys.length) return null;
     const match = await searchCatalog(`${song.title} ${song.artist || artist}`, { ...catalog, kind: "song", limit: 8, timeoutMs: catalog.timeoutMs ?? 5_000 })
       .catch(() => null);
-    const hit = match?.status === "ok" || match?.status === "lexical-only" ? match.items.find((item) => item.musicBrainzRecordingId &&
-      baseTitle(item.title) === title && byArtist(item.artist)) : undefined;
+    const candidates = match?.status === "ok" || match?.status === "lexical-only" ? match.items.filter((item) =>
+      item.musicBrainzRecordingId && normalize(item.title) === title &&
+      normalize(item.artist) === normalize(song.artist) && sameRecordingVersion(song.title, item.title)) : [];
+    const choices = new Map(candidates.map((item) => [item.musicBrainzRecordingId, item]));
+    if (choices.size > 2 || (match && (match.status === "ok" || match.status === "lexical-only") && match.hasMore)) return null;
+    const resolved = await mapLimited([...choices.values()], 2, async (item) => {
+      const hit = await lookupCatalogEntity(item.key, catalog).catch(() => null);
+      return hit?.status === "ok" && hit.entity.key === item.key && hit.entity.musicBrainzRecordingId === item.musicBrainzRecordingId &&
+        normalize(hit.entity.title) === title && normalize(hit.entity.artist) === normalize(song.artist) &&
+        sameRecordingVersion(song.title, hit.entity.title) &&
+        hit.albumKeys.some((key) => albumKeys.includes(key) && detail.albumKeys.includes(key)) &&
+        detail.durationSec !== null && hit.durationSec !== null &&
+        Math.abs(detail.durationSec - hit.durationSec) <= 2.5 ? item : null;
+    });
+    const distinct = new Map(resolved.filter((item) => item !== null).map((item) => [item.musicBrainzRecordingId, item]));
+    const hit = distinct.size === 1 ? [...distinct.values()][0] : null;
     return hit ? { ...hit, album: hit.album ?? album, matched: true } : null;
   });
   options.signal?.throwIfAborted();
-  return { found, items: items.filter((item) => item !== null) };
+  return { found, items: items.filter((item) => item !== null), albumKeys, ambiguous: false };
 }
 
 async function mapLimited<T, R>(values: T[], limit: number, map: (value: T) => Promise<R>): Promise<R[]> {
@@ -496,63 +548,81 @@ async function mapLimited<T, R>(values: T[], limit: number, map: (value: T) => P
 }
 
 /**
- * Catalog songs for an artist or album page that the library cannot play yet. Library copies (by recording or by
- * same artist and title) are left to the page's own track list, so a song is never shown twice.
+ * Catalog songs for an artist or album page that the library cannot play yet. Only compatible exact recording
+ * links suppress playable library copies; an unrelated recording with the same title stays requestable.
  */
 export async function catalogCollectionRecordings(userId: string, id: string, options: CatalogGroupOptions = {}): Promise<CatalogCollectionResponse> {
   const { artist, album } = decodeCollection(id);
-  const artistKey = normalize(artist), albumKey = album ? albumTitleKey(album) : "";
+  const artistKey = normalize(artist);
   const lead = normalize(artist.split(/\s+(?:feat\.?|ft\.?|featuring|with|&|x)\s+|,/iu)[0] ?? artist);
   const byArtist = (value: string) => contains(normalize(value), lead) || contains(artistKey, normalize(value));
   const limits = { searchLimit: 50, songLimit: 50, groupLimit: 50 };
-  const linkedAlbums = new Map<string, { title: string; artist: string }>();
+  const linkedAlbums = new Map<string, CatalogAlbumCandidate>();
+  const db = getDb();
+  const owned = await db.select({ album: schema.tracks.album, releaseGroupId: schema.tracks.mbReleaseGroupId }).from(schema.tracks)
+    .where(and(PLAYABLE, eq(schema.tracks.artist, artist), album ? eq(sql`coalesce(${schema.tracks.album}, '')`, album) : undefined)).limit(1000);
+  let localReleaseGroupId: string | null | undefined;
+  if (album && owned.length) {
+    const { rows } = await db.execute<{ id: string }>(sql`
+      select distinct lower(${schema.tracks.mbReleaseGroupId}) as id from ${schema.tracks}
+      where ${schema.tracks.artist} = ${artist} and coalesce(${schema.tracks.album}, '') = ${album}
+        and ${PLAYABLE} and ${schema.tracks.mbReleaseGroupId} is not null order by id limit 2`);
+    localReleaseGroupId = rows.length === 1 && MBID.test(rows[0]!.id) ? rows[0]!.id : null;
+  }
+  options.signal?.throwIfAborted();
   let found: CatalogSearch;
   let groups: RequestRecording[][] | null = null;
+  let albumKeys = new Set<string>(), ambiguousAlbum = false;
   if (album) {
-    const linked = await catalogAlbumSongs(artist, album, byArtist, options);
+    const linked = await catalogAlbumSongs(artist, album, byArtist, options, localReleaseGroupId);
     found = linked.found;
+    albumKeys = new Set(linked.albumKeys);
+    ambiguousAlbum = linked.ambiguous;
     if (linked.items.length) groups = await catalogGroups(linked.items, { ...options, ...limits });
   } else found = { status: "not_configured" };
   const [searched, searchedAlbums] = await Promise.all([
-    groups?.length ? null : catalogRecordingSearch(artist, {
+    groups?.length || (album && (ambiguousAlbum || !albumKeys.size)) ? null : catalogRecordingSearch(artist, {
       ...options, ...limits, albums: album ? undefined : linkedAlbums,
       accept: (item) => album ? byArtist(item.artist) : contains(normalize(item.artist), artistKey),
-      keep: album ? (candidate) => albumTitleKey(candidate.item.album ?? "") === albumKey ||
-        candidate.albums.some((entry) => albumTitleKey(entry.title) === albumKey) : undefined,
+      keep: album ? (candidate) => candidate.albums.some((entry) => albumKeys.has(entry.key)) : undefined,
     }),
     album ? [] : catalogArtistAlbums(artist, byArtist, options),
   ]);
   if (searched) { found = searched.found; groups = searched.groups; }
   const catalog = catalogCoverage(found);
-  const db = getDb();
-  const owned = await db.select({ title: schema.tracks.title, album: schema.tracks.album }).from(schema.tracks)
-    .where(and(PLAYABLE, eq(schema.tracks.artist, artist), album ? eq(sql`coalesce(${schema.tracks.album}, '')`, album) : undefined)).limit(1000);
-  options.signal?.throwIfAborted();
-  const ownedTitles = new Set(owned.map((track) => baseTitle(track.title)));
-  const ownedAlbums = new Set(owned.flatMap((track) => track.album ? [albumTitleKey(track.album)] : []));
-  const albums: CatalogCollectionAlbum[] = [];
-  const seenAlbums = new Set(ownedAlbums);
+  const ownedAlbums = new Set(owned.flatMap((track) => track.releaseGroupId && MBID.test(track.releaseGroupId)
+    ? [track.releaseGroupId.toLowerCase()] : []));
+  const ownedTitles = new Set(owned.flatMap((track) => track.album ? [albumTitleKey(track.album)] : []));
+  const candidates: CatalogAlbumCandidate[] = [];
+  const seenAlbums = new Set<string>();
   for (const entry of [...linkedAlbums.values(), ...searchedAlbums]) {
-    const key = albumTitleKey(entry.title);
-    if (!key || seenAlbums.has(key) || albums.length >= 50) continue;
+    const key = entry.verifiedReleaseGroupId ? `mb:${entry.verifiedReleaseGroupId}` : `catalog:${entry.key}`;
+    if (!albumTitleKey(entry.title) || seenAlbums.has(key) ||
+      (entry.verifiedReleaseGroupId && ownedAlbums.has(entry.verifiedReleaseGroupId))) continue;
     seenAlbums.add(key);
-    albums.push({ id: albumPlayerId(artist, entry.title), title: entry.title, artist });
+    candidates.push(entry);
   }
+  const nameCounts = new Map<string, number>();
+  for (const entry of candidates) {
+    const key = albumTitleKey(entry.title);
+    nameCounts.set(key, (nameCounts.get(key) ?? 0) + 1);
+  }
+  // Legacy album IDs encode only artist/title; ambiguous names cannot safely produce distinct destinations.
+  const albums = candidates.filter((entry) => {
+    const key = albumTitleKey(entry.title);
+    return !ownedTitles.has(key) && nameCounts.get(key) === 1;
+  }).slice(0, 50).map((entry) => ({ id: albumPlayerId(artist, entry.title), title: entry.title, artist,
+    ...(entry.verifiedReleaseGroupId ? { verifiedReleaseGroupId: entry.verifiedReleaseGroupId } : {}) }));
   if (!groups?.length) return { items: [], albums, catalog };
   const flat = await withRequestState(userId, groups.flat(), options);
   let offset = 0;
-  // YouTube Music rows usually name their album while MusicBrainz album entities are often not crawled yet, so
-  // an identified song borrows the album of a same-artist, same-title row from the same search.
-  const albumByTitle = new Map<string, string>();
-  if (found.status === "ok" || found.status === "lexical-only") for (const row of found.items) {
-    const title = baseTitle(row.title);
-    if (row.kind === "song" && row.album?.trim() && byArtist(row.artist) && normalize(row.album) !== title && !albumByTitle.has(title)) albumByTitle.set(title, row.album.trim());
-  }
-  const preferred = groups.map((group) => preferredVersion(flat.slice(offset, offset += group.length)))
-    .map((item) => item.album ? item : { ...item, album: albumByTitle.get(baseTitle(item.title)) ?? null });
+  const preferred = groups.flatMap((group) => {
+    const available = flat.slice(offset, offset += group.length).filter((item) => !item.existing?.playable);
+    return available.length ? [preferredVersion(available)] : [];
+  });
   const started = (item: RecordingSearchItem) => item.existing && item.existing.stage !== "failed" ? 0 : 1;
-  const items = preferred.filter((item) => !item.existing?.playable && !ownedTitles.has(baseTitle(item.title)))
-    .map((item, index) => ({ item, index })).sort((a, b) => started(a.item) - started(b.item) || a.index - b.index).map(({ item }) => item);
+  const items = preferred.map((item, index) => ({ item, index }))
+    .sort((a, b) => started(a.item) - started(b.item) || a.index - b.index).map(({ item }) => item);
   return { catalog, albums, items };
 }
 
@@ -563,7 +633,7 @@ async function catalogArtistAlbums(artist: string, byArtist: (value: string) => 
       timeoutMs: options.catalog?.timeoutMs ?? 5_000 });
     if (found.status !== "ok" && found.status !== "lexical-only") return [];
     return found.items.filter((item) => item.kind === "album" && item.title.trim() && item.artist && byArtist(item.artist))
-      .map((item) => ({ title: item.title.trim(), artist: item.artist }));
+      .map(catalogAlbum);
   } catch (error) {
     options.signal?.throwIfAborted();
     void error;

@@ -10,6 +10,7 @@
 ## Invariants
 
 - Handoff requires an awake, connected destination and a successful playback acknowledgement before the source pauses.
+- Browser players are ephemeral; installed native devices expire after 30 days without connecting.
 - Parties have one output device. Do not promise synchronized multi-device audio.
 - Device state is account-scoped and does not leak across members.
 
@@ -17,7 +18,7 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 
 ## Entry points and gotchas
 
-- `lib/devices-store.ts` handles server state, while `device-client.ts` and `device-http.ts` handle client transport. `core/src/devices.ts` defines the shared schema.
+- `lib/devices-store.ts` handles server state; `device-client.ts` and `device-http.ts` handle transport. `@mint/client/devices` owns server-free schemas, reexported by core.
 - DB tests (`devices-db.test.ts`) skip without `DEVICE_TEST_DATABASE_URL`.
 
 <!-- agents:generated:start — do not edit below; run `npm run agents:sync` -->
@@ -26,11 +27,11 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 
 - **Scope:** Device registry, handoff, remote control and single-output listening parties.
 - **Read before editing:** [agents/playback-and-library.md](../playback-and-library.md), [docs/devices.md](../../docs/devices.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`library`](library.md), [`platform`](platform.md), [`playback`](playback.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`playback`](playback.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map devices` (exports, line counts, cross-domain import edges).
 
-### Owned files (16)
+### Owned files (17)
 
 - `apps/web/src/app/api/` `devices/[...path]/route.ts`, `devices/route.ts`, `parties/[...path]/route.ts`, `parties/route.ts`
 - `apps/web/src/app/app/` `devices/page.tsx`
@@ -38,7 +39,7 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 - `apps/web/src/lib/` `device-client.ts`, `device-http.ts`, `devices-store.ts`, `devices.ts`
 - `apps/web/tests/` `devices-db.test.ts`, `devices.test.ts`
 - `docs/` `devices.md`
-- `packages/core/migrations/` `0007_devices.sql`
+- `packages/core/migrations/` `0007_devices.sql`, `0020_device_lifecycle.sql`
 - `packages/core/src/` `devices.ts`
 - `packages/core/src/db/` `devices.ts`
 

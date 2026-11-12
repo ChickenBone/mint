@@ -59,6 +59,26 @@ test("API uses only native transport, omits cookies and never forges Origin", as
   } });
   assert.deepEqual(await api.preferences(), { privateSession: false, likes: [], exclusions: [] });
 });
+test("device registration uses bearer-only native transport and web sessions request ephemeral identity", async () => {
+  const kinds: string[] = [];
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url, init) => {
+    assert.equal(url, "https://mint.example.com/api/native/devices");
+    assert.equal(init?.credentials, "omit");
+    assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${token}`);
+    if (init?.method === "POST") {
+      const input = JSON.parse(String(init.body));
+      kinds.push(input.kind);
+      return Response.json({ id: deviceId, token: "receiver-token" });
+    }
+    return Response.json([{ id: deviceId, name: "Web player", kind: "web", online: true, lastSeenAt: new Date().toISOString(),
+      state: { playing: false, queueLength: 0, volume: 100, trackId: null } }]);
+  } });
+  const state = { playing: false, time: 0, duration: 0, volume: 100, trackId: null, queue: [], currentIndex: 0, shuffle: false, repeat: 0 as const };
+  await api.registerDevice(state);
+  await api.registerDevice(state, undefined, "web");
+  assert.deepEqual(kinds, ["native", "web"]);
+  assert.equal((await api.devices())[0]?.kind, "web");
+});
 test("default browser fetch retains its global receiver and injected transports are unbound", async () => {
   const original = globalThis.fetch;
   globalThis.fetch = function(this: unknown) {
@@ -242,4 +262,29 @@ test("catalog search separates requestable recordings from catalog-only rows and
   await assert.rejects(incompatible({ items: [], results: [{ ...catalogOnly, popularity: { ...catalogOnly.popularity, score: 0 } }], catalog }), /incompatible/);
   await assert.rejects(incompatible({ items: [], results: Array(51).fill(catalogOnly), catalog }), /incompatible/);
   await assert.rejects(incompatible({ items: [], results: [{ ...catalogOnly, title: "" }], catalog }), /incompatible/);
+});
+
+test("catalog collection responses preserve only valid optional release-group identities", async () => {
+  const verifiedReleaseGroupId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const albums = [
+    { id: "al_verified", title: "Fixture album", artist: "Fixture artist", verifiedReleaseGroupId },
+    { id: "al_legacy", title: "Another album", artist: "Fixture artist" },
+  ];
+  const catalog = { status: "ok", mode: "lexical", relevance: "matched", hasMore: false, retryAfterSeconds: null };
+  const response = { items: [], albums, catalog };
+  const controller = new AbortController();
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url, init) => {
+    assert.equal(url, "https://mint.example.com/api/native/music/search/collection?id=ar_fixture");
+    assert.equal(init?.signal, controller.signal);
+    return Response.json(response);
+  } });
+  const result = await api.collectionRecordings("ar_fixture", controller.signal);
+  assert.equal(result.albums[0]?.verifiedReleaseGroupId, verifiedReleaseGroupId);
+  assert.equal("verifiedReleaseGroupId" in result.albums[1]!, false, "Older server responses remain compatible.");
+
+  for (const invalid of ["not-an-mbid", verifiedReleaseGroupId.toUpperCase(), null]) {
+    const malformed = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () =>
+      Response.json({ ...response, albums: [{ ...albums[0], verifiedReleaseGroupId: invalid }] }) });
+    await assert.rejects(malformed.collectionRecordings("ar_fixture"), /incompatible/);
+  }
 });

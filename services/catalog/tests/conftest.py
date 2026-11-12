@@ -58,7 +58,7 @@ def song():
 
 
 @pytest.fixture
-def store(settings):
+def unmigrated_store(settings):
     admin = os.getenv("CATALOG_TEST_DATABASE_URL")
     if not admin:
         pytest.skip(
@@ -72,12 +72,17 @@ def store(settings):
     params["dbname"] = name
     instance = Store(replace(settings, database_url=make_conninfo(**params)))
     try:
-        instance.migrate()
         yield instance
     finally:
         instance.close()
         with psycopg.connect(admin, autocommit=True) as conn:
             conn.execute(sql.SQL("DROP DATABASE {}").format(sql.Identifier(name)))
+
+
+@pytest.fixture
+def store(unmigrated_store):
+    unmigrated_store.migrate()
+    return unmigrated_store
 
 
 @pytest.fixture

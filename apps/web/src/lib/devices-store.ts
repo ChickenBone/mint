@@ -8,8 +8,9 @@ import { PLAYABLE } from "@mint/core/playback";
 import { playbackQueues, playbackQueueEntries } from "@mint/core/playback-queues-db";
 import { connectedDevices as devices, deviceCommands as commands, partyParticipants as participants, partySessions as parties } from "@mint/core/devices-db";
 import {
-  DEVICE_COMMAND_TTL_MS, DEVICE_ONLINE_MS, PARTY_TTL_MS, DeviceError,
+  DEVICE_COMMAND_TTL_MS, DEVICE_ONLINE_MS, NATIVE_DEVICE_RETENTION_MS, PARTY_TTL_MS, DeviceError,
   assertCommandClaimable, assertDeviceOnline, assertPartyEditor, assertPartyRevision, confirmsHandoff,
+  devicePlaybackIdentity, matchesDevicePlayback,
   deviceAckSchema, deviceCommandSchema, deviceHeartbeatSchema, deviceQueueSchema, deviceStateSchema, registerDeviceSchema,
   type DeviceActor, type DeviceCommand, type DeviceState,
 } from "@mint/core/devices";
@@ -34,8 +35,8 @@ const token = () => randomBytes(32).toString("base64url");
 const publicDevice = (device: Device, now: number) => {
   const { queue, ...state } = device.state;
   return {
-    id: device.id, name: device.name, state: { ...state, queueLength: state.queueContext?.total ?? queue.length },
-    online: !device.revokedAt && now - device.lastSeenAt.getTime() <= DEVICE_ONLINE_MS,
+    id: device.id, name: device.name, kind: device.kind, state: { ...state, queueLength: state.queueContext?.total ?? queue.length },
+    online: !device.revokedAt && !!device.authSessionId && now - device.lastSeenAt.getTime() <= DEVICE_ONLINE_MS,
     lastSeenAt: device.lastSeenAt.toISOString(),
   };
 };
@@ -70,9 +71,9 @@ export class DeviceStore {
       if (device.authSessionId !== this.actor.sessionId || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
         throw new DeviceError(403, "This device belongs to another browser session.");
       }
-    } else {
+    } else if (device.kind === "web") {
       const [session] = await tx.select({ id: sessions.id }).from(sessions)
-        .where(and(eq(sessions.id, device.authSessionId), gt(sessions.expiresAt, new Date(this.clock()))));
+        .where(and(eq(sessions.id, device.authSessionId ?? ""), gt(sessions.expiresAt, new Date(this.clock()))));
       if (!session) throw new DeviceError(409, "Device session expired. Reopen Mint on that device.");
     }
     return device;
@@ -87,7 +88,7 @@ export class DeviceStore {
   }
 
   private async enqueue(tx: Tx, device: Device, command: DeviceCommand) {
-    assertDeviceOnline(device, this.clock());
+    await this.awake(tx, device);
     const parsed = deviceCommandSchema.parse(command);
     if (parsed.action === "queue") await this.readyTracks(tx, parsed.trackIds);
     if (parsed.action === "handoff") await this.readyTracks(tx, parsed.handoff.queue);
@@ -106,37 +107,74 @@ export class DeviceStore {
     return publicCommand(commandRow);
   }
 
+  private async awake(tx: Tx, device: Device) {
+    assertDeviceOnline(device, this.clock());
+    const [receiver] = await tx.select({ id: sessions.id }).from(sessions)
+      .where(and(eq(sessions.id, device.authSessionId ?? ""), gt(sessions.expiresAt, new Date(this.clock()))));
+    if (!receiver) throw new DeviceError(409, "Device session expired. Open Mint on that device first.");
+  }
+
   async list() {
     return this.run(async (tx) => {
+      await this.cleanup(tx);
       const rows = await tx.select().from(devices)
-        .innerJoin(sessions, eq(sessions.id, devices.authSessionId))
-        .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt), gt(sessions.expiresAt, new Date(this.clock()))))
+        .leftJoin(sessions, eq(sessions.id, devices.authSessionId))
+        .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt),
+          or(eq(devices.kind, "native"), gt(sessions.expiresAt, new Date(this.clock())))))
         .orderBy(desc(devices.lastSeenAt)).limit(30);
-      return rows.map((row) => publicDevice(row.connected_devices, this.clock()));
+      return rows.map((row) => ({ ...publicDevice(row.connected_devices, this.clock()),
+        online: !!row.sessions && row.sessions.expiresAt.getTime() > this.clock() &&
+          publicDevice(row.connected_devices, this.clock()).online }));
     });
+  }
+
+  private async cleanup(tx: Tx) {
+    await tx.delete(devices).where(and(eq(devices.userId, this.actor.userId), or(
+      lt(devices.revokedAt, new Date(this.clock())),
+      and(eq(devices.kind, "web"), or(isNull(devices.authSessionId),
+        lt(devices.lastSeenAt, new Date(this.clock() - DEVICE_ONLINE_MS)))),
+      and(eq(devices.kind, "native"), lt(devices.lastConnectedAt, new Date(this.clock() - NATIVE_DEVICE_RETENTION_MS))),
+    )));
   }
 
   async getDevice(id: string) {
     return this.run(async (tx) => {
       const device = await this.owned(tx, id);
-      return { ...publicDevice(device, this.clock()), state: device.state };
+      const [session] = await tx.select({ id: sessions.id }).from(sessions)
+        .where(and(eq(sessions.id, device.authSessionId ?? ""), gt(sessions.expiresAt, new Date(this.clock()))));
+      const view = publicDevice(device, this.clock());
+      return { ...view, online: view.online && !!session, state: device.state };
     });
   }
 
   async register(input: unknown) {
     const data = registerDeviceSchema.parse(input);
+    const installationId = data.kind === "web" ? undefined : this.actor.installationId;
     return this.run(async (tx) => {
       // Serializes registration limits across tabs on the same account.
       await tx.select({ id: users.id }).from(users).where(eq(users.id, this.actor.userId)).for("update");
-      await tx.delete(devices).where(and(eq(devices.userId, this.actor.userId),
-        or(lt(devices.lastSeenAt, new Date(this.clock() - 24 * 3600_000)), lt(devices.revokedAt, new Date(this.clock())))));
+      await this.cleanup(tx);
+      const secret = token();
+      if (installationId) {
+        const [existing] = await tx.select().from(devices).where(and(eq(devices.userId, this.actor.userId),
+          eq(devices.installationId, installationId))).for("update");
+        if (existing) {
+          const [updated] = await tx.update(devices).set({
+            authSessionId: this.actor.sessionId, tokenHash: hash(secret), state: data.state,
+            lastSeenAt: new Date(this.clock()), lastConnectedAt: new Date(this.clock()),
+          }).where(eq(devices.id, existing.id)).returning();
+          if (!updated) throw new DeviceError(409, "Device disconnected.");
+          return { ...publicDevice(updated, this.clock()), token: secret };
+        }
+      }
       const [stats] = await tx.select({ count: sql<number>`count(*)::int` }).from(devices)
         .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt)));
       if ((stats?.count ?? 0) >= 30) throw new DeviceError(429, "Remove an old device before connecting another.");
-      const secret = token();
       const [device] = await tx.insert(devices).values({
         userId: this.actor.userId, authSessionId: this.actor.sessionId, tokenHash: hash(secret),
-        name: data.name, state: data.state, lastSeenAt: new Date(this.clock()),
+        kind: installationId ? "native" : "web", installationId: installationId ?? null,
+        name: installationId ? this.actor.deviceName ?? "Mint app" : "Web player",
+        state: data.state, lastSeenAt: new Date(this.clock()), lastConnectedAt: new Date(this.clock()),
       }).returning();
       if (!device) throw new Error("Device was not stored");
       return { ...publicDevice(device, this.clock()), token: secret };
@@ -176,13 +214,27 @@ export class DeviceStore {
     });
   }
 
+  async disconnect(id: string, receiverToken: string) {
+    return this.run(async (tx) => {
+      const device = await this.owned(tx, id, receiverToken);
+      await tx.update(parties).set({ closedAt: new Date(this.clock()), inviteHash: null }).where(eq(parties.deviceId, id));
+      if (device.kind === "web") await tx.delete(devices).where(eq(devices.id, id));
+      else {
+        await tx.update(devices).set({ lastSeenAt: new Date(0), authSessionId: null, tokenHash: hash(token()) }).where(eq(devices.id, id));
+        await tx.update(commands).set({ status: "failed", error: "Device disconnected." })
+          .where(and(eq(commands.deviceId, id), inArray(commands.status, ["pending", "delivered"])));
+      }
+      return { ok: true };
+    });
+  }
+
   async poll(id: string, receiverToken: string, state: unknown) {
     const heartbeat = deviceHeartbeatSchema.parse(state);
     return this.run(async (tx) => {
       const current = await this.owned(tx, id, receiverToken);
       const parsed = deviceStateSchema.parse({ ...heartbeat, queue: heartbeat.queue ?? current.state.queue });
       await tx.delete(commands).where(and(eq(commands.deviceId, id), lt(commands.createdAt, new Date(this.clock() - 24 * 3600_000))));
-      await tx.update(devices).set({ state: parsed, lastSeenAt: new Date(this.clock()) }).where(eq(devices.id, id));
+      await tx.update(devices).set({ state: parsed, lastSeenAt: new Date(this.clock()), lastConnectedAt: new Date(this.clock()) }).where(eq(devices.id, id));
       await broadcastPlayback(current, parsed);
       await tx.update(commands).set({ status: "expired", error: "Device did not acknowledge before the deadline." })
         .where(and(eq(commands.deviceId, id), inArray(commands.status, ["pending", "delivered"]),
@@ -256,8 +308,8 @@ export class DeviceStore {
   }
 
   private async enqueueHandoff(tx: Tx, source: Device, destination: Device, state: DeviceState) {
-    assertDeviceOnline(source, this.clock());
-    assertDeviceOnline(destination, this.clock());
+    await this.awake(tx, source);
+    await this.awake(tx, destination);
     if (!state.queue.length) throw new DeviceError(400, "Start a track before moving playback.");
     const party = await tx.select({ id: parties.id }).from(parties)
       .where(and(inArray(parties.deviceId, [source.id, destination.id]), isNull(parties.closedAt), gt(parties.expiresAt, new Date(this.clock())))).limit(1);
@@ -269,7 +321,28 @@ export class DeviceStore {
         queueContext: state.queueContext,
       },
     });
+    await tx.update(commands).set({ sourceDeviceId: source.id }).where(eq(commands.id, command.id));
     return { ...command, sourceId: source.id };
+  }
+
+  async completeTransfer(commandId: string) {
+    return this.run(async (tx) => {
+      const [command] = await tx.select().from(commands).where(and(eq(commands.id, commandId),
+        eq(commands.actorId, this.actor.userId), eq(commands.actorSessionId, this.actor.sessionId))).for("update");
+      if (!command || command.command.action !== "handoff" || !command.sourceDeviceId) throw new DeviceError(404, "Playback move not found.");
+      if (command.status !== "succeeded") throw new DeviceError(409, "Destination has not confirmed playback. Source will keep playing.");
+      if (command.expiresAt.getTime() <= this.clock()) throw new DeviceError(409, "Playback move expired. Source will keep playing.");
+      const source = await this.owned(tx, command.sourceDeviceId);
+      const target = command.command.handoff;
+      const expected = {
+        trackId: target.queue[target.currentIndex]!, index: target.queueContext?.position ?? target.currentIndex,
+        contextId: target.queueContext?.id ?? null, revision: target.queueContext?.revision ?? null,
+      };
+      if (!matchesDevicePlayback(source.state, expected)) throw new DeviceError(409, "Playback moved, but the source changed tracks. Choose which device to pause.");
+      const paused = await this.enqueue(tx, source, { action: "pause", expected: devicePlaybackIdentity(source.state) });
+      await tx.update(commands).set({ sourceDeviceId: null }).where(eq(commands.id, command.id));
+      return paused;
+    });
   }
 
   async handoff(sourceId: string, sourceToken: string, destinationId: string, state: unknown) {
@@ -287,7 +360,8 @@ export class DeviceStore {
   async transfer(destinationId: string) {
     return this.run(async (tx) => {
       const rows = await tx.select().from(devices)
-        .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt)))
+        .where(and(eq(devices.userId, this.actor.userId), isNull(devices.revokedAt),
+          inArray(devices.authSessionId, tx.select({ id: sessions.id }).from(sessions).where(gt(sessions.expiresAt, new Date(this.clock()))))))
         .orderBy(desc(devices.lastSeenAt));
       const now = this.clock();
       const onlineWithQueue = (device: Device) => device.state.queue.length > 0 && now - device.lastSeenAt.getTime() <= DEVICE_ONLINE_MS;
@@ -357,7 +431,7 @@ export class DeviceStore {
     const title = registerDeviceSchema.shape.name.parse(name);
     return this.run(async (tx) => {
       const device = await this.owned(tx, deviceId);
-      assertDeviceOnline(device, this.clock());
+      await this.awake(tx, device);
       const open = await tx.select({ id: parties.id }).from(parties)
         .where(and(eq(parties.deviceId, deviceId), isNull(parties.closedAt), gt(parties.expiresAt, new Date(this.clock()))));
       if (open.length) throw new DeviceError(409, "This device already hosts a party.");

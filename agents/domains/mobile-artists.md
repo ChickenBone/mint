@@ -19,14 +19,14 @@ Use generated focused checks; service metadata changes require the library owner
 
 - **Scope:** Artist detail navigation, artist identity and bounded artist song/album presentation.
 - **Read before editing:** [agents/mobile-features.md](../mobile-features.md).
-- **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md)
+- **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md), [`mobile-playback`](mobile-playback.md)
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map mobile-artists` (exports, line counts, cross-domain import edges).
 
-### Owned files (4)
+### Owned files (5)
 
 - `apps/mobile/app/artist/` `[id].tsx`
-- `apps/mobile/src/features/artists/` `ArtistScreen.tsx`, `artist-model.ts`
+- `apps/mobile/src/features/artists/` `ArtistScreen.tsx`, `CatalogArtistAlbums.tsx`, `artist-model.ts`
 - `apps/mobile/tests/` `artists-detail.test.ts`
 
 ### Validate
@@ -35,7 +35,7 @@ Owned tests: 1.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/artist/[id].tsx' src/features/artists/ArtistScreen.tsx src/features/artists/artist-model.ts tests/artists-detail.test.ts
+npm exec -w @mint/mobile -- eslint 'app/artist/[id].tsx' src/features/artists/ArtistScreen.tsx src/features/artists/CatalogArtistAlbums.tsx src/features/artists/artist-model.ts tests/artists-detail.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/artists-detail.test.ts
 ```
 

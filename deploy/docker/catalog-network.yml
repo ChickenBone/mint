@@ -1,0 +1,40 @@
+# Optional overlay: use after the main Mint Compose file.
+# The separate catalog bridge joins the same operator-created private network.
+services:
+  web:
+    environment:
+      CATALOG_BRIDGE_URL: https://mint-catalog-bridge:8080
+      CATALOG_BRIDGE_TOKEN: ""
+      CATALOG_BRIDGE_TOKEN_FILE: /run/secrets/catalog_bridge_token
+      NODE_EXTRA_CA_CERTS: /catalog-ca/ca.pem
+    volumes:
+      - type: bind
+        source: ${CATALOG_BRIDGE_CA_FILE:?Set the catalog issuing CA PEM path}
+        target: /catalog-ca/ca.pem
+        read_only: true
+    networks:
+      catalog_bridge: {}
+    secrets:
+      - catalog_bridge_token
+  worker:
+    environment:
+      CATALOG_BRIDGE_URL: https://mint-catalog-bridge:8080
+      CATALOG_BRIDGE_TOKEN: ""
+      CATALOG_BRIDGE_TOKEN_FILE: /run/secrets/catalog_bridge_token
+      NODE_EXTRA_CA_CERTS: /catalog-ca/ca.pem
+    volumes:
+      - type: bind
+        source: ${CATALOG_BRIDGE_CA_FILE:?Set the catalog issuing CA PEM path}
+        target: /catalog-ca/ca.pem
+        read_only: true
+    networks:
+      catalog_bridge: {}
+    secrets:
+      - catalog_bridge_token
+secrets:
+  catalog_bridge_token:
+    file: ${CATALOG_BRIDGE_TOKEN_FILE:?Set the private bridge token file path}
+networks:
+  catalog_bridge:
+    external: true
+    name: ${CATALOG_BRIDGE_NETWORK:-mint-catalog-bridge}
