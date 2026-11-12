@@ -11,6 +11,8 @@ import { discoverMusic } from "@/lib/music-discovery";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { toTrackView } from "@mint/core/views";
 import { validConsumerMutation } from "@/lib/native-context";
+import { rateLimit } from "@/lib/rate-limit";
+import { changeTrackSource, trackSourceState } from "@/lib/track-sources";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
@@ -125,6 +127,13 @@ async function handle(request: Request, context: Context) {
       const page = z.coerce.number().int().min(0).max(10000).parse(url.searchParams.get("page") ?? 0);
       const result = await playlistLibrarySearch(db, url.searchParams.get("q") ?? "", page);
       return json({ tracks: result.tracks.map(toTrackView), nextPage: result.nextPage });
+    } else if (resource === "sources" && id && !action) {
+      const admin = user.role === "admin";
+      if (method === "GET") return json(await trackSourceState(user.id, admin, id));
+      if (method === "POST") {
+        if (!(await rateLimit(`retry:${user.id}`, 60, 600))) throw new MusicError("Too many source changes. Slow down a little.", 429);
+        return json(await changeTrackSource(user.id, admin, id, await body()));
+      }
     }
     return json({ error: "Music endpoint not found." }, 404);
   } catch (error) {

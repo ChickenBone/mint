@@ -6,10 +6,11 @@ export interface ParsedMeta {
 }
 
 const NOISE =
-  /\s*[([](?:official\s*(?:music\s*)?(?:video|audio|visuali[sz]er|lyric(?:s)?\s*video)|lyric(?:s)?(?:\s*video)?|audio|video|hd|4k|visuali[sz]er|explicit|clean|mv|m\/v)[)\]]\s*/gi;
+  /\s*[([](?:official\s*(?:(?:animated|music)\s*)*(?:video|audio|visuali[sz]er|lyric(?:s)?\s*video)|lyric(?:s)?(?:\s*video)?|audio|video|hd|4k|visuali[sz]er|explicit|clean|mv|m\/v)[)\]]\s*/gi;
 
 function clean(s: string) {
-  return s.replace(NOISE, " ").replace(/\s{2,}/g, " ").trim();
+  return s.replace(NOISE, " ").replace(/\s+(?:official\s+)?(?:music\s+video|mv|m\/v)$/i, "")
+    .replace(/\s{2,}/g, " ").trim();
 }
 
 function cleanChannel(channel: string) {
@@ -47,8 +48,17 @@ export function parseYoutubeMeta(input: { title: string; channelTitle: string; d
   }
 
   const title = clean(input.title);
-  const dash = title.match(/^(.+?)\s+[-–—]\s+(.+)$/);
-  if (dash) return { artist: dash[1]!.trim(), title: dash[2]!.trim(), album: null, year: null };
+  const quoted = /^(.+?)\s+['"\u2018\u2019\u201c\u201d](.+?)['"\u2018\u2019\u201c\u201d]$/.exec(title);
+  if (quoted) {
+    return { artist: quoted[1]!.replace(/\s+\([\u1100-\u11ff\u3130-\u318f\uac00-\ud7af\s]+\)$/, "").trim(),
+      title: quoted[2]!.trim(), album: null, year: null };
+  }
+  const albumSuffix = /\s+\|\s+(.+)$/.exec(title);
+  const withoutAlbum = albumSuffix && /\((?:official\s+)?(?:music\s+)?video\)/i.test(input.title) &&
+    !/\b(?:feat|ft|featuring|live|remix|cover|edit|version|acoustic|slowed|sped)\b/i.test(albumSuffix[1]!)
+    ? title.slice(0, albumSuffix.index).trim() : title;
+  const dash = withoutAlbum.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  if (dash) return { artist: dash[1]!.trim(), title: dash[2]!.trim(), album: albumSuffix && withoutAlbum !== title ? albumSuffix[1]!.trim() : null, year: null };
 
   return { title, artist: cleanChannel(channel) || "Unknown Artist", album: null, year: null };
 }

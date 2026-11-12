@@ -16,6 +16,7 @@
 - Keep PostgreSQL with its original generated encryption/signing secrets. Never suggest deleting databases, volumes or secrets as a fix.
 - Queue jobs remain deterministic and deduplicated: transactional and advisory locks, conflict-safe revisions.
 - Cache coordination, leases, cooldowns and admission stay bounded. A Redis outage must not turn into unthrottled provider reads; stale/negative/error states remain distinct and cache invalidation must prevent stale in-flight repopulation.
+- Adapters that must honor a provider refusal even for fresh entries use `respectCooldownForFresh`; the default cache behavior remains unchanged for other providers.
 
 ## Contracts
 
@@ -38,7 +39,7 @@
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map platform` (exports, line counts, cross-domain import edges).
 
-### Owned files (41)
+### Owned files (47)
 
 - `./` `package.json`, `tsconfig.base.json`
 - `apps/web/` `eslint.config.mjs`, `next-env.d.ts`, `next.config.ts`, `package.json`, `postcss.config.mjs`, `tsconfig.json`
@@ -47,20 +48,20 @@
 - `apps/worker/src/` `config.ts`, `files.ts`, `http.ts`, `index.ts`, `log.ts`, `queues.ts`
 - `apps/worker/src/jobs/` `maintenance.ts`
 - `packages/core/` `drizzle.config.ts`, `package.json`, `tsconfig.json`
-- `packages/core/migrations/` `0000_init.sql`, `0015_issue_reports.sql`, `0016_matching_settings.sql`, `0017_openai_matching.sql`
-- `packages/core/src/` `crypto.ts`, `env.ts`, `index.ts`, `matching.ts`, `public-cache-fixture.ts`, `public-cache.test.ts`, `public-cache.ts`, `queues.ts`, `redis.ts`
+- `packages/core/migrations/` `0000_init.sql`, `0015_issue_reports.sql`, `0016_matching_settings.sql`, `0017_openai_matching.sql`, `0018_search_requests.sql`, `0019_source_choices.sql`
+- `packages/core/src/` `catalog-client.test.ts`, `catalog-client.ts`, `crypto.ts`, `env.ts`, `index.ts`, `matching.ts`, `public-cache-fixture.ts`, `public-cache.test.ts`, `public-cache.ts`, `queues.ts`, `redis.ts`, `youtube-pace.test.ts`, `youtube-pace.ts`
 - `packages/core/src/db/` `index.ts`, `matching.ts`, `migrate-cli.ts`, `migrate.ts`, `schema.ts`
 
 ### Validate
 
-Owned tests: 1.
+Owned tests: 3.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
 npm run typecheck -w @mint/worker
 npm run typecheck -w @mint/core
-npm exec -w @mint/core -- node --test src/public-cache.test.ts
+npm exec -w @mint/core -- tsx --test src/catalog-client.test.ts src/public-cache.test.ts src/youtube-pace.test.ts
 ```
 
 > Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).

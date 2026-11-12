@@ -21,13 +21,13 @@ Use generated focused checks; schema/mutation changes coordinate with collection
 - **Scope:** Playlist and liked-song details, occurrence-based editing and collection actions.
 - **Read before editing:** [agents/mobile-features.md](../mobile-features.md).
 - **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md)
-- **Imported by:** none
+- **Imported by:** [`mobile`](mobile.md)
 - **Live detail:** `npm run agents -- map mobile-playlists` (exports, line counts, cross-domain import edges).
 
-### Owned files (7)
+### Owned files (9)
 
 - `apps/mobile/app/collection/` `[id].tsx`
-- `apps/mobile/src/features/playlists/` `PlaylistScreen.tsx`, `collection-model.ts`, `playlist-model.ts`, `usePlaylistActions.ts`
+- `apps/mobile/src/features/playlists/` `LikedImports.tsx`, `PlaylistScreen.tsx`, `SourcePicker.tsx`, `collection-model.ts`, `playlist-model.ts`, `usePlaylistActions.ts`
 - `apps/mobile/tests/` `playlists-detail.test.ts`, `playlists-model.test.ts`
 
 ### Validate
@@ -36,7 +36,7 @@ Owned tests: 2.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/collection/[id].tsx' src/features/playlists/PlaylistScreen.tsx src/features/playlists/collection-model.ts src/features/playlists/playlist-model.ts src/features/playlists/usePlaylistActions.ts tests/playlists-detail.test.ts tests/playlists-model.test.ts
+npm exec -w @mint/mobile -- eslint 'app/collection/[id].tsx' src/features/playlists/LikedImports.tsx src/features/playlists/PlaylistScreen.tsx src/features/playlists/SourcePicker.tsx src/features/playlists/collection-model.ts src/features/playlists/playlist-model.ts src/features/playlists/usePlaylistActions.ts tests/playlists-detail.test.ts tests/playlists-model.test.ts
 npm exec -w @mint/mobile -- tsx --test tests/playlists-detail.test.ts tests/playlists-model.test.ts
 ```
 

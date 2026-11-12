@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gt, ilike, inArray, notInArray, or, sql, type SQL }
 import type { Db } from "@mint/core/db";
 import { schema } from "@mint/core/db";
 import { PLAYABLE } from "@mint/core/playback";
+import { noteCatalogDemand } from "@mint/core/catalog-client";
 import { musicCollections as collections, musicEntries as entries, musicMembers as members,
   musicOrganization as organization, musicFolders as folders, musicLikes as likes,
   musicHistory as history, musicPreferences as preferences, musicExclusions as exclusions } from "@mint/core/music-db";
@@ -205,20 +206,23 @@ export async function organizeCollection(db: Db, userId: string, id: string, inp
     .onConflictDoUpdate({ target: [organization.collectionId, organization.userId], set: input });
 }
 export async function recordHistory(db: Db, userId: string, input: HistoryEvent) {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.insert(preferences).values({ userId }).onConflictDoNothing();
     const [pref] = await tx.select().from(preferences).where(eq(preferences.userId, userId)).for("update");
     if (pref?.privateSession || input.listenedMs < 1000) return { recorded: false };
     if (input.startedAt && new Date(input.startedAt).getTime() > Date.now()) throw new MusicError("Listening episode cannot start in the future.");
     // Discard episodes crossing a privacy boundary, including events queued by another tab.
     if (pref?.historyAfter && (!input.startedAt || new Date(input.startedAt) < pref.historyAfter)) return { recorded: false };
-    const [track] = await tx.select({ id: t.id, duration: t.durationSec, existingDuration: t.existingDurationSec }).from(t).where(and(eq(t.id, input.trackId), PLAYABLE)).limit(1);
+    const [track] = await tx.select({ id: t.id, title: t.title, artist: t.artist, duration: t.durationSec, existingDuration: t.existingDurationSec }).from(t).where(and(eq(t.id, input.trackId), PLAYABLE)).limit(1);
     if (!track) throw new MusicError("Playable song not found.", 404);
     const durationMs = (track.duration ?? track.existingDuration ?? 86_400) * 1000;
     const rows = await tx.insert(history).values({ id: input.eventId, userId, trackId: input.trackId,
       listenedMs: Math.min(input.listenedMs, durationMs), completed: input.completed && input.listenedMs >= durationMs * 0.8 }).onConflictDoNothing().returning();
-    return { recorded: rows.length > 0 };
+    return { recorded: rows.length > 0, track };
   });
+  // Anonymous, aggregated crawl hint; private sessions and paused history never reach this point.
+  if (result.recorded && "track" in result && result.track?.title) noteCatalogDemand({ type: "play", title: result.track.title, artist: result.track.artist });
+  return { recorded: result.recorded };
 }
 export async function setPrivateSession(db: Db, userId: string, privateSession: boolean) {
   const historyAfter = new Date();

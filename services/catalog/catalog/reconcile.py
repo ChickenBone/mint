@@ -40,7 +40,7 @@ class ReconciliationBodyLimit:
         if (
             scope["type"] != "http"
             or scope["method"] != "POST"
-            or scope["path"] != "/v1/reconcile/recordings"
+            or scope["path"] not in ("/v1/reconcile/recordings", "/v1/demand")
         ):
             return await self.app(scope, receive, send)
         body = bytearray()
@@ -53,7 +53,7 @@ class ReconciliationBodyLimit:
                     body.extend(message.get("body", b""))
                     if len(body) > 32768:
                         return await JSONResponse(
-                            {"detail": "Reconciliation input exceeds 32 KiB"},
+                            {"detail": "Request body exceeds 32 KiB"},
                             status_code=413,
                         )(scope, receive, send)
                     if not message.get("more_body"):

@@ -3,10 +3,12 @@ import { trackAnalysisResponseSchema } from "./analysis";
 import { connectionErrorMessage, nativeTokenSchema, normalizeServerUrl } from "./auth";
 import { catalogPageSchema, queuePageSchema, type QueueEdit, type PlayerCollection } from "./playback";
 import {
-  browseCategoryPageSchema, chartListSchema, chartPageSchema, collectionDetailSchema, collectionListSchema,
-  collectionRecordSchema, discoverySchema, historySchema, type BrowseFacet,
-  lyricsResponseSchema, offlineEntitlementSchema, preferencesSchema, recordingSearchItemSchema,
-  trackInfoSchema, trackViewSchema, type CollectionMutation, type DiscoveryMode, type HistoryEvent, type IssueReportInput,
+  browseCategoryPageSchema, catalogCollectionResponseSchema, catalogSearchResponseSchema, chartListSchema, chartPageSchema, collectionDetailSchema,
+  collectionListSchema, collectionRecordSchema, discoverySchema, historySchema, type BrowseFacet,
+  lyricsResponseSchema, offlineEntitlementSchema, preferencesSchema, requestRecordingInputSchema,
+  searchRequestActionInputSchema, searchRequestListSchema, searchRequestViewSchema,
+  searchRequestCreateInputSchema, trackInfoSchema, trackSourceStateSchema, trackViewSchema, type CollectionMutation, type DiscoveryMode,
+  type HistoryEvent, type IssueReportInput, type SearchRequestAction, type SearchRequestView,
 } from "./music";
 
 export class ApiError extends Error {
@@ -104,6 +106,11 @@ export class MintApi {
     return this.request("music/likes", z.object({ tracks: z.array(z.object({ track: trackViewSchema })) }), { signal });
   }
   setLike(id: string, liked: boolean) { return this.request(`music/likes/${id}`, okSchema, { method: liked ? "PUT" : "DELETE" }); }
+  trackSource(id: string, signal?: AbortSignal) { return this.request(`music/sources/${id}`, trackSourceStateSchema, { signal }); }
+  chooseTrackSource(id: string, videoId: string) {
+    return this.json(`music/sources/${id}`, trackSourceStateSchema, "POST", { action: "choose", videoId });
+  }
+  reportWrongAudio(id: string) { return this.json(`music/sources/${id}`, trackSourceStateSchema, "POST", { action: "wrong" }); }
   preferences(signal?: AbortSignal) { return this.request("music/preferences", preferencesSchema, { signal }); }
   setPrivateSession(privateSession: boolean) { return this.json("music/preferences", preferencesSchema, "PATCH", { privateSession }); }
   history(signal?: AbortSignal) { return this.request("music/history", historySchema, { signal }); }
@@ -115,10 +122,26 @@ export class MintApi {
     return this.json("issue-reports", z.object({ id: z.uuid(), createdAt: z.string() }), "POST", input);
   }
   searchRecordings(q: string, signal?: AbortSignal) {
-    return this.request(`music/search?q=${encodeURIComponent(q)}`, z.object({ items: z.array(recordingSearchItemSchema) }), { signal });
+    return this.request(`music/search?q=${encodeURIComponent(q)}`, catalogSearchResponseSchema, { signal });
   }
-  requestRecording(input: { token: string; youtubeUrl?: string }) {
-    return this.json("music/search", z.object({ trackId: z.uuid(), needsQueue: z.boolean(), stage: z.string() }).passthrough(), "POST", input);
+  listSearchRequests(signal?: AbortSignal) {
+    return this.request("music/search/requests", searchRequestListSchema, { signal });
+  }
+  createSearchRequest(query: string): Promise<{ request: SearchRequestView }> {
+    const input = searchRequestCreateInputSchema.parse({ query });
+    return this.json("music/search/requests", z.object({ request: searchRequestViewSchema }), "POST", input);
+  }
+  actOnSearchRequest(id: string, action: SearchRequestAction): Promise<{ request: SearchRequestView }> {
+    const input = searchRequestActionInputSchema.parse({ id, action });
+    return this.json("music/search/requests", z.object({ request: searchRequestViewSchema }), "POST", input);
+  }
+  requestRecording(input: { token: string; youtubeUrl?: string; searchRequestId?: string; like?: boolean }) {
+    return this.json("music/search", z.object({ trackId: z.uuid(), needsQueue: z.boolean(), stage: z.string() }).passthrough(),
+      "POST", requestRecordingInputSchema.parse(input));
+  }
+  /** Catalog songs for an artist (`ar_…`) or album (`al_…`) page that are not playable yet. */
+  collectionRecordings(id: string, signal?: AbortSignal) {
+    return this.request(`music/search/collection?id=${encodeURIComponent(id)}`, catalogCollectionResponseSchema, { signal });
   }
   openQueue(input: { collection: PlayerCollection; shuffle: boolean; trackId?: string; occurrenceId?: string }, signal?: AbortSignal) {
     return this.json("player/queue", queuePageSchema, "POST", input, signal);

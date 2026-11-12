@@ -98,7 +98,7 @@ test("browse screens are read-only discovery and never acquire from charts", () 
   assert.ok(readdirSync(resolve(import.meta.dirname, "../app/browse")).includes("[facet].tsx"));
   const search = readFileSync(resolve(root, "features/search/SearchScreen.tsx"), "utf8");
   assert.match(search, /<BrowseAll/);
-  assert.match(search, /requestRecording/, "Explicit Search acquisition stays available.");
+  assert.match(search, /useCatalogRequests/, "Explicit Search acquisition stays available.");
 });
 
 test("facet pages follow the server cursor and drop stale or repeated pages", () => {

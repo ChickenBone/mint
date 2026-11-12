@@ -127,6 +127,20 @@
       "when": 1793992000000,
       "tag": "0017_openai_matching",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1794344508253,
+      "tag": "0018_search_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1794430977359,
+      "tag": "0019_source_choices",
+      "breakpoints": true
     }
   ]
 }

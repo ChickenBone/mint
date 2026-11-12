@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 import math
 from contextlib import contextmanager
@@ -12,10 +13,23 @@ from catalog.config import Settings
 from catalog.model import Entity, chart_weight, entity_key
 from catalog.providers import HOSTS, SOURCES, lookup_task, task_source
 
-
+
+# Demand-only search/related jobs share the expansion lanes, and their high priority orders them first
+# there, so a listener's search is crawled within a few host turns rather than behind oldest-due backlog.
+DEMAND_FLOOR = 75
 BULK_JOB_SQL = """(task IN ('mb-albums','mb-songs','deezer-albums',
-    'deezer-tracks','audius-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums')
+    'deezer-tracks','audius-tracks','ytm-artist','ytm-album','ytm-playlist','discogs-albums',
+    'ytm-search','apple-search','mb-search','ytm-related')
     OR (task IN ('lookup','deezer-lookup') AND kind IN ('artist','album')))"""
+SEARCH_TASKS = ("ytm-search", "apple-search", "mb-search")
+
+
+def search_text(value) -> str:
+    """Case-folded single-spaced search text, the identity of a demand search job."""
+    query = " ".join(str(value).split()).casefold()
+    if not 2 <= len(query) <= 200:
+        raise ValueError("Search jobs need 2..200 characters")
+    return query
 
 
 class LeaseLost(RuntimeError):
@@ -42,9 +56,9 @@ class Store:
             conn.execute("SELECT pg_advisory_xact_lock(71628401)")
             conn.execute(Path(__file__).with_name("schema.sql").read_text())
             version = conn.execute("SELECT max(version) AS version FROM catalog_schema").fetchone()
-            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8):
+            if version["version"] not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
                 raise ValueError("Unsupported catalog schema version")
-            for target in range(version["version"] + 1, 9):
+            for target in range(version["version"] + 1, 10):
                 conn.execute(Path(__file__).with_name(f"schema-v{target}.sql").read_text())
                 if target == 4:
                     from catalog.identity import rebuild_artists
@@ -69,6 +83,11 @@ class Store:
             from catalog.model import provider_id
 
             key = f"{task}:{provider_id(identifier, 'ytmusic')}"
+            target_key = None
+        elif task in SEARCH_TASKS:
+            identifier = search_text(identifier)
+            digest = hashlib.sha256(identifier.encode()).hexdigest()[:32]
+            key = f"{task}:{country}:{kind}:{digest}"
             target_key = None
         else:
             target_key = entity_key(

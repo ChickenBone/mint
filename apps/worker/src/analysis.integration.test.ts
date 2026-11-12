@@ -48,7 +48,7 @@ test("PostgreSQL jobs, resumable leases, controls and separately authenticated o
     globals.__mintDb = { db, pool }; config.musicDir = root; config.existingMusicDir = root;
     await mkdir(root);
     try {
-      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0011_analysis_backfill", "0013_analysis_v2"]) {
+      for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0011_analysis_backfill", "0013_analysis_v2", "0019_source_choices"]) {
         const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
         for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
       }

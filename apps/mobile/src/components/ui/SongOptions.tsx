@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PlayerItem } from "@mint/client";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
@@ -16,6 +16,13 @@ export function SongOptions({ item, remove }: { item: PlayerItem; remove?: () =>
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [wrongAudio, setWrongAudio] = useState<"hidden" | "available" | "confirm">("hidden");
+  useEffect(() => {
+    if (!open || !api) return;
+    const controller = new AbortController();
+    api.trackSource(item.id, controller.signal).then((state) => setWrongAudio(state.canReportWrong ? "available" : "hidden"), () => setWrongAudio("hidden"));
+    return () => controller.abort();
+  }, [open, api, item.id]);
   const [playlists, setPlaylists] = useState<Awaited<ReturnType<NonNullable<typeof api>["collections"]>>["collections"] | null>(null);
   async function act(action: () => Promise<unknown>, success: string) {
     setBusy(true); setError(null); setMessage(null);
@@ -28,7 +35,7 @@ export function SongOptions({ item, remove }: { item: PlayerItem; remove?: () =>
     await act(async () => { const result = await api.collections(); setPlaylists(result.collections.filter((collection) => !collection.rules)); }, "Choose a playlist below.");
   }
   return <>
-    <Pressable accessibilityRole="button" accessibilityLabel={`Options for ${item.title}`} onPress={() => { setOpen(true); setError(null); setMessage(null); setPlaylists(null); }}
+    <Pressable accessibilityRole="button" accessibilityLabel={`Options for ${item.title}`} onPress={() => { setOpen(true); setError(null); setMessage(null); setPlaylists(null); setWrongAudio("hidden"); }}
       style={s.trigger}><Ionicons name="ellipsis-horizontal" size={22} color={colors.muted} /></Pressable>
     <Modal visible={open} transparent animationType="none" onRequestClose={() => setOpen(false)}>
       <View style={s.overlay}><View accessibilityViewIsModal style={s.sheet}>
@@ -43,6 +50,9 @@ export function SongOptions({ item, remove }: { item: PlayerItem; remove?: () =>
           <Button label="Add to playlist" quiet disabled={!api || busy} onPress={() => void choosePlaylist()} />
           <Button label="Download" quiet disabled={!player.capabilities.offline || busy} onPress={() => void act(() => player.download(item), "Download requested. Check its status in Settings.")} />
           {!player.capabilities.offline ? <Text style={s.secondary}>Offline downloads are not supported on this platform.</Text> : null}
+          {api && wrongAudio !== "hidden" ? <Button label={wrongAudio === "confirm" ? "Confirm: find different audio" : "Wrong audio"} quiet disabled={busy}
+            onPress={() => wrongAudio === "available" ? setWrongAudio("confirm")
+              : void act(async () => { await api.reportWrongAudio(item.id); setWrongAudio("hidden"); }, "Finding different audio. This upload won't be used again.")} /> : null}
           {remove ? <Button label="Remove from this playlist" quiet disabled={busy} onPress={() => void act(remove, "Removed from this playlist.")} /> : null}
           {playlists?.map((collection) => <Button key={collection.id} label={collection.title} quiet disabled={busy}
             onPress={() => api && void act(async () => {

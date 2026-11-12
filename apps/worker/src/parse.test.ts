@@ -40,6 +40,23 @@ test("uses channel as artist when nothing else matches", () => {
   assert.equal(parseYoutubeMeta({ title: "Untitled", channelTitle: "SomeArtistVEVO" }).artist, "SomeArtist");
 });
 
+test("label-channel quoted songs and explicit video album suffixes retain song identity", () => {
+  const quoted = parseYoutubeMeta({ title: "Mint Band (\uBBFC\uD2B8) 'First Light' Official MV", channelTitle: "Fictional Label" });
+  assert.deepEqual(quoted, { artist: "Mint Band", title: "First Light", album: null, year: null });
+  const suffix = parseYoutubeMeta({ title: "Mint Fixture - Tit\u00ed (Official Video) | Example Album", channelTitle: "Mint Fixture" });
+  assert.equal(suffix.title, "Tit\u00ed");
+  assert.equal(suffix.album, "Example Album");
+  assert.equal(parseYoutubeMeta({ title: "Mint Fixture - First Light (Official Animated Music Video)", channelTitle: "Mint Fixture" }).title, "First Light");
+  assert.equal(parseYoutubeMeta({ title: "Mint Fixture - First Light | Second Light", channelTitle: "Mint Fixture" }).title,
+    "First Light | Second Light", "unlabeled multi-song titles must not be truncated");
+  assert.equal(parseYoutubeMeta({ title: "Mint Fixture - First Light (Live) (Official Video)", channelTitle: "Mint Fixture" }).title,
+    "First Light (Live)", "version labels survive import");
+  assert.equal(parseYoutubeMeta({ title: "Mint Fixture - First Light (Official Video) | feat Wrong Guest", channelTitle: "Mint Fixture" }).title,
+    "First Light | feat Wrong Guest", "a guest suffix cannot be treated as an album");
+  assert.equal(parseYoutubeMeta({ title: "Mint Fixture (feat Wrong Guest) 'First Light' Official MV", channelTitle: "Label" }).artist,
+    "Mint Fixture (feat Wrong Guest)", "only the explicit Korean alias presentation is stripped");
+});
+
 test("parses ISO durations", () => {
   assert.equal(parseIsoDuration("PT3M21S"), 201);
   assert.equal(parseIsoDuration("PT1H2M3S"), 3723);
