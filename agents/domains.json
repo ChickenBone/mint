@@ -789,8 +789,8 @@
     {
       "id": "agent-tooling",
       "title": "Agent routing and local memory",
-      "summary": "Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory",
-      "keywords": ["agent context", "domain", "routing", "instructions", "context tooling", "starter prompt", "system prompt", "agent memory", "local memory", "task tracking", "session todos", "session sql", "mint-task-tracking", "orchestrate", "child sessions", "feature folders", "events feature", "profiles", "jams", "future mobile", "extension seam"],
+      "summary": "Domain manifest/cards, generated path instructions, bounded context tooling, collaboration and opt-in task memory",
+      "keywords": ["agent context", "domain", "routing", "instructions", "context tooling", "starter prompt", "system prompt", "agent memory", "local memory", "task tracking", "session todos", "session sql", "mint-task-tracking", "orchestrate", "child sessions", "feature folders", "events feature", "profiles", "jams", "future mobile", "extension seam", "dispatcher", "exclusive claims", "collaboration"],
       "guides": ["agents/working-at-scale.md", "agents/local-memory.md"],
       "paths": [
         "scripts/agents/**",
@@ -802,6 +802,7 @@
         "agents/working-at-scale.md",
         "agents/local-memory.md",
         "agents/starter-prompt.md",
+        "agents/collaboration.md",
         "agents/mobile-features.md"
       ],
       "validate": ["npm run agents:check -- --strict", "npm run test:agents"]

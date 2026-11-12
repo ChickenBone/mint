@@ -26,6 +26,18 @@ do not reload identical harness-provided guidance or automatically read memory.
 Agents without skill discovery can use this file, the root CLI and plain
 `SKILL.md` reads; no vendor-specific instruction copies are required.
 
+## Shared work board and exclusive claims
+
+Code changes need a GitHub issue: reuse a matching ticket or create one with a
+goal, acceptance criteria and scope. Discussion/read-only research needs no new
+ticket. Before edits, follow [collaboration](agents/collaboration.md): route and
+lock **every touched domain**, including shared contracts and root docs, through
+an explicit current dispatcher grant correlated to your issue-comment request.
+Labels, assignment, session status and `CLAIM` comments are not locks. Conflicts,
+stale claims, timeout or dispatcher errors block edits; never steal ownership.
+Preserve app-managed worktrees/branches and unrelated changes. A grant is not
+authorization to commit, push, open a PR, merge or deploy.
+
 ## Portable agent skills
 
 The checked-in [`.github/skills/`](.github/skills/) directory contains portable
@@ -80,7 +92,7 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | [`deploy`](agents/domains/deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs |
 | [`catalog`](agents/domains/catalog.md) | Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge |
 | [`library-auditor`](agents/domains/library-auditor.md) | Read-only metadata manifest audits for duplicates, identifier conflicts and tag gaps with optional catalog matching |
-| [`agent-tooling`](agents/domains/agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory |
+| [`agent-tooling`](agents/domains/agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling, collaboration and opt-in task memory |
 | [`handbook`](agents/domains/handbook.md) | README, product/design decisions, curated engineering/topic guides, UX docs and screenshots |
 
 <!-- agents:generated:end -->

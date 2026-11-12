@@ -3,11 +3,14 @@
 ## Boundaries
 
 - Owns `scripts/agents`, the manifest/domain cards/generated path instructions,
-  the working-at-scale/mobile-features/starter-prompt/local-memory guides and
+  the working-at-scale/mobile-features/starter-prompt/local-memory/collaboration guides and
   `.github/skills/mint-task-tracking/**`. This specific path overrides the generic
   mobile-design skill owner.
 - `handbook` owns curated product/engineering/design guidance and root README/AGENTS prose. Generated root sections are coordinated output, not permission to edit unrelated content.
 - One writer updates the manifest and sync output in a shared checkout. Memory helpers remain opt-in; they never load private evidence into public packets.
+- [Collaboration](../collaboration.md) uses external dispatcher transactions for
+  exclusive domain claims; this repository's routing/ownership tools do not
+  acquire locks. Root prose still needs its `handbook` owner.
 
 ## Invariants
 
@@ -33,18 +36,18 @@ not a fake active product implementation or permission to add one.
 
 ## Generated map
 
-- **Scope:** Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory.
+- **Scope:** Domain manifest/cards, generated path instructions, bounded context tooling, collaboration and opt-in task memory.
 - **Read before editing:** [agents/working-at-scale.md](../working-at-scale.md), [agents/local-memory.md](../local-memory.md).
 - **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map agent-tooling` (exports, line counts, cross-domain import edges).
 
-### Owned files (67)
+### Owned files (68)
 
 - `.github/instructions/` `acquisition.instructions.md`, `agent-tooling.instructions.md`, `analysis.instructions.md`, `catalog.instructions.md`, `collections.instructions.md`, `deploy.instructions.md`, `devices.instructions.md`, `handbook.instructions.md`, `library-auditor.instructions.md`, `library.instructions.md`, `mobile-albums.instructions.md`, `mobile-artists.instructions.md`, `mobile-contracts.instructions.md`, `mobile-design.instructions.md`, `mobile-home.instructions.md`, `mobile-playback.instructions.md`, `mobile-player.instructions.md`, `mobile-playlists.instructions.md`, `mobile-search.instructions.md`, `mobile-settings.instructions.md`, `mobile-your-music.instructions.md`, `mobile.instructions.md`, `platform.instructions.md`, `playback.instructions.md`, `providers.instructions.md`, `realtime.instructions.md`, `web-shell.instructions.md`, `workers.instructions.md`
 - `.github/skills/mint-task-tracking/` `SKILL.md`
 - `.github/skills/orchestrate/` `SKILL.md`
-- `agents/` `domains.json`, `local-memory.md`, `mobile-features.md`, `starter-prompt.md`, `working-at-scale.md`
+- `agents/` `collaboration.md`, `domains.json`, `local-memory.md`, `mobile-features.md`, `starter-prompt.md`, `working-at-scale.md`
 - `agents/domains/` `README.md`, `acquisition.md`, `agent-tooling.md`, `analysis.md`, `catalog.md`, `collections.md`, `deploy.md`, `devices.md`, `handbook.md`, `library-auditor.md`, `library.md`, `mobile-albums.md`, `mobile-artists.md`, `mobile-contracts.md`, `mobile-design.md`, `mobile-home.md`, `mobile-playback.md`, `mobile-player.md`, `mobile-playlists.md`, `mobile-search.md`, `mobile-settings.md`, `mobile-your-music.md`, `mobile.md`, `platform.md`, `playback.md`, `providers.md`, `realtime.md`, `web-shell.md`, `workers.md`
 - `scripts/agents/` `cli.mjs`, `lib.mjs`, `lib.test.mjs`
 

@@ -131,6 +131,21 @@ test("standalone library quality audits route separately from Mint library runti
   assert.ok(!packet.read.includes("agents/architecture.md"));
 });
 
+test("dispatcher collaboration routes to tooling while root prose retains handbook ownership", () => {
+  const current = compileManifest(JSON.parse(readFileSync(
+    new URL("../../agents/domains.json", import.meta.url), "utf8",
+  )));
+  const ownership = resolveOwnership(current, [
+    "agents/collaboration.md", "agents/starter-prompt.md", "AGENTS.md",
+  ]);
+  for (const query of ["dispatcher", "exclusive claims", "collaboration"]) {
+    const packet = routingPlan(current, ownership.owners, [query]);
+    assert.equal(packet.domains[0].id, "agent-tooling", query);
+  }
+  const packet = routingPlan(current, ownership.owners, ["agents/collaboration.md", "AGENTS.md"]);
+  assert.deepEqual(new Set(packet.domains.map((domain) => domain.id)), new Set(["agent-tooling", "handbook"]));
+});
+
 test("importSpecifiers finds static, type, re-export, side-effect and dynamic imports", () => {
   // Built from parts so the repository's own import scanner does not see a real cross-domain edge here.
   const im = "import";
