@@ -57,9 +57,9 @@ Owned tests: 8.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/artwork.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/artwork.test.ts
 npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test src/artwork.integration.test.ts src/artwork.test.ts src/jobs/library-index.integration.test.ts src/jobs/library-policy.test.ts src/services/artist-metadata.test.ts src/services/artwork.test.ts src/services/public-metadata.test.ts
+npm exec -w @mint/worker -- tsx --test --test-force-exit src/artwork.integration.test.ts src/artwork.test.ts src/jobs/library-index.integration.test.ts src/jobs/library-policy.test.ts src/services/artist-metadata.test.ts src/services/artwork.test.ts src/services/public-metadata.test.ts
 npm run typecheck -w @mint/core
 ```
 

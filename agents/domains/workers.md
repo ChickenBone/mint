@@ -56,7 +56,7 @@ npm run typecheck -w @mint/agent
 npm exec -w @mint/agent -- tsx --test src/connection.test.ts src/heartbeat.test.ts
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/worker-compose.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/worker-compose.test.ts
 npm run typecheck -w @mint/worker
 npm run typecheck -w @mint/core
 ```

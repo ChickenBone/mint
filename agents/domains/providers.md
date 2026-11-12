@@ -60,9 +60,9 @@ Owned tests: 6.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/charts-db.test.ts tests/charts-source.test.ts tests/charts.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/charts-db.test.ts tests/charts-source.test.ts tests/charts.test.ts
 npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test src/chart-acquisition.test.ts src/spotify.integration.test.ts src/spotify.test.ts
+npm exec -w @mint/worker -- tsx --test --test-force-exit src/chart-acquisition.test.ts src/spotify.integration.test.ts src/spotify.test.ts
 npm run typecheck -w @mint/core
 ```
 

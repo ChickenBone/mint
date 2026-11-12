@@ -49,7 +49,7 @@ Owned tests: 2.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/devices-db.test.ts tests/devices.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/devices-db.test.ts tests/devices.test.ts
 npm run typecheck -w @mint/core
 ```
 

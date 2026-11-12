@@ -64,9 +64,9 @@ Owned tests: 10.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/backlog.test.ts tests/music-requests.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/backlog.test.ts tests/music-requests.test.ts
 npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test src/audio-regression.test.ts src/jobs/media.integration.test.ts src/jobs/torbox-bridge.integration.test.ts src/music-requests.test.ts src/parse.test.ts src/services/prowlarr.test.ts src/services/torbox.test.ts
+npm exec -w @mint/worker -- tsx --test --test-force-exit src/audio-regression.test.ts src/jobs/media.integration.test.ts src/jobs/torbox-bridge.integration.test.ts src/music-requests.test.ts src/parse.test.ts src/services/prowlarr.test.ts src/services/torbox.test.ts
 npm run typecheck -w @mint/core
 npm exec -w @mint/core -- tsx --test src/youtube-scrape.test.ts
 ```

@@ -43,7 +43,7 @@ Owned tests: 5.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/native-auth.test.ts tests/native-http.integration.test.ts tests/native-sessions.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/native-auth.test.ts tests/native-http.integration.test.ts tests/native-sessions.test.ts
 npm run typecheck -w @mint/client
 npm exec -w @mint/client -- tsx --test tests/analysis.test.ts tests/client.test.ts
 ```
