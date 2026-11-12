@@ -62,7 +62,10 @@ jobs:
           DEVICE_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_library_test
           MINT_SPOTIFY_TEST_DATABASE_URL: postgres://mint:fixture-only@localhost:5432/mint_spotify_test
       - run: npm run build
-      - run: npm audit --omit=dev --audit-level=moderate
+      # Block on advisories that can ship in server images; report mobile-only ones without blocking deploys.
+      - run: npm audit --omit=dev --audit-level=moderate -w @mint/web -w @mint/worker -w @mint/core -w @mint/client -w @mint/realtime -w @mint/agent
+      - run: npm audit --omit=dev --audit-level=moderate -w @mint/mobile
+        continue-on-error: true
       - name: Validate deployment files
         run: |
           docker compose config --quiet
