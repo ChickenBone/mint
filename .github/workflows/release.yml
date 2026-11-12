@@ -69,29 +69,22 @@ jobs:
     needs: image
     if: github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     environment: production
     steps:
-      - uses: actions/checkout@v5
-        with:
-          sparse-checkout: |
-            docker-compose.yml
-            docker-compose.vercel.yml
-            docker-compose.nas.yml
-            docker-compose.nas-migrate.yml
-            docker-compose.musicbrainz.yml
-          sparse-checkout-cone-mode: false
       - name: Install SSH key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          echo "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-      - name: Ship compose files and roll the stack
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+      - name: Ask the VM's health-gated updater to check for a release
         env:
           HOST: ${{ secrets.DEPLOY_HOST }}
           USER: ${{ secrets.DEPLOY_USER }}
-          DIR: ${{ vars.DEPLOY_PATH || '/srv/mint' }}
         run: |
-          scp docker-compose.yml docker-compose.vercel.yml docker-compose.nas.yml docker-compose.nas-migrate.yml docker-compose.musicbrainz.yml "$USER@$HOST:$DIR/"
-          ssh "$USER@$HOST" "cd '$DIR' && docker compose pull && docker compose up -d --remove-orphans && docker image prune -f"
+          ssh -o BatchMode=yes -o StrictHostKeyChecking=yes "$USER@$HOST" \
+            'sudo -n systemctl start mint-deploy.service'

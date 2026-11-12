@@ -142,7 +142,13 @@ test("unreachable, slow, rejected and malformed catalogs are unavailable, never 
   const slow = setup((_url, init) => new Promise<Response>((_resolve, reject) => {
     init.signal!.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
   }));
-  assert.deepEqual(await searchCatalog("fake love", { ...slow.options, timeoutMs: 20 }), { status: "unavailable", reason: "timeout", retryAfterSeconds: null });
+  // Keep the test alive while AbortSignal.timeout's unreferenced timer is pending.
+  const keepAlive = setInterval(() => {}, 100);
+  try {
+    assert.deepEqual(await searchCatalog("fake love", { ...slow.options, timeoutMs: 20 }), { status: "unavailable", reason: "timeout", retryAfterSeconds: null });
+  } finally {
+    clearInterval(keepAlive);
+  }
   for (const status of [400, 404, 422]) {
     const rejected = setup(() => Response.json({ detail: "Invalid host header" }, { status }));
     assert.equal((await searchCatalog("fake love", rejected.options) as { reason?: string }).reason, "misconfigured", String(status));

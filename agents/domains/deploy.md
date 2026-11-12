@@ -12,6 +12,7 @@
 - The public web app has no music mount, Plex admin token or media-network access. The pipeline worker bridges private `data` and `media` networks, while PostgreSQL and Redis stay private.
 - All-in-one Compose is the recommended deployment. Vercel split hosting needs separately validated private connectivity.
 - Upgrade order: update the pipeline worker first, wait for migrations and health, then update web.
+- ESXi uses a VM-local pull updater, not a public self-hosted runner. Require same-commit CI/image success; web-only blue/green rollouts retain the old build, while worker/schema/infrastructure changes and retained-slot retirement are admitted only at 04:00-04:30 America/Chicago. See the self-hosting guide for capacity, adoption and recovery limits.
 - Never use volume or data deletion, host or none network modes, or static container IPs as generic fixes.
 - A successful push does not prove CI passed or images were published. Verify the Release workflow before claiming GHCR availability.
 - Mobile-only `main` pushes skip Docker publication and optional server deployment; shared/client/core, backend or mixed changes still release. Tags and manual releases remain unfiltered, and required CI still runs for mobile changes. Keep exclusions limited to the mobile paths in `release.yml`, not global handbook/docs paths.
@@ -37,24 +38,26 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (32)
+### Owned files (41)
 
 - `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.catalog.yml`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `android-apk.yml`, `ci.yml`, `ios-eas.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
 - `deploy/docker/` `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`
+- `deploy/esxi/` `.gitattributes`, `install.sh`, `mint-deploy.py`, `mint-deploy.service`, `mint-deploy.test.mjs`, `mint-deploy.test.py`, `mint-deploy.timer`, `mint-maintenance.service`, `mint-maintenance.timer`
 - `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`, `ios-distribution.mjs`, `ios-distribution.test.mjs`
 - `docs/` `android-builds.md`, `ios-builds.md`, `self-hosting.md`
 
 ### Validate
 
-Owned tests: 5.
+Owned tests: 6.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
+node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/esxi/mint-deploy.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
 docker compose config --quiet
+node --test deploy/esxi/*.test.mjs
 node --import tsx --test deploy/mobile/*.test.mjs
 ```
 

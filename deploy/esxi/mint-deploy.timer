@@ -1,0 +1,10 @@
+[Unit]
+Description=Poll for green Mint releases without interrupting playback
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target
