@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { TrackList } from "../track-list";
 import { useLiveTracks, useRealtime } from "../realtime";
 import { RetryButton } from "./retry-button";
+import { TrackSourceActions } from "./track-source-actions";
 import type { PlayerCollection } from "@/lib/player-protocol";
 
 /**
@@ -40,7 +41,7 @@ export function LiveTrackList({
       flash={flash}
       showStage={mode === "jobs"}
       empty={empty}
-      actions={(t) => (t.stage === "failed" ? <RetryButton trackId={t.id} /> : mode === "jobs" && t.stage === "searching" ? <RetryButton trackId={t.id} forceCobalt /> : null)}
+      actions={(t) => (t.stage === "failed" || t.stage === "ready" || t.stage === "analyzing" ? <TrackSourceActions track={t} /> : mode === "jobs" && t.stage === "searching" ? <RetryButton trackId={t.id} forceCobalt /> : null)}
     />
   );
 }

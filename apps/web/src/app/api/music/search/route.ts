@@ -3,7 +3,10 @@ import { z } from "zod";
 import { getUser } from "@/lib/auth";
 import { boundedJson, originAllowed, publicUrl, RequestInputError } from "@/lib/request";
 import { MusicError } from "@mint/core/music";
-import { searchRecordings, requestRecording, type RecordingSearchResponse } from "@/lib/music-requests";
+import { noteCatalogDemand } from "@mint/core/catalog-client";
+import { getDb } from "@mint/core/db";
+import { musicLikes } from "@mint/core/music-db";
+import { searchCatalogRecordings, requestRecording } from "@/lib/music-requests";
 import { NeedsVideoError, resolveAndRequest } from "@/lib/resolve-request";
 import { rateLimit } from "@/lib/rate-limit";
 import { enqueueRequested } from "@/lib/queues";
@@ -18,22 +21,25 @@ async function handle(request: Request) {
   try {
     if (request.method === "GET") {
       const q = z.string().trim().min(2).max(100).parse(new URL(request.url).searchParams.get("q"));
-      if (!(await rateLimit(`recordings:${user.id}`, 20, 60)) || !(await rateLimit("recording-catalog", 1, 1))) return json({ error: "Wait a second before searching the recording catalog again." }, 429);
-      return json({ items: await searchRecordings(user.id, q, fetch, undefined, { signal: request.signal }) } satisfies RecordingSearchResponse);
+      if (!(await rateLimit(`recordings:${user.id}`, 20, 60))) return json({ error: "Wait a moment before searching the music catalog again." }, 429);
+      noteCatalogDemand({ type: "search", query: q });
+      return json(await searchCatalogRecordings(user.id, q, { signal: request.signal }));
     }
     if (!mutationAllowed(request)) return json({ error: "Request origin not allowed." }, 403);
     if (!request.headers.get("content-type")?.includes("application/json")) return json({ error: "Send a JSON request." }, 400);
     if (!(await rateLimit(`music-request:${user.id}`, 30, 600))) return json({ error: "Too many song requests. Try again in ten minutes." }, 429);
     const input = z.union([
-      z.object({ token: z.string().min(1).max(10_000), youtubeUrl: z.string().max(2048).optional() }),
-      z.object({ query: z.string().trim().min(2).max(100), youtubeUrl: z.string().max(2048).optional() }),
+      z.object({ token: z.string().min(1).max(10_000), youtubeUrl: z.string().max(2048).optional(), searchRequestId: z.uuid().optional(), like: z.boolean().optional() }),
+      z.object({ query: z.string().trim().min(2).max(100), youtubeUrl: z.string().max(2048).optional(), like: z.boolean().optional() }),
     ]).parse(await boundedJson(request, 15000));
     if ("query" in input && (!(await rateLimit(`recordings:${user.id}`, 20, 60)) || !(await rateLimit("recording-catalog", 1, 1)))) return json({ error: "Wait a second before searching the recording catalog again." }, 429);
     const result = "query" in input
       ? await resolveAndRequest(user.id, input.query, input.youtubeUrl)
-      : await requestRecording(user.id, input.token, input.youtubeUrl);
+      : await requestRecording(user.id, input.token, input.youtubeUrl, undefined, input.searchRequestId);
+    // Liking a catalog song saves it to Liked songs now; it becomes playable there when its import finishes.
+    if (input.like) await getDb().insert(musicLikes).values({ userId: user.id, trackId: result.trackId }).onConflictDoNothing();
     if (result.needsQueue) await enqueueRequested(result.trackId, user.id);
-    return json(result);
+    return json({ ...result, liked: !!input.like });
   } catch (error) {
     if (request.method === "GET" && request.signal.aborted) return json({ error: "Search cancelled." }, 499);
     if (error instanceof NeedsVideoError) return json({ error: error.message, needsVideo: true }, error.status);

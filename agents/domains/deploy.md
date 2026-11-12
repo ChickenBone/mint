@@ -36,9 +36,9 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (26)
+### Owned files (27)
 
-- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
+- `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.catalog.yml`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `android-apk.yml`, `ci.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
 - `deploy/docker/` `caddy.test.mjs`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`

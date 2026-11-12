@@ -20,7 +20,7 @@ from catalog.model import (
 )
 from catalog.providers import PUBLIC_SOURCES, SOURCES, external_identity
 from catalog.sources import Deferred, Sources
-from catalog.store import LeaseLost, Store
+from catalog.store import DEMAND_FLOOR, LeaseLost, SEARCH_TASKS, Store
 from catalog.workers import run_workers
 from catalog.youtube import (
     YOUTUBE_ERRORS,
@@ -31,6 +31,7 @@ from catalog.youtube import (
 )
 
 
+DEMAND_ONLY_TASKS = (*SEARCH_TASKS, "ytm-related")
 log = logging.getLogger(__name__)
 SOURCE_ERRORS = (
     ValueError,
@@ -80,6 +81,18 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         entities = lookup_entities(
             payload, country, 201 if job["kind"] == "song" else 201 * (1 + len(companions))
         )
+    elif task == "apple-search":
+        entities = lookup_entities(payload, country, 50)
+    elif task == "mb-search":
+        rows = payload["recordings"]
+        if not isinstance(rows, list) or len(rows) > 100:
+            raise ValueError("Invalid MusicBrainz search page")
+        entities = []
+        for row in rows:
+            try:
+                entities.append(replace(musicbrainz_entity("song", row), quality=0))
+            except (KeyError, TypeError, ValueError):
+                continue
     elif task == "lb-chart":
         ranked = listenbrainz_entities(payload)
         entities = [entity for entity, _ in ranked]
@@ -147,8 +160,15 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
                 leased,
                 store.settings.chart_interval
                 if ranked is not None or task == "yt-feed"
+                else 30 * 86400
+                if task in DEMAND_ONLY_TASKS
                 else 7 * 86400,
             )
+            if leased.get("priority", 0) >= DEMAND_FLOOR and not (
+                leased["task"] == "chart" or leased["task"].endswith("-chart")
+            ):
+                # Served demand decays so it cannot monopolise expansion lanes; new demand re-raises it.
+                conn.execute("UPDATE jobs SET priority=0 WHERE key=%s", (leased["key"],))
         store.activity(
             conn,
             "crawler",

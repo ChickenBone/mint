@@ -27,7 +27,7 @@ Details: [workers and operations](../workers-and-operations.md).
 
 - **Scope:** Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI.
 - **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Imported by:** [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map workers` (exports, line counts, cross-domain import edges).
 
@@ -56,7 +56,7 @@ npm run typecheck -w @mint/agent
 npm exec -w @mint/agent -- tsx --test src/connection.test.ts src/heartbeat.test.ts
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/worker-compose.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/worker-compose.test.ts
 npm run typecheck -w @mint/worker
 npm run typecheck -w @mint/core
 ```

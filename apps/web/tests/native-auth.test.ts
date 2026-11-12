@@ -53,6 +53,15 @@ test("consumer allowlist excludes admin, workers, chart acquisition and path tra
   assert.equal(nativeRouteAllowed(["player", "audio", "track"], "HEAD"), true);
   assert.equal(nativeRouteAllowed(["player", "offline"], "GET"), true);
   assert.equal(nativeRouteAllowed(["music", "collections"], "POST"), true);
+  assert.equal(nativeRouteAllowed(["music", "search", "requests"], "GET"), true);
+  assert.equal(nativeRouteAllowed(["music", "search", "requests"], "POST"), true);
+  assert.equal(nativeRouteAllowed(["music", "search", "requests"], "DELETE"), false);
+  assert.equal(nativeRouteAllowed(["music", "sources", "track-id"], "GET"), true);
+  assert.equal(nativeRouteAllowed(["music", "sources", "track-id"], "POST"), true);
+  assert.equal(nativeRouteAllowed(["music", "sources", "track-id"], "DELETE"), false);
+  assert.equal(nativeRouteAllowed(["music", "sources"], "GET"), false);
+  assert.match(readFileSync(new URL("../src/app/api/native/[...path]/route.ts", import.meta.url), "utf8"),
+    /music\/search\/requests[\s\S]*?searchRequests\.GET[\s\S]*?searchRequests\.POST/);
   assert.equal(nativeRouteAllowed(["player", "audio", "track"], "POST"), false);
   assert.equal(nativeRouteAllowed(["player", "analysis", "track"], "GET"), true);
   assert.equal(nativeRouteAllowed(["player", "analysis"], "GET"), false);

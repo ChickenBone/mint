@@ -8,6 +8,7 @@ import { Button, Field, Notice } from "../../components/ui/primitives";
 import { useResource } from "../../hooks/useResource";
 import { loadPlaylistDetail, playlistControls, playlistSelection } from "./playlist-model";
 import { usePlaylistActions } from "./usePlaylistActions";
+import { LikedImports } from "./LikedImports";
 
 export function PlaylistScreen() {
   const params = useLocalSearchParams<{ id: string; source?: string }>();
@@ -32,6 +33,7 @@ export function PlaylistScreen() {
       {deletable ? <Button label="Delete playlist" quiet disabled={actions.busy} onPress={() => actions.setDeleting(true)} /> : null}
     </>}
     beforeTracks={<>
+      {id === "liked" ? <LikedImports onReady={detail.reload} /> : null}
       {actions.editing ? <View style={s.edit}><Field label="Playlist name" value={actions.name} maxLength={200} onChangeText={actions.setName} />
         <View style={screenStyles.shortcuts}><Button label="Save" busy={actions.busy} disabled={!actions.name.trim()} onPress={() => void actions.save()} />
           <Button label="Cancel" quiet onPress={() => actions.setEditing(false)} /></View></View> : null}

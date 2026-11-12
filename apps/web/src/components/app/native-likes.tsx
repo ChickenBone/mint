@@ -4,12 +4,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { TrackView } from "@mint/core/events";
-import { Download, Heart, Play, Shuffle } from "lucide-react";
+import { Download, Heart, Loader2, Play, Shuffle } from "lucide-react";
 import { ArtworkAtmosphere } from "@/components/artwork";
+import { useRealtime } from "@/components/realtime";
 import { importLikedSongs, musicRequest } from "@/lib/music-client";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { MusicTrackList } from "./music-track-list";
+import { TrackSourceActions } from "./track-source-actions";
 import { usePlayer } from "./player";
+
+const settledStages = new Set(["ready", "analyzing", "failed"]);
+
+/** Listener-facing import status for a liked song that is not playable yet. */
+export function importStatus(track: Pick<TrackView, "stage" | "progress"> & Partial<Pick<TrackView, "detail">>) {
+  if (track.stage === "failed") return track.detail === "Needs a source" ? "Needs a source" : "Couldn’t import";
+  if (track.stage === "downloading" && track.progress > 0) return `Importing · ${Math.round(track.progress * 100)}%`;
+  if (track.stage === "queued") return "Waiting to import";
+  if (track.stage === "matching" || track.stage === "searching") return "Finding a source…";
+  return "Importing…";
+}
 
 export function NativeLikes({ importedLikes = { tracks: [], nextCursor: null } }: {
   importedLikes?: { tracks: TrackView[]; nextCursor: string | null };
@@ -69,6 +82,25 @@ export function NativeLikes({ importedLikes = { tracks: [], nextCursor: null } }
       active = false;
     };
   }, []);
+
+  useRealtime((event) => {
+    if (event.type !== "track") return;
+    const update = event.data;
+    setTracks((current) => current?.some((track) => track.id === update.id)
+      ? current.map((track) => track.id === update.id ? { ...track, ...update } : track) : current);
+  });
+
+  const pending = !!tracks?.some((track) => !settledStages.has(track.stage));
+  useEffect(() => {
+    if (!pending) return;
+    let active = true;
+    const timer = window.setInterval(() => {
+      void musicRequest<{ tracks: { track: TrackView }[] }>("likes")
+        .then((r) => { if (active) setTracks(r.tracks.map((entry) => entry.track)); })
+        .catch(() => undefined);
+    }, 5_000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [pending]);
 
   return (
     <section aria-labelledby="mint-likes-heading">
@@ -131,12 +163,18 @@ export function NativeLikes({ importedLikes = { tracks: [], nextCursor: null } }
           playAsQueue
           entries={tracks.map((track) => ({ key: track.id, track }))}
           actions={(_, track) => (
-            <div className="flex flex-wrap gap-2">
-            <Link href={`/app/collection?tab=downloads&kind=native-liked&id=${track.id}&track=${track.id}&title=${encodeURIComponent(track.title)}`}
+            <div className="flex flex-wrap items-center gap-2">
+            {!["ready", "analyzing"].includes(track.stage) && <span role="status" aria-label={`${track.title}: ${importStatus(track)}`}
+              className={`inline-flex min-h-11 items-center gap-2 px-2 text-xs ${track.stage === "failed" ? "text-warn" : "text-muted"}`}>
+              {track.stage !== "failed" && <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden />}
+              {importStatus(track)}
+            </span>}
+            <TrackSourceActions track={track} />
+            {["ready", "analyzing"].includes(track.stage) && <Link href={`/app/collection?tab=downloads&kind=native-liked&id=${track.id}&track=${track.id}&title=${encodeURIComponent(track.title)}`}
               aria-label={`Download ${track.title}`}
               className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-fg">
               <Download className="size-4" aria-hidden /> Download
-            </Link>
+            </Link>}
             <button
               type="button"
               className="min-h-11 rounded-full px-3 text-sm text-muted hover:bg-hover hover:text-danger"

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -226,11 +226,13 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   const savedCover = "https://archive.org/download/fixture/existing.jpg";
   await db.update(schema.tracks).set({ artworkUrl: savedCover });
   const originalBytes = await readFile(path.join(root, "fixture.audio"));
+  // Distinct per-run release groups keep each album's shared public-cache entry independent.
+  const releaseGroups = Array.from({ length: 12 }, () => randomUUID());
   const artRows = await db.insert(schema.tracks).values(Array.from({ length: 12 }, (_, album) =>
     Array.from({ length: 2 }, (_, song) => ({
       title: `Artwork track ${song}`, artist: "Artwork Fixture",
       album: `Album ${String(album).padStart(2, "0")}`,
-      mbReleaseGroupId: "8e8a594f-2175-38c7-a871-abb68ec363e7",
+      mbReleaseGroupId: releaseGroups[album]!,
       filePath: "/existing-music/fixture.audio", stage: "ready" as const,
       artworkUrl: song === 0 && album === 0 ? savedCover : null,
     })),
@@ -258,16 +260,18 @@ test("20,000-song Plex import, idempotence, reuse, upgrades and read-only bounda
   await backfillArtwork();
   assert.equal(lookups, 12, "cached cover must be reused for later tracks on an already matched album");
   await backfillArtwork();
-  await db.update(schema.tracks).set({ artworkUrl: null, album: "Transient" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Transient", mbReleaseGroupId: randomUUID() }).where(eq(schema.tracks.id, artRows[1]!.id));
   unavailable = true;
   await backfillArtwork();
   await backfillArtwork();
   unavailable = false;
+  // The 503 starts the shared provider cooldown; expire it as if the retry window had passed.
+  await redis.del("mint:public:cooldown:CoverArtArchive");
   await backfillArtwork();
   assert.equal(lookups, 14, "transient API failure must be retried, not cached as no cover");
   assert.equal((await db.select().from(schema.tracks).where(eq(schema.tracks.id, artRows[1]!.id)))[0]!.artworkUrl?.endsWith("front-500.jpg"), true);
   await backfillArtwork();
-  await db.update(schema.tracks).set({ artworkUrl: null, album: "Missing" }).where(eq(schema.tracks.id, artRows[1]!.id));
+  await db.update(schema.tracks).set({ artworkUrl: null, album: "Missing", mbReleaseGroupId: randomUUID() }).where(eq(schema.tracks.id, artRows[1]!.id));
   absent = true;
   await backfillArtwork();
   await backfillArtwork();

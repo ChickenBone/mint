@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getUser } from "@/lib/auth";
-import { CatalogInputError, catalogItems } from "@/lib/player-catalog";
+import { CatalogInputError, catalogItems, noteCollectionDemand } from "@/lib/player-catalog";
 import { collectionFromParams } from "@/lib/browser-catalog";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +23,11 @@ export async function GET(request: Request) {
   const { q, start, size, type, sort } = query.data;
   const collection = collectionFromParams(params);
   if (!collection.success) return json({ error: "Invalid music collection" }, 400);
-  try { return json(await catalogItems({ start, size, type, sort, q, collection: collection.data, userId: user.id })); }
+  try {
+    const result = await catalogItems({ start, size, type, sort, q, collection: collection.data, userId: user.id });
+    if (start === 0) noteCollectionDemand(collection.data);
+    return json(result);
+  }
   catch (error) {
     console.error("Music catalog failed", error instanceof Error ? error.message : "Unknown failure");
     return json({ error: error instanceof CatalogInputError ? error.message : "Your music could not load. Check the connection and try again." }, error instanceof CatalogInputError ? 400 : 503);

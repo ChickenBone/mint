@@ -21,6 +21,7 @@ services:
       MINT_WORKER_TOKEN: \${MINT_WORKER_TOKEN:?put MINT_WORKER_TOKEN in .env}
       COBALT_URL: http://cobalt:9000
       AGENT_CONCURRENCY: \${AGENT_CONCURRENCY:-2}
+      AGENT_YOUTUBE_GAP_SECONDS: \${AGENT_YOUTUBE_GAP_SECONDS:-15}
     volumes: [work:/work]
     depends_on: [cobalt]
     read_only: true
@@ -29,13 +30,16 @@ services:
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
   cobalt:
-    image: ghcr.io/imputnet/cobalt:11
+    # Stock 11 may return empty audio despite healthy metadata/API responses.
+    # Pinned opt-in workaround: Mint docs/self-hosting.md#cobalt.
+    image: \${COBALT_IMAGE:-ghcr.io/imputnet/cobalt:11}
     restart: unless-stopped
     init: true
     read_only: true
     environment:
       API_URL: http://cobalt:9000/
       API_PORT: "9000"
+      CUSTOM_INNERTUBE_CLIENT: \${COBALT_INNERTUBE_CLIENT:-IOS}
     logging: { driver: json-file, options: { max-size: "10m", max-file: "3" } }
 
 volumes:

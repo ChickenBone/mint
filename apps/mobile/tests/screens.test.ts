@@ -28,6 +28,11 @@ test("acquisition remains an explicit search action, never a browse or play side
     assert.doesNotMatch(readFileSync(resolve("src/features", file), "utf8"), /requestRecording|searchRecordings/);
   }
   const search = readFileSync(resolve("src/features/search/SearchScreen.tsx"), "utf8");
-  assert.match(search, /onPress=\{\(\) => void request\(recording\.id, recording\.token\)\}/);
-  assert.equal((search.match(/api\.requestRecording/g) ?? []).length, 1);
+  const shared = readFileSync(resolve("src/components/music/catalog-requests.tsx"), "utf8");
+  const collection = readFileSync(resolve("src/components/music/CatalogCollectionSection.tsx"), "utf8");
+  assert.match(search, /onLike=\{\(\) => void request\(recording, true\)\} onImport=\{\(\) => void request\(recording, false\)\}/);
+  assert.match(collection, /onLike=\{\(\) => void requests\.request\(recording, true\)\}/);
+  assert.match(collection, /onImport=\{\(\) => void requests\.request\(recording, false\)\}/);
+  assert.equal((shared.match(/api\.requestRecording/g) ?? []).length, 1);
+  assert.doesNotMatch(search + collection, /api\.requestRecording/);
 });

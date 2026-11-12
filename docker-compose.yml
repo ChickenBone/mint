@@ -94,6 +94,7 @@ services:
       NATIVE_WEB_ORIGINS: ${NATIVE_WEB_ORIGINS:-}
       MINT_CHARTS_ENABLED: ${MINT_CHARTS_ENABLED:-true}
       MINT_CHART_SOURCE_URL: ${MINT_CHART_SOURCE_URL:-}
+      YOUTUBE_SCRAPE_AUTHORIZED: ${YOUTUBE_SCRAPE_AUTHORIZED:-false}
       SPOTIFY_CLIENT_ID: ${SPOTIFY_CLIENT_ID:-}
       SPOTIFY_CLIENT_SECRET: ${SPOTIFY_CLIENT_SECRET:-}
       SPOTIFY_API_MODE: ${SPOTIFY_API_MODE:-development}
@@ -159,6 +160,7 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       MINT_DOMAIN: ${MINT_DOMAIN:-mint.example.com}
+      YOUTUBE_SCRAPE_AUTHORIZED: ${YOUTUBE_SCRAPE_AUTHORIZED:-false}
       MUSIC_DIR: /music
       STAGING_DIR: /data/staging
       BLACKHOLE_TORRENT_DIR: /blackhole/torrents
@@ -241,13 +243,16 @@ services:
 
   cobalt:
     <<: *app
-    image: ghcr.io/imputnet/cobalt:11
+    # Stock 11 can resolve metadata but deliver empty audio. See docs/self-hosting.md#cobalt.
+    image: ${COBALT_IMAGE:-ghcr.io/imputnet/cobalt:11}
     env_file: []
     init: true
     read_only: true
     environment:
       API_URL: http://cobalt:9000/
       API_PORT: "9000"
+      # VISIONOS requires the pinned opt-in build documented in the Cobalt guide.
+      CUSTOM_INNERTUBE_CLIENT: ${COBALT_INNERTUBE_CLIENT:-IOS}
       # Optional: YouTube cookies if rips start failing with "login required".
       # COOKIE_PATH: /cookies.json
     # volumes: [./cobalt-cookies.json:/cookies.json:ro]

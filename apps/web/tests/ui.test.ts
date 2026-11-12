@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
+import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { jsx } from "react/jsx-runtime";
 import { Button, Checkbox, Input, ProgressBar, Row } from "../src/components/ui/primitives";
@@ -14,6 +15,78 @@ import { artistPlayerId, albumPlayerId, type PlayerState } from "../src/lib/play
 import { SidebarPlaylistLinks } from "../src/components/app/sidebar-nav";
 import { Artwork, ArtworkAtmosphere } from "../src/components/artwork";
 import { PageHeader } from "../src/components/app/page-header";
+import { ExternalRecording, SearchResults } from "../src/components/app/global-search";
+
+const searchSong = { id: "catalog-song", title: "Imaginary Signal", artist: "The Paper Moons", album: "Fictional Nights",
+  durationSec: 180, token: "fixture-token", existing: null };
+const searchTrack = { id: "library-song", title: "Quiet Orbit", artist: "The Paper Moons", type: "track" as const, duration: 180_000 };
+const searchProps = {
+  groups: [{ label: "Songs", type: "track" as const, items: [searchTrack] }],
+  recordings: [searchSong], requests: {}, playable: {}, filter: "Songs" as const,
+  offline: false, canPlay: false, playDisabled: false, onPlay: () => undefined,
+  onNavigate: () => undefined, onAdd: () => undefined,
+};
+
+function renderSearch(element: React.ReactElement) {
+  const previousReact = Object.getOwnPropertyDescriptor(globalThis, "React");
+  Object.defineProperty(globalThis, "React", { value: React, configurable: true });
+  try {
+    return renderToStaticMarkup(element);
+  } finally {
+    if (previousReact) Object.defineProperty(globalThis, "React", previousReact);
+    else Reflect.deleteProperty(globalThis, "React");
+  }
+}
+
+test("search puts library and catalog songs in one compact section with explicit icon actions", () => {
+  const html = renderSearch(createElement(SearchResults, searchProps));
+  assert.equal((html.match(/<section aria-label="Songs"/g) ?? []).length, 1);
+  assert.match(html, /Quiet Orbit/);
+  assert.match(html, /Imaginary Signal/);
+  assert.doesNotMatch(html, /More songs|divide-y/);
+  assert.match(html, /aria-label="Like and add: Imaginary Signal by The Paper Moons"/);
+  assert.match(html, /aria-label="Song options: Imaginary Signal"/);
+  assert.match(html, /Import without liking/);
+  assert.doesNotMatch(html, />Add to library<\/button>/);
+  assert.equal((html.match(/group flex min-h-16/g) ?? []).length, 2);
+});
+
+test("search type filters hide unrelated result sections", () => {
+  for (const filter of ["Artists", "Albums"] as const) {
+    const type = filter === "Artists" ? "artist" : "album";
+    const html = renderSearch(createElement(SearchResults, {
+      ...searchProps, filter,
+      groups: [...searchProps.groups, { label: filter, type, items: [{ id: type, type, title: `Fixture ${type}` }] }],
+    }));
+    assert.match(html, new RegExp(`aria-label="${filter}"`));
+    assert.doesNotMatch(html, /aria-label="Songs"|Quiet Orbit|Imaginary Signal|Top result/);
+  }
+});
+
+test("catalog song rows keep processing, retry and playable states honest", () => {
+  const props = { item: searchSong, busy: false, playDisabled: false, onPlay: () => undefined, onAdd: () => undefined };
+  const processing = renderSearch(createElement(ExternalRecording, {
+    ...props, request: { trackId: "requested", stage: "matching", progress: 0.5, error: null },
+  }));
+  assert.match(processing, /Adding · 50%/);
+  assert.match(processing, /aria-label="Adding Imaginary Signal"/);
+  assert.doesNotMatch(processing, /aria-label="Like and add:|aria-label="Play /);
+  assert.match(processing, /aria-label="Like Imaginary Signal by The Paper Moons"/);
+  const liked = renderSearch(createElement(ExternalRecording, {
+    ...props, request: { trackId: "requested", stage: "queued", progress: 0, error: null, liked: true },
+  }));
+  assert.match(liked, /aria-label="Liked Imaginary Signal"/);
+  const failed = renderSearch(createElement(ExternalRecording, {
+    ...props, request: { trackId: "requested", stage: "failed", progress: 0, error: "Failed" },
+  }));
+  assert.match(failed, /role="alert"/);
+  assert.match(failed, /aria-label="Retry adding Imaginary Signal by The Paper Moons"/);
+  const ready = renderSearch(createElement(ExternalRecording, { ...props, playable: searchTrack }));
+  assert.match(ready, /aria-label="Play Imaginary Signal"/);
+  assert.doesNotMatch(ready, /aria-label="Like and add:|aria-label="Adding /);
+  const offline = renderSearch(createElement(ExternalRecording, { ...props, busy: true }));
+  assert.match(offline, /<button[^>]*disabled=""[^>]*aria-label="Like and add:/);
+});
 
 test("sidebar playlists keep native, smart and collaborative links accessible in the compact rail", () => {
   const playlists = [

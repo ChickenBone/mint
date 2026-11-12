@@ -6,7 +6,7 @@ import test from "node:test";
 import pg from "pg";
 
 test("public covers proxy private Plex through signed worker requests and consistently hydrate catalogs", {
-  skip: !process.env.MINT_LIBRARY_TEST_DATABASE_URL, timeout: 60_000,
+  skip: !process.env.MINT_LIBRARY_TEST_DATABASE_URL || !process.env.MINT_LIBRARY_TEST_REDIS_URL, timeout: 60_000,
 }, async (t) => {
   const url = new URL(process.env.MINT_LIBRARY_TEST_DATABASE_URL!);
   assert.match(url.pathname, /^\/mint_library_test/);
@@ -17,7 +17,10 @@ test("public covers proxy private Plex through signed worker requests and consis
   Object.assign(process.env, {
     DATABASE_URL: url.href, PLEX_URL: "http://private-plex-fixture.test", PLEX_TOKEN: "private-fixture-token-not-for-browsers",
     MINT_SIGNING_SECRET: randomBytes(32).toString("hex"),
+    // Public fallback covers are read through the shared Redis-backed public cache.
+    REDIS_URL: process.env.MINT_LIBRARY_TEST_REDIS_URL,
   });
+  const fallbackCover = `https://archive.org/download/fallback/missing-plex-${randomBytes(5).toString("hex")}.png`;
   const { getDb, closeDb, schema } = await import("@mint/core/db");
   const { runMigrations } = await import("@mint/core/db/migrate");
   const { signToken } = await import("@mint/core/crypto");
@@ -55,7 +58,7 @@ test("public covers proxy private Plex through signed worker requests and consis
     const db = getDb();
     const [song, fallback] = await db.insert(schema.tracks).values([
       { title: "Plex cover", artist: "Synthetic only", album: "Album", stage: "ready" as const, filePath: "/private/music.wav", plexRatingKey: "101", artworkUrl: "https://archive.org/download/fallback/primary-not-needed.png" },
-      { title: "Public fallback", artist: "Synthetic only", album: "Other", stage: "ready" as const, filePath: "/private/other.wav", plexRatingKey: "102", artworkUrl: "https://archive.org/download/fallback/missing-plex.png" },
+      { title: "Public fallback", artist: "Synthetic only", album: "Other", stage: "ready" as const, filePath: "/private/other.wav", plexRatingKey: "102", artworkUrl: fallbackCover },
     ]).returning();
     assert.ok(song && fallback);
     const view = toTrackView(song);

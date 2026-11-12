@@ -78,6 +78,8 @@ jobs:
           docker compose -f docker-compose.nas.yml config --quiet
           docker compose -f docker-compose.yml -f docker-compose.musicbrainz.yml config --quiet
           docker compose -f docker-compose.nas.yml -f docker-compose.musicbrainz.yml config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.catalog.yml config --quiet
+          docker compose -f docker-compose.nas.yml -f docker-compose.catalog.yml config --quiet
           docker compose -f docker-compose.nas-migrate.yml config --quiet
           ANALYSIS_SERVER_URL=http://worker:8080 ANALYSIS_WORKER_TOKEN=fixture-only-analysis-token-not-production docker compose -f docker-compose.analysis.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet

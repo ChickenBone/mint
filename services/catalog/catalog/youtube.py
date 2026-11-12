@@ -180,6 +180,33 @@ def parse_ytmusic(job: dict, payload: dict) -> Discovery:
                             },
                         )
                     )
+    elif task in ("ytm-search", "ytm-related"):
+        groups = (
+            [payload["songs"], payload["top"]] if task == "ytm-search" else [payload["tracks"]]
+        )
+        seen = set()
+        for rows in groups:
+            if not isinstance(rows, list) or len(rows) > 50:
+                raise ValueError("YouTube Music result list exceeds crawl budget")
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                kind = {"song": "song", "video": "song", "album": "album", "artist": "artist"}.get(
+                    row.get("resultType", "song")
+                )
+                if kind is None or (kind == "song" and not row.get("videoId")):
+                    continue
+                if kind == "artist" and "title" not in row:
+                    row = {**row, "title": row.get("artist") or row.get("name")}
+                try:
+                    entity = ytm_entity(kind, row)
+                except (KeyError, TypeError, ValueError):
+                    # Mixed search shelves vary per row; skip a malformed row, keep the rest.
+                    continue
+                # The filtered songs shelf carries richer album credits than the top shelf.
+                if entity.key not in seen:
+                    seen.add(entity.key)
+                    result.entities.append(entity)
     else:
         raise ValueError("Unknown YouTube Music task")
     result.entities = list({entity.key: entity for entity in result.entities}.values())
@@ -372,7 +399,19 @@ class YouTubeMusic:
             self.client = YTMusic(requests_session=self.session)
             self.client.cookies = {}
         task = job["task"]
+        if task == "ytm-search":
+            from catalog.store import search_text
+
+            query = search_text(job["provider_id"])
+            # Two requests: song matches plus the mixed top results (albums, artists, videos).
+            return {
+                "songs": self.client.search(query, filter="songs", limit=20)[:25],
+                "top": self.client.search(query, limit=20)[:25],
+            }
         identifier = provider_id(job["provider_id"], "ytmusic") if task != "ytm-chart" else ""
+        if task == "ytm-related":
+            watch = self.client.get_watch_playlist(videoId=identifier, limit=25)
+            return {"tracks": watch.get("tracks", [])[:50]}
         if task == "ytm-chart":
             return self.client.get_charts(country=job["country"].upper())
         if task == "ytm-artist":

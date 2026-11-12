@@ -21,6 +21,9 @@ x-settings:
   # Optional until you want to link YouTube Music; see README -> Google.
   GOOGLE_CLIENT_ID: &google-id ""
   GOOGLE_CLIENT_SECRET: &google-secret ""
+  # Set true only if this deployment has YouTube's prior written permission for public-page metadata matching.
+  # Personal likes and playlist sync continue to require Google OAuth and the Data API.
+  YOUTUBE_SCRAPE_AUTHORIZED: &youtube-scrape-authorized "false"
   # Optional read-only Spotify playlist sync. Register the public callback; see docs/spotify.md.
   SPOTIFY_CLIENT_ID: &spotify-id ""
   SPOTIFY_CLIENT_SECRET: &spotify-secret ""
@@ -192,6 +195,7 @@ services:
       MINT_CHART_SOURCE_URL: *chart-source-url
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
+      YOUTUBE_SCRAPE_AUTHORIZED: *youtube-scrape-authorized
       SPOTIFY_CLIENT_ID: *spotify-id
       SPOTIFY_CLIENT_SECRET: *spotify-secret
       SPOTIFY_API_MODE: *spotify-mode
@@ -266,6 +270,7 @@ services:
       ADMIN_EMAIL: *admin-email
       GOOGLE_CLIENT_ID: *google-id
       GOOGLE_CLIENT_SECRET: *google-secret
+      YOUTUBE_SCRAPE_AUTHORIZED: *youtube-scrape-authorized
       SPOTIFY_CLIENT_ID: *spotify-id
       SPOTIFY_CLIENT_SECRET: *spotify-secret
       SPOTIFY_API_MODE: *spotify-mode
@@ -396,6 +401,9 @@ services:
 
   cobalt:
     <<: *app
+    # Stock 11 can resolve metadata but deliver empty audio. For the opt-in pinned
+    # build, replace this image and add CUSTOM_INNERTUBE_CLIENT: VISIONOS below.
+    # See docs/self-hosting.md#cobalt; setting VISIONOS alone on stock 11 is not a fix.
     image: ghcr.io/imputnet/cobalt:11
     init: true
     read_only: true
