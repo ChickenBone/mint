@@ -386,7 +386,7 @@ def retire_retained(state):
         compose(live, "stop", "--timeout", "60", "web")
 
 
-def activate(config, state, sha, maintenance):
+def activate(config, state, sha, maintenance, emergency=False):
     """Journal before mutation; never retry an interrupted migration automatically."""
     unmanaged = config
     old_slot = state.get("slot")
@@ -398,7 +398,7 @@ def activate(config, state, sha, maintenance):
     state["in_progress"] = {"sha": sha, "maintenance": maintenance}
     save(ROOT / "deploy-state.json", state)
     if maintenance:
-        if not maintenance_time():
+        if not emergency and not maintenance_time():
             raise RuntimeError("maintenance admission window closed during preparation")
         backup(live)
         if slot_path.exists():
@@ -412,7 +412,7 @@ def activate(config, state, sha, maintenance):
         if config["services"]["web"]["environment"].get("MINT_CHART_SOURCE_URL") == "http://chart-source:3090":
             infrastructure.append("chart-source")
         for name in (*infrastructure, "worker", "hub", "realtime"):
-            if not maintenance_time():
+            if not emergency and not maintenance_time():
                 raise RuntimeError("maintenance admission window closed; operator must inspect partial rollout")
             compose(ROOT / "next.json", "up", "-d", "--no-deps", "--wait", "--wait-timeout", WAIT, name)
     elif slot_path.exists():
@@ -427,7 +427,7 @@ def activate(config, state, sha, maintenance):
     write(proxy, text)
     try:
         if maintenance:
-            if not maintenance_time():
+            if not emergency and not maintenance_time():
                 raise RuntimeError("proxy adoption requires the maintenance window")
             config = managed_proxy(config)
             save_compose(ROOT / "next.json", config)
@@ -455,13 +455,14 @@ def activate(config, state, sha, maintenance):
 
 
 def execute(args):
+    emergency = getattr(args, "emergency", None)
     state = load(ROOT / "deploy-state.json")
     if args.status:
         log(json.dumps(state, indent=2))
         return 0
     if state.get("in_progress") or state.get("last_error"):
         raise RuntimeError("rollout needs operator inspection; see deploy-state.json and journal (no automatic retry)")
-    if not args.maintenance and maintenance_time():
+    if not emergency and not args.maintenance and maintenance_time():
         log("routine polling deferred while the maintenance lane owns the window")
         return 0
     if args.maintenance and maintenance_time() and not args.dry_run:
@@ -478,6 +479,8 @@ def execute(args):
         save(ROOT / "deploy-state.json", state)
     if not sha:
         log("blocked: no recent main commit has both successful CI and published images; keeping current release")
+        if emergency:
+            raise RuntimeError("emergency maintenance still requires successful same-commit CI and published images")
         if not state.get("proxy_ready") and SHA.fullmatch(state.get("deployed", "")):
             # Adopting an already-running, previously gated release is not permission to deploy failed CI.
             sha = state["deployed"]
@@ -495,8 +498,8 @@ def execute(args):
     next_slot = next(name for name in SLOTS if name != state.get("slot"))
     if (ROOT / f"{next_slot}.json").exists():
         reason = reason or "retained release still occupies standby slot"
-    maintenance = bool(reason)
-    if maintenance and (not args.maintenance or not maintenance_time()):
+    maintenance = bool(reason) or bool(emergency)
+    if maintenance and not emergency and (not args.maintenance or not maintenance_time()):
         log(f"pending {sha}: {reason}; next admission 04:00-04:30 America/Chicago")
         if not args.dry_run:
             state["pending"] = {
@@ -508,6 +511,13 @@ def execute(args):
     log(f"{'maintenance' if maintenance else 'blue/green'} candidate: {sha}")
     if args.dry_run:
         return 0
+    if emergency:
+        state["last_emergency"] = {
+            "sha": sha, "reason": emergency, "uid": os.getuid(),
+            "requested_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+        save(ROOT / "deploy-state.json", state)
+        log(f"EMERGENCY: downtime authorized outside the normal window: {emergency}")
     old = load(ROOT / "base-state.json") or current_config()
     try:
         config = prepare(sha, old, not maintenance)
@@ -517,7 +527,7 @@ def execute(args):
         log(f"pending {sha}: {error}; queued for maintenance")
         return 0
     try:
-        activate(config, state, sha, maintenance)
+        activate(config, state, sha, maintenance, emergency=bool(emergency))
     except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
         # Do not log Compose stderr: it can contain private rendered configuration.
         state["last_error"] = f"{sha}: {type(error).__name__}; inspect private operator logs"
@@ -532,8 +542,15 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--status", action="store_true")
     parser.add_argument("--maintenance", action="store_true")
+    parser.add_argument("--emergency", metavar="REASON",
+                        help="authorize disruptive deployment now; bypass only the clock gate, with a recorded reason")
     parser.add_argument("--check-window", action="store_true")
     args = parser.parse_args()
+    if args.emergency is not None:
+        if not args.emergency.strip() or len(args.emergency) > 500 or not args.emergency.isprintable():
+            parser.error("--emergency requires a nonblank, single-line reason of at most 500 characters")
+        if args.status or args.check_window:
+            parser.error("--emergency cannot be combined with --status or --check-window")
     if args.check_window:
         return 0 if maintenance_time() else 1
     # Shared lock also protects manual invocations and the two independent systemd timers.

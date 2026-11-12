@@ -1087,6 +1087,26 @@ sudo journalctl -u mint-deploy.service -u mint-maintenance.service --no-pager -n
 systemctl list-timers mint-deploy.timer mint-maintenance.timer apt-daily-upgrade.timer
 ```
 
+**Emergency deployment (explicit downtime authorization):** an operator can
+override the clock for a disaster or urgent release without changing the normal
+timers. Preview the latest eligible release, then execute it:
+
+```bash
+sudo /usr/local/sbin/mint-deploy --emergency "Incident reference and reason for deploying now" --dry-run
+sudo /usr/local/sbin/mint-deploy --emergency "Incident reference and reason for deploying now"
+```
+
+This runs the full maintenance lane immediately and may interrupt playback.
+It bypasses **only** the time window: the deployment lock, same-commit CI/image
+gate, image revision checks, database backup, migration ordering, storage/network
+guards, health checks and failure latch still apply. It cannot deploy an ungated
+release or automatically recover an interrupted migration. No OS upgrade,
+reboot or hypervisor work is triggered. A nonblank single-line reason is required;
+keep secrets out of it. The request's reason, UTC time, invoking UID and target
+SHA are retained as `last_emergency` in the private deployment state and the
+reason is printed to the operator log. Dry runs do not persist an authorization.
+Future scheduled runs still obey the 4am Central window.
+
 `/srv/mint/deploy-state.json` records the deployed/pending SHA, gate check,
 selected slot and interrupted/failed rollout. `live.json` and `base-state.json`
 are private deployment records, not files to edit casually. A bad standby never

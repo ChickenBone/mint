@@ -13,6 +13,7 @@
 - All-in-one Compose is the recommended deployment. Vercel split hosting needs separately validated private connectivity.
 - Upgrade order: update the pipeline worker first, wait for migrations and health, then update web.
 - ESXi uses a VM-local pull updater, not a public self-hosted runner. Require same-commit CI/image success; web-only blue/green rollouts retain the old build, while worker/schema/infrastructure changes and retained-slot retirement are admitted only at 04:00-04:30 America/Chicago. See the self-hosting guide for capacity, adoption and recovery limits.
+- Explicit operator `--emergency "reason"` authorizes disruptive application deployment outside that window, recording the reason/time/UID/SHA; it must not bypass release verification, backups, health checks, isolation or the interrupted-rollout latch, or change scheduled maintenance.
 - Never use volume or data deletion, host or none network modes, or static container IPs as generic fixes.
 - A successful push does not prove CI passed or images were published. Verify the Release workflow before claiming GHCR availability.
 - Mobile-only `main` pushes skip Docker publication and optional server deployment; shared/client/core, backend or mixed changes still release. Tags and manual releases remain unfiltered, and required CI still runs for mobile changes. Keep exclusions limited to the mobile paths in `release.yml`, not global handbook/docs paths.
