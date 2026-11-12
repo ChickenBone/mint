@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowDownCircle, ChevronLeft, ChevronRight, Clock3, Play, Search, Shuffle, Volume2, X } from "lucide-react";
+import type { ExternalCatalogItem } from "@mint/client";
 import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
-import { artistPlayerId, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
+import { artistPlayerId, collectionIdentity, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
 import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKeys } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
+import { CatalogAlbumCards, CatalogCollectionRows, catalogQueryMatches, useCatalogCollection } from "./catalog-collection-songs";
 import { TrackMenuButton, usePlayer } from "./player";
 import { AlbumLink, ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
-import { CatalogArtistAlbums, CatalogLibraryAlbum } from "./catalog-artist-albums";
+import { CatalogArtistAlbums, CatalogLibraryAlbum, sameCatalogAlbum, type AlbumIdentity } from "./catalog-artist-albums";
 
 const kinds = ["track", "album", "artist", "playlist"] as const;
 type Kind = typeof kinds[number];
@@ -95,6 +97,20 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     for (const [key, value] of Object.entries(patch)) { if (value) next.set(key, value); else next.delete(key); }
     router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
   };
+  const catalogId = collection && (collection.kind === "artist" || collection.kind === "album") ? collection.id : null;
+  const catalog = useCatalogCollection(catalogId);
+  const [catalogAlbum, setCatalogAlbum] = useState<{ id: string; album: string } | null>(null);
+  const albumFilter = catalogAlbum?.id === catalogId ? catalogAlbum.album : "";
+  const bridgeProfile = page?.artistProfile ?? (identity?.key === identityKey ? identity.page?.artistProfile : undefined);
+  const artistMbid = bridgeProfile?.status === "ready" ? bridgeProfile.musicBrainzArtistId : null;
+  const [bridgePage, setBridgePage] = useState<{ artistMbid: string | null; items: ExternalCatalogItem[] } | null>(null);
+  const [bridgeSelection, setBridgeSelection] = useState<{ artistMbid: string; item: ExternalCatalogItem } | null>(null);
+  const bridgeAlbums = bridgePage?.artistMbid === artistMbid ? bridgePage.items : [];
+  const selectedBridgeAlbum = bridgeSelection?.artistMbid === artistMbid ? bridgeSelection.item : null;
+  const updateBridgeAlbums = useCallback((items: ExternalCatalogItem[]) => setBridgePage({ artistMbid, items }), [artistMbid]);
+  const selectBridgeAlbum = useCallback((item: ExternalCatalogItem | null) => {
+    setBridgeSelection(item && artistMbid ? { artistMbid, item } : null);
+  }, [artistMbid]);
   const activeFilters = metadataFilterKeys.flatMap((filter) => {
     const value = params.get(filter);
     return value ? [{ filter, value }] : [];
@@ -110,8 +126,9 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
   </div>;
   const detail = identity?.key === identityKey ? identity.page : undefined;
   const first = detail?.items[0] ?? page?.items[0];
-  const title = collection.kind === "album" ? detail?.title ?? first?.album ?? "Album"
-    : collection.kind === "artist" ? detail?.title ?? first?.artist ?? "Artist"
+  const decoded = collection.kind === "artist" || collection.kind === "album" ? collectionIdentity(collection.id) : null;
+  const title = collection.kind === "album" ? detail?.title ?? first?.album ?? decoded?.album ?? "Album"
+    : collection.kind === "artist" ? detail?.title ?? first?.artist ?? decoded?.artist ?? "Artist"
     : collection.kind === "liked" ? "Liked songs"
     : collection.kind === "playlist" ? page?.title ?? "Playlist"
     : pathname === "/app/library" ? "Library" : "Your music";
@@ -121,6 +138,20 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     ? Math.round(page.items.reduce((sum, item) => sum + (item.duration ?? 0), 0) / 60_000) : null;
   const tabs = kinds.filter((kind) => collection.kind === "library" ? kind !== "playlist" : collection.kind === "artist" ? kind === "album" || kind === "track" : kind === "track");
   const countLabel = (count: number, kind: Kind) => `${count.toLocaleString()} ${count === 1 ? labels[kind].slice(0, -1).toLocaleLowerCase() : labels[kind].toLocaleLowerCase()}`;
+  // Catalog rows continue the library list on its last page, so imported songs always rank first.
+  const lastPage = !!page && start + page.items.length >= page.total;
+  const catalogSongAlbums = collection.kind === "artist" ? [...new Set((catalog.data?.items ?? []).map((item) => item.album).filter((album): album is string => !!album))].slice(0, 20) : [];
+  const catalogSongs = type === "track" && lastPage ? (catalog.data?.items ?? []).filter((item) =>
+    (!albumFilter || item.album === albumFilter) && (!q || catalogQueryMatches(q, item.title, item.artist, item.album))) : [];
+  const catalogAlbums = type === "album" && lastPage ? (catalog.data?.albums ?? []).filter((album) => !q || catalogQueryMatches(q, album.title, album.artist)) : [];
+  const catalogCount = type === "track" ? catalogSongs.length : catalogAlbums.length;
+  const catalogPending = !!catalogId && catalog.loading;
+  const displayedAlbums = type === "album" ? [
+    ...(page?.items ?? []).map((item) => ({ title: item.title, artist: item.artist ?? decoded?.artist ?? "" })),
+    ...catalogAlbums,
+  ] : [];
+  const bridgeActions = (album: { title: string; artist: string }) => <BridgeAlbumActions album={album}
+    items={bridgeAlbums} selectedId={selectedBridgeAlbum?.id} onSelect={selectBridgeAlbum} />;
   return <div className="mx-auto max-w-[100rem]">
     {collection.kind !== "library" && <Link href="/app/library" className="mb-4 inline-flex min-h-11 items-center gap-1 text-sm text-muted hover:text-fg"><ChevronLeft className="size-4" aria-hidden />All music</Link>}
     {identity?.key === identityKey && identity.error && <p role="status" className="mb-4 text-sm text-warn">Artwork and details could not load. {identity.error} Reopen this page to retry.</p>}
@@ -152,7 +183,10 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
       {collection.kind === "album" && <h2 className="sr-only">Songs</h2>}
       {tabs.length > 1 && <nav aria-label={collection.kind === "library" ? "Library categories" : "Artist categories"} className="flex flex-wrap gap-2">
         {tabs.map((kind) =>
-          <button key={kind} type="button" aria-pressed={type === kind} onClick={() => change({ type: kind })}
+          <button key={kind} type="button" aria-pressed={type === kind} onClick={() => {
+            if (kind !== "album") setBridgeSelection(null);
+            change({ type: kind });
+          }}
             className={`min-h-11 rounded-full px-4 text-sm font-semibold transition-colors ${type === kind ? "bg-fg text-bg" : "bg-elevated text-fg hover:bg-hover"}`}>{labels[kind]}</button>)}
       </nav>}
       <div className="ml-auto flex flex-wrap items-center gap-2">
@@ -245,12 +279,20 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         Clear all
       </button>
     </div>}
-    {page && page.items.length > 0 && <p role="status" aria-live="polite" className="mb-3 text-sm text-muted tabular">
+    {type === "track" && catalogSongAlbums.length > 1 && <div role="group" aria-label="Filter songs not imported yet by album" className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1">
+      {["", ...catalogSongAlbums].map((album) => <button key={album || "all"} type="button" aria-pressed={albumFilter === album}
+        onClick={() => setCatalogAlbum(album ? { id: catalogId ?? "", album } : null)}
+        className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-semibold ${albumFilter === album ? "bg-fg text-bg" : "bg-elevated hover:bg-hover"}`}>{album || "All songs"}</button>)}
+    </div>}
+    {page && (page.items.length > 0 || catalogCount > 0) && <p role="status" aria-live="polite" className="mb-3 text-sm text-muted tabular">
       {page.total > page.items.length ? `${(start + 1).toLocaleString()}–${Math.min(start + page.items.length, page.total).toLocaleString()} of ${page.total.toLocaleString()} ${labels[type].toLocaleLowerCase()}` : countLabel(page.total, type)}
+      {catalogCount > 0 && ` · ${catalogCount.toLocaleString()} more not imported yet`}
     </p>}
     {error ? <div role="alert" className="py-8"><p className="max-w-prose text-warn">{online ? error : "You’re offline. Browsing needs a connection; downloaded songs are still in Your Library → Downloads."}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="min-h-11 rounded-full bg-elevated px-5 hover:bg-hover" onClick={() => setRetry((n) => n + 1)}>Try again</button>{!online && <Link href="/app/collection?tab=downloads" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Open Downloads</Link>}</div></div>
       : !page ? <p role="status" className="py-12 text-muted">Loading…</p>
-      : !page.items.length ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? `No results for “${q}”` : "Nothing here yet"}</h2><p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
+      : !page.items.length && !catalogCount && catalogPending ? <p role="status" className="py-12 text-muted">Loading…</p>
+      : !page.items.length && !catalogCount && catalog.error ? null
+      : !page.items.length && !catalogCount ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? `No results for “${q}”` : "Nothing here yet"}</h2><p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
         {q ? "Check the spelling, or try fewer words."
           : collection.kind === "album" ? "No songs from this album are available yet."
           : collection.kind === "artist" ? `No ${type === "track" ? "songs" : "albums"} from this artist are available yet.`
@@ -258,17 +300,21 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
           : "Music appears here as it’s added."}
       </p>{q ? <Link href={`/app/search?q=${encodeURIComponent(q)}`} className="mt-4 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Search all music</Link>
         : <div className="mt-5 flex flex-wrap gap-3"><Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Go to Home</Link><Link href="/app/collection" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Your Library</Link></div>}</div>
-      : type === "track" ? <CatalogTracks items={page.items} collection={collection} offset={start} album={collection.kind === "album"} />
-      : <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">{page.items.map((item) => <CollectionCard key={item.id} item={item} />)}</div>}
+      : type === "track" ? <>{page.items.length > 0 && <CatalogTracks items={page.items} collection={collection} offset={start} album={collection.kind === "album"} />}<CatalogCollectionRows items={catalogSongs} /></>
+      : <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">{page.items.map((item) => <CollectionCard key={item.id} item={item}
+        catalogActions={collection.kind === "artist" && type === "album" ? bridgeActions({ title: item.title, artist: item.artist ?? decoded?.artist ?? "" }) : undefined} />)}
+        <CatalogAlbumCards albums={catalogAlbums} renderActions={collection.kind === "artist" ? bridgeActions : undefined} /></div>}
+    {!error && page && lastPage && catalog.error && <p role="status" className="mt-4 text-sm text-muted">{catalog.error} <button type="button" onClick={catalog.retry} className="font-semibold text-fg underline underline-offset-4">Try again</button></p>}
     {page && page.total > 100 && <nav aria-label="Library pages" className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">
       <div className="flex gap-2">
         <button type="button" disabled={!start} onClick={() => change({ start: String(Math.max(0, start - 100)) })} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 hover:bg-hover disabled:opacity-40"><ChevronLeft className="mr-1 size-4" aria-hidden />Previous</button>
         <button type="button" disabled={start + page.items.length >= page.total} onClick={() => change({ start: String(start + 100) })} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 hover:bg-hover disabled:opacity-40">Next<ChevronRight className="ml-1 size-4" aria-hidden /></button>
       </div>
     </nav>}
-    {collection.kind === "artist" && type === "album" && <CatalogArtistAlbums
-      artistMbid={artistProfile?.status === "ready" ? artistProfile.musicBrainzArtistId : null} />}
-    {collection.kind === "album" && <CatalogLibraryAlbum albumId={collection.id} />}
+    {collection.kind === "artist" && type === "album" && <div id="catalog-album-details"><CatalogArtistAlbums
+      artistMbid={artistMbid} displayedAlbums={displayedAlbums} query={q} selectedAlbum={selectedBridgeAlbum}
+      onSelectionChange={selectBridgeAlbum} onPageAlbums={updateBridgeAlbums} /></div>}
+    {collection.kind === "album" && <CatalogLibraryAlbum albumId={collection.id} query={q} recordingIds={catalogSongs.map((item) => item.id)} />}
     {collection.kind === "artist" && <ArtistAbout artistProfile={artistProfile} name={title} />}
   </div>;
 }
@@ -365,7 +411,21 @@ function ArtistAbout({ artistProfile, name }: { artistProfile?: ArtistProfile | 
   </section>;
 }
 
-function CollectionCard({ item }: { item: PlayerItem }) {
+export function BridgeAlbumActions({ album, items, selectedId, onSelect }: {
+  album: AlbumIdentity; items: ExternalCatalogItem[]; selectedId?: string;
+  onSelect: (item: ExternalCatalogItem | null) => void;
+}) {
+  const matches = items.filter((item) => sameCatalogAlbum(item, album));
+  if (!matches.length) return null;
+  return <div className="mt-2 flex flex-wrap gap-1">{matches.map((item, index) => <button key={item.id} type="button"
+    aria-label={`Browse catalog recordings for ${album.title}${matches.length > 1 ? `, release ${index + 1}` : ""}`}
+    aria-expanded={selectedId === item.id} aria-controls="catalog-album-details" onClick={() => onSelect(selectedId === item.id ? null : item)}
+    className="min-h-11 rounded-control px-2 text-left text-xs font-semibold text-muted hover:bg-hover hover:text-fg">
+    Catalog recordings{matches.length > 1 ? ` ${index + 1}` : ""}
+  </button>)}</div>;
+}
+
+function CollectionCard({ item, catalogActions }: { item: PlayerItem; catalogActions?: ReactNode }) {
   const player = usePlayer()!;
   return <MusicItem as="article" item={item} className="group relative min-w-0 rounded-lg p-3 transition-colors hover:bg-surface focus-within:bg-surface">
     <div className="relative">
@@ -379,6 +439,7 @@ function CollectionCard({ item }: { item: PlayerItem }) {
       <div className="min-w-0 flex-1">
         <h3 className="truncate font-semibold"><Link href={itemHref(item)} tabIndex={-1} className="hover:underline">{item.title}</Link></h3>
         <p className="mt-1 truncate text-sm text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
+        {catalogActions}
       </div>
       <TrackMenuButton item={item} />
     </div>

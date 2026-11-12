@@ -29,7 +29,7 @@ test("native liked catalog is member-scoped, playable, paginated and distinct fr
   const globalDb = globalThis as unknown as { __mintDb?: { db: typeof db; pool: pg.Pool } }, previous = globalDb.__mintDb;
   globalDb.__mintDb = { db, pool };
   try {
-    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale"]) {
+    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale", "0019_source_choices"]) {
       const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
       for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
     }
@@ -78,7 +78,7 @@ test("100,123-track snapshots hydrate only a bounded window, preserve exact memb
   const globalDb = globalThis as unknown as { __mintDb?: { db: typeof db; pool: pg.Pool } }, previous = globalDb.__mintDb;
   globalDb.__mintDb = { db, pool };
   try {
-    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale"]) {
+    for (const migration of ["0000_init", "0001_workers", "0002_drop_previews", "0003_track_artwork_url", "0004_existing_library", "0005_analysis", "0006_music", "0009_playback_scale", "0019_source_choices"]) {
       const source = await readFile(new URL(`../../../packages/core/migrations/${migration}.sql`, import.meta.url), "utf8");
       for (const statement of source.replaceAll('"public".', `"${namespace}".`).split("--> statement-breakpoint")) if (statement.trim()) await pool.query(statement);
     }

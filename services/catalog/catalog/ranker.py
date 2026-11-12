@@ -97,8 +97,9 @@ def refresh_batch(store: Store, after: str = "", batch_size: int = 2000) -> str 
                    WHERE ed.source=e.key AND ed.relation='artist'
                  )) THEN 10 ELSE 0 END AS priority
                FROM entities e WHERE e.key=ANY(%s))
-               UPDATE jobs j SET priority=d.priority FROM desired d
-               WHERE j.entity_key=d.key AND j.priority IS DISTINCT FROM d.priority""",
+               UPDATE jobs j SET priority=greatest(d.priority,j.demand_priority) FROM desired d
+               WHERE j.entity_key=d.key
+                 AND j.priority IS DISTINCT FROM greatest(d.priority,j.demand_priority)""",
             (keys,),
         )
     log.info(

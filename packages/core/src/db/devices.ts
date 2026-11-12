@@ -1,4 +1,4 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, foreignKey, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import type { DeviceCommand, DeviceState } from "../devices";
 import { sessions, users } from "./schema";
 
@@ -22,7 +22,7 @@ export const connectedDevices = pgTable("connected_devices", {
 export const deviceCommands = pgTable("device_commands", {
   id: uuid("id").primaryKey().defaultRandom(),
   deviceId: uuid("device_id").notNull().references(() => connectedDevices.id, { onDelete: "cascade" }),
-  sourceDeviceId: uuid("source_device_id").references(() => connectedDevices.id, { onDelete: "set null" }),
+  sourceDeviceId: uuid("source_device_id"),
   actorId: uuid("actor_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   actorSessionId: text("actor_session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
   sequence: integer("sequence").notNull(),
@@ -34,6 +34,7 @@ export const deviceCommands = pgTable("device_commands", {
   acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
+  foreignKey({ name: "device_commands_source_device_id_fkey", columns: [t.sourceDeviceId], foreignColumns: [connectedDevices.id] }).onDelete("set null"),
   uniqueIndex("device_commands_sequence_idx").on(t.deviceId, t.sequence),
   index("device_commands_pending_idx").on(t.deviceId, t.status),
 ]);

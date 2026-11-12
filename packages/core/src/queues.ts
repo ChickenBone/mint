@@ -25,6 +25,14 @@ export interface AcquireJob {
   local?: boolean;
   /** How many times this download has waited for a busy YouTube search. */
   youtubeWaits?: number;
+  /** Exact-identity official catalog lengths for an unresolved imported recording. */
+  officialDurationsSec?: number[];
+  /** YouTube video IDs the metadata catalog links to this recording; read before any search. */
+  catalogVideoIds?: string[];
+  /** A source this job just selected and verified; skips an immediate second metadata check of the same video. */
+  verifiedVideo?: { id: string; at: number };
+  /** Set when finalize rejected the downloaded file (length mismatch); the video is blocked and matching restarts. */
+  rematches?: number;
 }
 
 export interface FinalizeJob {
@@ -63,7 +71,8 @@ export type MaintenanceJob =
   | { kind: "artist-metadata" }
   | { kind: "leases" }
   | { kind: "listening-queues" }
-  | { kind: "plex-playlists"; userId: string };
+  | { kind: "plex-playlists"; userId: string }
+  | { kind: "search-request-enrichment"; searchRequestId: string };
 
 export const jobId = {
   sync: (userId: string) => `sync-${userId}`,
@@ -72,4 +81,5 @@ export const jobId = {
   sonic: (trackId: string) => `sonic-${trackId}`,
   torbox: (torrentId: number, protocol: "torrent" | "usenet" = "torrent") => protocol === "torrent" ? `torbox-${torrentId}` : `torbox-usenet-${torrentId}`,
   plexPlaylists: (userId: string) => `plex-playlists-${userId}`,
+  searchRequestEnrichment: (searchRequestId: string) => `search-request-enrichment-${searchRequestId}`,
 };

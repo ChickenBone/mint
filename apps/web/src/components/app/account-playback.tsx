@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { PlaybackView } from "@mint/core/events";
 import { useRealtime } from "@/components/realtime";
 import {
@@ -54,18 +54,21 @@ export function useAccountPlayback(localPlaying: boolean, localTimeMs = 0): Acco
   const [reports, setReports] = useState<Report[]>([]);
   const [now, setNow] = useState(() => Date.now());
   const [localId, setLocalId] = useState<string | null>(null);
-  const [track, setTrack] = useState<PlayerItem | null>(null);
-  const pin = useRef<{ id: string; ms: number; at: number } | null>(null);
-  const stick = useRef<string | null>(null);
+  const [loadedTrack, setTrack] = useState<PlayerItem | null>(null);
+  const [pin, setPin] = useState<{ id: string; ms: number; at: number } | null>(null);
+  const [stick, setStick] = useState<string | null>(null);
   const devices = reports.filter((report) => deviceIsOnline(report.reportedAt, now)).map((report) => ({
     id: report.id, name: report.name, online: true, lastSeenAt: new Date(report.reportedAt).toISOString(),
     state: { playing: report.playing, trackId: report.trackId, time: report.time, duration: report.duration, volume: report.volume, shuffle: report.shuffle, repeat: report.repeat },
   }));
-  const chosen = chooseAccountPlayback(devices, localId, localPlaying, stick.current);
-  if (localPlaying) stick.current = null;
-  else stick.current = chosen?.id ?? null;
+  const chosen = chooseAccountPlayback(devices, localId, localPlaying, stick);
+  const nextStick = localPlaying ? null : chosen?.id ?? null;
+  if (nextStick !== stick) setStick(nextStick);
   const report = reports.find((item) => item.id === (localPlaying ? localId : chosen?.id));
   const trackId = report?.trackId ?? null;
+  const track = trackId ? loadedTrack : null;
+  const scrubbing = !!report?.scrubbing && now - report.reportedAt < 1500;
+  const pinActive = pin !== null && now - pin.at < 4000;
 
   useEffect(() => {
     let cancelled = false;
@@ -101,14 +104,16 @@ export function useAccountPlayback(localPlaying: boolean, localTimeMs = 0): Acco
     setNow(Date.now());
   });
 
+  // Playing positions advance with `now`; scrub and pin windows also need it to expire.
+  const ticking = !!report && ((report.playing && !report.scrubbing) || scrubbing || pinActive);
   useEffect(() => {
-    if (!report?.playing || report.scrubbing) return;
+    if (!ticking) return;
     const timer = setInterval(() => setNow(Date.now()), 200);
     return () => clearInterval(timer);
-  }, [report?.playing, report?.scrubbing, report?.id]);
+  }, [ticking, report?.id]);
 
   useEffect(() => {
-    if (!trackId) { setTrack(null); return; }
+    if (!trackId) return;
     let cancelled = false;
     void fetch("/api/player/items", {
       method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: [trackId] }),
@@ -125,10 +130,10 @@ export function useAccountPlayback(localPlaying: boolean, localTimeMs = 0): Acco
   const here = report.id === localId;
   if (!here && !chosen) return null;
   const seconds = shownPlaybackSeconds(report, now);
-  const scrubbing = report.scrubbing && Date.now() - report.reportedAt < 1500;
-  if (scrubbing) pin.current = { id: report.id, ms: seconds * 1000, at: Date.now() };
-  const held = pin.current?.id === report.id && Date.now() - pin.current.at < 4000 && Math.abs(localTimeMs - pin.current.ms) > 1500
-    ? pin.current.ms : null;
+  if (scrubbing && (pin?.id !== report.id || pin.ms !== seconds * 1000 || pin.at !== now)) {
+    setPin({ id: report.id, ms: seconds * 1000, at: now });
+  }
+  const held = pin?.id === report.id && pinActive && Math.abs(localTimeMs - pin.ms) > 1500 ? pin.ms : null;
   const state: PlayerState = {
     playing: report.playing, time: seconds * 1000, duration: report.duration * 1000, volume: report.volume,
     shuffle: report.shuffle, repeat: report.repeat, track, queue: [], queueTotal: 0, queueOffset: 0,

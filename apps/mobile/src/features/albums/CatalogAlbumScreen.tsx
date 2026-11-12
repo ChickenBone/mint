@@ -1,4 +1,4 @@
-import { externalCatalogPageSchema, type MintApi } from "@mint/client";
+import { externalCatalogPageSchema, type ExternalCatalogItem, type MintApi, type RecordingSearchItem } from "@mint/client";
 import { useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { useApi } from "../../api";
@@ -7,6 +7,10 @@ import { screenStyles } from "../../components/music/screen-styles";
 import { PageTitle } from "../../components/ui/PageTitle";
 import { Button, Notice } from "../../components/ui/primitives";
 import { useResource } from "../../hooks/useResource";
+import { visibleBridgeRecordings } from "./album-model";
+
+const noCollectionItems: RecordingSearchItem[] = [];
+const noBridgeItems: ExternalCatalogItem[] = [];
 
 export function CatalogAlbumScreen({ id, title, artist }: { id: string; title: string; artist: string }) {
   return <ScrollView contentContainerStyle={screenStyles.page}>
@@ -16,7 +20,9 @@ export function CatalogAlbumScreen({ id, title, artist }: { id: string; title: s
   </ScrollView>;
 }
 
-export function CatalogAlbumRecordings({ id, local = false }: { id: string; local?: boolean }) {
+export function CatalogAlbumRecordings({ id, local = false, collectionItems = noCollectionItems }: {
+  id: string; local?: boolean; collectionItems?: RecordingSearchItem[];
+}) {
   const api = useApi();
   const [after, setAfter] = useState<string | null>(null);
   const [pending, setPending] = useState<{ api: MintApi; id: string } | null>(null);
@@ -27,6 +33,8 @@ export function CatalogAlbumRecordings({ id, local = false }: { id: string; loca
     if (after) params.set("after", after);
     return api.request(`catalog/${local ? "library-albums" : "albums"}/${id}/recordings?${params}`, externalCatalogPageSchema, { signal });
   }, [api, id, after, local]);
+  const bridgeItems = resource.data?.items ?? noBridgeItems;
+  const visible = visibleBridgeRecordings(bridgeItems, collectionItems);
   async function request(recordingId: string, token: string) {
     if (!api || pending?.api === api) return;
     setPending({ api, id: recordingId }); setOutcome(null);
@@ -45,8 +53,13 @@ export function CatalogAlbumRecordings({ id, local = false }: { id: string; loca
     {resource.loading ? <Notice loading title="Loading album recordings" /> : resource.error ?
       <Notice title="Album recordings unavailable" message={resource.error} retry={resource.reload} /> : null}
     {resource.data?.configured === false ? <Notice title="Catalog not connected" message="Your playable library is unchanged." /> : null}
-    {resource.data?.configured && !resource.data.items.length ? <Notice title="No recordings populated yet" message="Try again after the catalog has refreshed this album." retry={resource.reload} /> : null}
-    {resource.data?.items.map((recording) => <View key={recording.id} style={{ paddingVertical: 16, gap: 8 }}>
+    {resource.data?.configured && !resource.data.items.length ? <Notice
+      title={local ? "No additional recordings on this page" : "No recordings populated yet"}
+      message={local ? resource.data.nextCursor ? "More recordings may be available on the next page." : "Your library is unchanged." :
+        "Try again after the catalog has refreshed this album."} retry={resource.reload} /> : null}
+    {resource.data?.items.length && !visible.length ?
+      <Text style={detailStyles.secondary}>These catalog recordings are already listed above.</Text> : null}
+    {visible.map((recording) => <View key={recording.id} style={{ paddingVertical: 16, gap: 8 }}>
       <Text style={detailStyles.artist}>{recording.title}</Text>
       <Text style={detailStyles.secondary}>{recording.artist} - Catalog recording, not playable here</Text>
       {recording.requestToken ? <Button quiet label="Add to library" busy={pending?.api === api && pending.id === recording.id}

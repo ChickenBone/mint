@@ -1,5 +1,5 @@
 import "server-only";
-import { QUEUE, jobId, type AcquireJob, type SyncJob } from "@mint/core";
+import { QUEUE, jobId, type AcquireJob, type MaintenanceJob, type SyncJob } from "@mint/core";
 import { createRedis } from "@mint/core/redis";
 import { getDb, schema } from "@mint/core/db";
 import { Queue } from "bullmq";
@@ -12,6 +12,7 @@ function make() {
   return {
     sync: new Queue<SyncJob>(QUEUE.sync, { connection }),
     acquire: new Queue<AcquireJob>(QUEUE.acquire, { connection }),
+    maintenance: new Queue<MaintenanceJob>(QUEUE.maintenance, { connection }),
     finalize: new Queue(QUEUE.finalize, { connection }),
     sonic: new Queue(QUEUE.sonic, { connection }),
   };
@@ -42,6 +43,14 @@ export async function enqueueSync(userId: string, reason: SyncJob["reason"]) {
     "sync",
     { userId, reason },
     { jobId: jobId.sync(userId), removeOnComplete: true, removeOnFail: true, attempts: 2, backoff: { type: "exponential", delay: 30_000 } },
+  );
+}
+
+export async function enqueueSearchRequestEnrichment(searchRequestId: string) {
+  await queues().maintenance.add(
+    "search-request-enrichment",
+    { kind: "search-request-enrichment", searchRequestId },
+    { jobId: jobId.searchRequestEnrichment(searchRequestId), removeOnComplete: true, removeOnFail: true },
   );
 }
 

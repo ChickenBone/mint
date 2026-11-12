@@ -54,6 +54,8 @@ test("a linked library recording wins even when catalog release or duration meta
   assert.deepEqual(uniqueExternalResults([localTrack()], [linked]), []);
   assert.equal(uniqueExternalResults([localTrack()], [{ ...linked, title: "Cafe Lights (Live)" }]).length, 1);
   assert.equal(uniqueExternalResults([localTrack()], [{ ...linked, durationSec: 240 }]).length, 1);
+  assert.equal(uniqueExternalResults([localTrack()], [{ ...recording("linked"),
+    existing: { ...linked.existing!, recordingId: "another-recording" } }]).length, 1);
 });
 
 test("repeated catalog IDs prefer the playable entry without collapsing distinct recording IDs", () => {

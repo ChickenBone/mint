@@ -3,9 +3,11 @@ import { z } from "zod";
 import { getDb, schema } from "@mint/core/db";
 import { getMatchingDecision } from "@mint/core/matching-db";
 import { MusicError } from "@mint/core/music";
+import { sameRecordingVersion } from "@mint/core/matching";
+import { youtubeScrapingAuthorized } from "@mint/core/youtube-scrape";
 import { and, eq, sql } from "drizzle-orm";
 import { youtubeSource } from "./music-requests";
-import { identityFromVideo, matchMissingRequest, normalizeMatchText, type CatalogRecording, type CatalogVideo, type RequestChoice } from "./request-match";
+import { identityFromVideo, matchMissingRequest, normalizeMatchText, requestAudioCandidates, requestMatchMessage, videoMatchesRequest, type CatalogRecording, type CatalogVideo, type RequestChoice } from "./request-match";
 import { linkedYouTubeVideo, searchLinkedYouTube } from "./youtube-search";
 
 export class NeedsVideoError extends MusicError {
@@ -41,21 +43,23 @@ async function readBoundedJson(response: Response) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
 }
 
-async function catalogRecordings(query: string, fetcher: typeof fetch): Promise<CatalogRecording[]> {
+async function catalogRecordings(query: string, fetcher: typeof fetch, signal?: AbortSignal): Promise<CatalogRecording[]> {
+  signal?.throwIfAborted();
   const url = new URL("https://musicbrainz.org/ws/2/recording");
   url.search = new URLSearchParams({ query, fmt: "json", limit: "25" }).toString();
   const response = await fetcher(url, {
     headers: { "user-agent": process.env.MUSICBRAINZ_USER_AGENT ?? "Mint/3.5 ( https://github.com/ChickenBone/mint )", accept: "application/json" },
-    signal: AbortSignal.timeout(10000),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   });
   if (!response.ok) throw new MusicError(response.status === 429 || response.status === 503 ? "MusicBrainz is busy. Wait a few seconds and search again." : "The recording catalog could not be reached. Try again.", 503);
   const body = await readBoundedJson(response);
   const raw = z.object({ recordings: z.array(z.object({
-    id: z.uuid(), title: z.string(), length: z.number().nullish(),
+    id: z.uuid(), title: z.string(), length: z.number().nullish(), video: z.boolean().optional(), disambiguation: z.string().optional(),
     "artist-credit": z.array(z.object({ name: z.string() })).optional(),
     releases: z.array(z.object({ title: z.string() })).optional(),
   })).max(25) }).parse(body);
   return raw.recordings.flatMap((item) => {
+    if (item.video === true || !sameRecordingVersion(item.title, `${item.title} ${item.disambiguation ?? ""}`)) return [];
     const artist = item["artist-credit"]?.map((credit) => credit.name).join(" / ") ?? "";
     if (!item.title.trim() || !artist.trim()) return [];
     return [{
@@ -68,22 +72,25 @@ async function catalogRecordings(query: string, fetcher: typeof fetch): Promise<
   });
 }
 
-async function addIdentifiedRecordings(recordings: CatalogRecording[], videos: CatalogVideo[] | null, fetcher: typeof fetch) {
+async function addIdentifiedRecordings(recordings: CatalogRecording[], videos: CatalogVideo[] | null, fetcher: typeof fetch, signal?: AbortSignal) {
   const seen = new Set(recordings.map((item) => item.id));
+  let failure: unknown = null;
   for (const video of (videos ?? []).slice(0, 3)) {
     const identity = identityFromVideo(video);
     if (!identity) continue;
     try {
-      for (const item of await catalogRecordings(`recording:${quoted(identity.title)} AND artist:${quoted(identity.artist)}`, fetcher)) {
+      for (const item of await catalogRecordings(`recording:${quoted(identity.title)} AND artist:${quoted(identity.artist)}`, fetcher, signal)) {
         if (seen.has(item.id)) continue;
         seen.add(item.id);
         recordings.push(item);
       }
-    } catch {
+    } catch (error) {
+      failure = error;
+      console.warn("Identified recording catalog lookup unavailable; retaining completed metadata");
       break;
     }
   }
-  return recordings.slice(0, 25);
+  return { recordings: recordings.slice(0, 25), failure };
 }
 
 const sameRecording = (track: { title: string; artist: string; durationSec: number | null }, item: { title: string; artist: string; durationSec: number | null }) =>
@@ -165,7 +172,7 @@ function storedChoice(userId: string, choice: RequestChoice, pinnedId: string | 
   }, existingTrackId);
 }
 
-/** Search MusicBrainz and linked YouTube together, then queue one confident match. */
+/** Resolve catalog evidence, then search YouTube and queue one confident match. */
 export async function resolveAndRequest(userId: string, query: string, youtubeUrl?: string, fetcher: typeof fetch = fetch, options?: {
   accept?: (choice: RequestChoice) => boolean;
   allowUnmatchedUrl?: boolean;
@@ -173,52 +180,66 @@ export async function resolveAndRequest(userId: string, query: string, youtubeUr
   existingTrackId?: string;
 }) {
   const pinnedId = youtubeSource(youtubeUrl);
-  const catalogPromise = catalogRecordings(escaped(query), fetcher);
-  let videos: Awaited<ReturnType<typeof searchLinkedYouTube>>;
-  try {
-    videos = pinnedId
-      ? [await linkedYouTubeVideo(userId, pinnedId) ?? { id: pinnedId, title: query, channel: "", durationSec: null, rank: 0 }]
-      : await searchLinkedYouTube(userId, query);
-  } catch (error) {
-    await catalogPromise.catch(() => undefined);
-    throw error;
-  }
+  const signal = youtubeScrapingAuthorized() ? AbortSignal.timeout(35_000) : undefined;
   let recordings: CatalogRecording[] = [];
   let catalogError: unknown = null;
   try {
-    recordings = await catalogPromise;
+    recordings = await catalogRecordings(escaped(query), fetcher, signal);
   } catch (error) {
-    catalogError = error;
+    catalogError = error instanceof MusicError ? error : new MusicError("The recording catalog is temporarily unavailable. Try again.", 503);
+    console.warn("Recording catalog unavailable; checking independent audio evidence");
   }
-  if (!catalogError || videos?.length || pinnedId) recordings = await addIdentifiedRecordings(recordings, videos, fetcher);
+  let videos: Awaited<ReturnType<typeof searchLinkedYouTube>>;
+  if (pinnedId) {
+    const pinned = await linkedYouTubeVideo(userId, pinnedId, signal);
+    if (!pinned) throw new NeedsVideoError(true, youtubeScrapingAuthorized()
+      ? "Pinned source metadata is unavailable. Choose an available audio URL."
+      : "Pinned source metadata is unavailable. Link YouTube and choose an available audio URL.");
+    videos = [pinned];
+  } else videos = await searchLinkedYouTube(userId, query, (candidates) => requestAudioCandidates(query, recordings, candidates, options?.durationSec ?? null), signal);
+  if (!catalogError || videos?.length || pinnedId) {
+    const identified = await addIdentifiedRecordings(recordings, videos, fetcher, signal);
+    recordings = identified.recordings;
+    if (identified.failure) catalogError ??= identified.failure instanceof MusicError ? identified.failure
+      : new MusicError("The recording catalog is temporarily unavailable. Try again.", 503);
+  }
   let model = { enabled: false, apiKey: null as string | null };
   try {
     const stored = await getMatchingDecision();
     model = { enabled: stored.enabled, apiKey: stored.apiKey };
-  } catch { /* deterministic matching still runs */ }
-  let choice = await matchMissingRequest({ query, recordings, videos, durationSec: options?.durationSec, model });
+  } catch { console.error("Matching settings unavailable; using deterministic audio matching"); }
+  let choice = await matchMissingRequest({ query, recordings, videos, durationSec: options?.durationSec, explicitPin: Boolean(pinnedId), model });
+  if (!pinnedId && videos && youtubeScrapingAuthorized()) {
+    for (let attempts = 0; choice && attempts < 10; attempts++) {
+      const videoId = choice.kind === "recording" ? choice.videoId : choice.video.id;
+      if (!videoId) break;
+      const checked = videos.find((video) => video.id === videoId && video.watchVerified);
+      const verified = checked ?? await linkedYouTubeVideo(userId, videoId, signal);
+      const eligible = verified && requestAudioCandidates(query, recordings, [verified], options?.durationSec ?? null)
+        .some((video) => video.id === videoId);
+      if (verified && eligible && (choice.kind !== "recording" || videoMatchesRequest(choice.recording, verified))) {
+        const source = { ...verified, rank: videos.find((video) => video.id === videoId)?.rank ?? verified.rank, watchVerified: true };
+        videos = videos.map((video) => video.id === videoId ? source : video);
+        if (choice.kind === "video") choice = { kind: "video", video: source };
+        break;
+      }
+      console.warn("YouTube search candidate was unavailable or changed; checking the next eligible source", { videoId });
+      videos = videos.filter((video) => video.id !== videoId);
+      choice = await matchMissingRequest({ query, recordings, videos, durationSec: options?.durationSec, model });
+      if (attempts === 9 && choice && (choice.kind === "video" || choice.videoId)) choice = null;
+    }
+  }
   if (choice && options?.accept && !options.accept(choice)) {
     const rejected = choice;
     const video = rejected.kind === "recording" ? videos?.find((item) => item.id === rejected.videoId) : null;
     const fallback = video ? { kind: "video" as const, video } : null;
     choice = fallback && options.accept(fallback) ? fallback : null;
   }
-  if (!choice && pinnedId && options?.allowUnmatchedUrl !== false) {
-    const video = videos?.[0];
-    const identity = video ? identityFromVideo(video) : null;
-    return storeRequest(userId, {
-      title: identity?.title || video?.title || query,
-      artist: identity?.artist || "Unknown",
-      album: null,
-      durationSec: video?.durationSec ?? null,
-      mbRecordingId: null,
-      videoId: pinnedId,
-    });
-  }
   if (!choice) {
-    if (catalogError && !videos?.length && !pinnedId) throw catalogError;
-    if (pinnedId && options?.allowUnmatchedUrl === false) throw new NeedsVideoError(true, "That video does not match this song's artist, title, and duration.");
-    throw new NeedsVideoError(videos !== null);
+    if (catalogError && !pinnedId) throw catalogError;
+    if (pinnedId) throw new NeedsVideoError(true, "Pinned source rejected: the artist, title, version or duration was not confirmed for this song. No substitute was selected.");
+    const detail = videos ? requestMatchMessage(query, recordings, videos, options?.durationSec ?? null) : null;
+    throw new NeedsVideoError(videos !== null, detail ? `${detail} Choose an audio URL for this exact recording.` : undefined);
   }
   return storedChoice(userId, choice, pinnedId, options?.existingTrackId);
 }

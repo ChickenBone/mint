@@ -39,6 +39,7 @@ the portable entry points.
 | [Expo Native UI](../.github/skills/expo-native-ui/SKILL.md) | A mobile UI task needs platform controls or layout guidance; obey Mint's compatibility override |
 | [Expo Animation](../.github/skills/expo-animation/SKILL.md) | A mobile task specifically changes gestures, animation, press feedback or motion performance; obey Mint's compatibility override |
 | [Mint task tracking](../.github/skills/mint-task-tracking/SKILL.md) | A multi-step task needs progress/dependency tracking; only load when needed and use one authoritative tracker |
+| [Orchestrate](../.github/skills/orchestrate/SKILL.md) | Work spans repos, needs stacked PRs or parallel workstreams, or the user invokes `/orchestrate`; coordinate child sessions instead of working inline |
 
 ## How to use this guidance
 

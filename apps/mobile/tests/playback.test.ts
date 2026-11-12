@@ -9,7 +9,7 @@ import { editUpcoming, queueEntries, shuffleUpcoming } from "../src/playback/que
 import { activeLyric, parseLyrics } from "../src/playback/lyrics";
 import { randomUUID } from "node:crypto";
 import { confirmsHandoff, type DeviceState } from "@mint/client";
-import { startNativeDeviceBridge } from "../src/playback/device-bridge";
+import { movePlaybackToDevice, startNativeDeviceBridge } from "../src/playback/device-bridge";
 
 const entries = ["a", "b", "c", "d"].map((occurrenceId) => ({ id: "same-song", title: occurrenceId, occurrenceId }));
 const receiverId = randomUUID(), songId = randomUUID();
@@ -30,6 +30,37 @@ function bridgeApi() {
     deviceCommandStatus: async (id: string) => ({ id, status: "succeeded" as const, expiresAt: new Date(Date.now() + 1000).toISOString() }),
   };
 }
+
+test("native chooser can move a paused remote queue onto this player", async () => {
+  const local = randomUUID(), remote = randomUUID(), transfer = randomUUID(), pause = randomUUID();
+  const calls: string[] = [];
+  const rows = [
+    { id: local, name: "Phone", kind: "native" as const, online: true, lastSeenAt: "2026-11-05T00:01:00.000Z",
+      state: { playing: false, queueLength: 0, volume: 100, trackId: null } },
+    { id: remote, name: "Web player", kind: "web" as const, online: true, lastSeenAt: "2026-11-05T00:00:00.000Z",
+      state: { playing: false, queueLength: 1, volume: 100, trackId: songId } },
+  ];
+  const status = (id: string) => ({ id, status: "succeeded" as const, expiresAt: new Date(Date.now() + 1000).toISOString() });
+  const api = {
+    devices: async () => rows,
+    transferDevice: async (id: string) => { calls.push(`transfer:${id}`); return status(transfer); },
+    completeDeviceTransfer: async (id: string) => { calls.push(`complete:${id}`); return status(pause); },
+    deviceCommandStatus: async (id: string) => { calls.push(`status:${id}`); return status(id); },
+  };
+  const bridge = { deviceId: local, handoffTo: async (id: string) => { calls.push(`local:${id}`); } };
+  await movePlaybackToDevice(local, api, bridge, () => true);
+  assert.deepEqual(calls, [`transfer:${local}`, `status:${transfer}`, `complete:${transfer}`, `status:${pause}`]);
+
+  calls.length = 0;
+  rows[0]!.state.queueLength = 1;
+  rows[1]!.state.queueLength = 0;
+  await movePlaybackToDevice(remote, api, bridge, () => true);
+  assert.deepEqual(calls, [`local:${remote}`]);
+
+  calls.length = 0;
+  await assert.rejects(() => movePlaybackToDevice(remote, api, bridge, () => false), /Account changed/);
+  assert.deepEqual(calls, []);
+});
 
 test("installed bridge never pauses the source on admission or failed destination confirmation", async () => {
   let acknowledged = false, pauses = 0;

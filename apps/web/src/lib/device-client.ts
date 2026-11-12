@@ -3,6 +3,9 @@ import {
   matchesDevicePlayback,
   type DeviceCommand, type DeviceCommandEnvelope, type DeviceHandoff, type DeviceState,
 } from "@mint/core/devices";
+import { playbackSource } from "@mint/client/devices";
+
+export { playbackSource } from "@mint/client/devices";
 
 type DeviceMemory = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 type BridgeOptions = {
@@ -251,13 +254,6 @@ async function deviceRequest<T>(path: string, value?: unknown): Promise<T> {
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.error === "string" ? result.error : "Device service did not respond.");
   return result as T;
-}
-
-export function playbackSource<T extends { id: string; online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[], destinationId: string) {
-  const ready = devices.filter((device) => device.online && device.state.queueLength > 0);
-  const playing = ready.find((device) => device.state.playing);
-  if (playing) return playing.id === destinationId ? null : playing;
-  return [...ready].filter((device) => device.id !== destinationId).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
 }
 
 export function activeOutput<T extends { online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(devices: T[]) {

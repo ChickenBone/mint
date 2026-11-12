@@ -35,6 +35,11 @@ export function createSongLikes(api: LikeApi) {
       requests.set(id, request);
       return request;
     },
+    /** Records a like the server already saved (for example liking a catalog song while requesting its import). */
+    markLiked(id: string) {
+      revision++;
+      update(id, { liked: true, pending: false, error: null });
+    },
     set(id: string, liked: boolean) {
       if (requests.has(id)) return Promise.reject(new Error("A song like action is already pending."));
       const before = entries.get(id) ?? empty;

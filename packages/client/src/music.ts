@@ -44,6 +44,83 @@ export const recordingSearchItemSchema = z.object({
   }).nullable(),
 });
 export type RecordingSearchItem = z.infer<typeof recordingSearchItemSchema>;
+export const catalogSearchStatusSchema = z.enum(["ok", "lexical-only", "unavailable", "not_configured"]);
+export const catalogRelevanceSchema = z.enum(["matched", "related-only", "empty"]);
+/** A metadata row from Mint's catalog. It is not library ownership; only `recording` can be requested. */
+export const catalogResultSchema = z.object({
+  key: z.string().min(1).max(150), source: z.string().min(1).max(50), kind: z.enum(["artist", "album", "song"]),
+  title: z.string().min(1).max(1000), artist: z.string().max(1000), album: z.string().max(1000).nullable(),
+  genres: z.array(z.string().max(100)).max(50),
+  popularity: z.object({
+    score: z.number().positive(), basis: z.literal("catalog-derived"), observedAt: z.string().max(100).nullable(),
+  }).nullable(),
+  updatedAt: z.string().max(100).nullable(),
+  /** False rows are semantic neighbours, not matches for the typed words. */
+  matched: z.boolean(),
+  recording: recordingSearchItemSchema.nullable(),
+});
+export type CatalogResult = z.infer<typeof catalogResultSchema>;
+export const catalogCoverageSchema = z.object({
+  status: catalogSearchStatusSchema, mode: z.enum(["hybrid", "lexical"]).nullable(),
+  relevance: catalogRelevanceSchema, hasMore: z.boolean(), retryAfterSeconds: z.number().int().min(1).max(60).nullable(),
+});
+export type CatalogCoverage = z.infer<typeof catalogCoverageSchema>;
+export const catalogArtistSchema = z.object({ id: z.string().min(4).max(4000), name: z.string().min(1).max(1000) });
+export type CatalogArtist = z.infer<typeof catalogArtistSchema>;
+export const catalogSearchResponseSchema = z.object({
+  items: z.array(recordingSearchItemSchema).max(50),
+  results: z.array(catalogResultSchema).max(50),
+  catalog: catalogCoverageSchema,
+  /** Openable artist pages from the catalog, including artists with nothing imported yet. */
+  artists: z.array(catalogArtistSchema).max(20).optional().default([]),
+});
+export type CatalogSearchResponse = z.infer<typeof catalogSearchResponseSchema>;
+/** A catalog album page link; the library may have none of its songs yet.
+ * The optional release-group identity is verified by the server, not inferred from its title.
+ */
+export const catalogCollectionAlbumSchema = z.object({
+  id: z.string().min(4).max(4000), title: z.string().min(1).max(1000), artist: z.string().min(1).max(1000),
+  verifiedReleaseGroupId: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/).optional(),
+});
+export type CatalogCollectionAlbum = z.infer<typeof catalogCollectionAlbumSchema>;
+/** Catalog songs for an artist or album page that the library cannot play yet, plus correlated albums not imported. */
+export const catalogCollectionResponseSchema = z.object({
+  items: z.array(recordingSearchItemSchema).max(100),
+  albums: z.array(catalogCollectionAlbumSchema).max(50).optional().default([]),
+  catalog: catalogCoverageSchema,
+});
+export type CatalogCollectionResponse = z.infer<typeof catalogCollectionResponseSchema>;
+export const searchRequestStatusSchema = z.enum(["active", "closed", "cancelled"]);
+export const searchRequestEnrichmentStatusSchema = z.enum(["queued", "running", "complete", "not_found", "ambiguous", "failed"]);
+export const searchRequestViewSchema = z.object({
+  id: z.uuid(), query: z.string().min(1).max(100),
+  status: searchRequestStatusSchema, enrichmentStatus: searchRequestEnrichmentStatusSchema,
+  musicBrainzRecordingId: z.string().max(100).nullable(), trackId: z.uuid().nullable(),
+  track: z.object({ stage: z.string().max(100), playable: z.boolean() }).nullable(),
+  createdAt: z.string().max(100), updatedAt: z.string().max(100), closedAt: z.string().max(100).nullable(),
+});
+export type SearchRequestView = z.infer<typeof searchRequestViewSchema>;
+export const searchRequestListSchema = z.object({ requests: z.array(searchRequestViewSchema).max(50) });
+export const searchRequestCreateInputSchema = z.object({ query: z.string().trim().min(1).max(100) });
+export const searchRequestActionSchema = z.enum(["retry", "cancel"]);
+export const searchRequestActionInputSchema = z.object({
+  id: z.uuid(), action: searchRequestActionSchema,
+});
+export type SearchRequestAction = z.infer<typeof searchRequestActionSchema>;
+/** A member-reviewable audio source state; choices appear only when the import needs a member's pick. */
+export const trackSourceStateSchema = z.object({
+  trackId: z.uuid(), stage: z.string(), videoId: z.string().nullable(), canReportWrong: z.boolean(),
+  choices: z.array(z.object({
+    id: z.string().regex(/^[A-Za-z0-9_-]{11}$/), title: z.string(), channel: z.string(),
+    durationSec: z.number().nullable(), viewCount: z.number().nullable(),
+  })).max(5),
+});
+export type TrackSourceState = z.infer<typeof trackSourceStateSchema>;
+export const requestRecordingInputSchema = z.object({
+  token: z.string().min(1).max(10_000), youtubeUrl: z.string().max(2048).optional(), searchRequestId: z.uuid().optional(),
+  /** Also save the song to Liked songs; it plays there once its import finishes. */
+  like: z.boolean().optional(),
+});
 export type CollectionMutation =
   | { action: "append"; revision: number; trackIds: string[] }
   | { action: "remove"; revision: number; entryId: string }

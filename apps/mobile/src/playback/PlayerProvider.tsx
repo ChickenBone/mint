@@ -10,7 +10,7 @@ import { OfflineStore, OFFLINE_BUDGET, type OfflineState } from "../offline/stor
 import { accountScope, registerPlaybackCleanup } from "./account-cleanup";
 import { PlaybackEngine } from "./engine";
 import { createPlaylist } from "./playlist";
-import { startNativeDeviceBridge, type NativeDeviceBridge } from "./device-bridge";
+import { movePlaybackToDevice, startNativeDeviceBridge, type NativeDeviceBridge } from "./device-bridge";
 import { PlaybackDiagnostics, emptyDiagnostics, type DiagnosticsSnapshot } from "./diagnostics";
 import { DiagnosticsPreference } from "./diagnostics-preference";
 import { emptyPlayerState, type MobileTrack, type PlayerCollection, type PlayerState, type RepeatMode } from "./types";
@@ -265,30 +265,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     deviceError,
     localDeviceId: () => deviceRef.current?.deviceId ?? null,
     handoffTo: async (id) => {
-      if (!deviceRef.current) throw new Error("The player is still connecting. Try again shortly.");
+      const bridge = deviceRef.current;
+      if (!bridge) throw new Error("The player is still connecting. Try again shortly.");
       const connection = apiRef.current;
       if (!connection) throw new Error("Sign in to choose a player.");
-      const rows = await connection.devices();
-      const source = rows.find((row) => row.online && row.state.playing && row.state.queueLength > 0);
-      if (!source || source.id === deviceRef.current.deviceId) {
-        await deviceRef.current.handoffTo(id);
-        return;
-      }
-      const wait = async (commandId: string) => {
-        const deadline = Date.now() + 20_000;
-        while (Date.now() < deadline) {
-          if (apiRef.current !== connection) throw new Error("Account changed during the playback move.");
-          const command = await connection.deviceCommandStatus(commandId);
-          if (command.status === "succeeded") return;
-          if (command.status === "failed" || command.status === "expired") throw new Error(command.error || "Playback move was not confirmed.");
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-        throw new Error("Device did not confirm the playback move.");
-      };
-      const transferred = await connection.transferDevice(id);
-      await wait(transferred.id);
-      const pause = await connection.completeDeviceTransfer(transferred.id);
-      await wait(pause.id);
+      await movePlaybackToDevice(id, connection, bridge, () => apiRef.current === connection && deviceRef.current === bridge);
     },
     diagnosticsEnabled: diagnosticsEnabled && diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]),
     diagnosticsWarning: diagnosticsOwner === JSON.stringify([scopeServer, scopeUser]) ? diagnosticsWarning : null,

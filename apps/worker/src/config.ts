@@ -1,4 +1,5 @@
 import { numberEnv, optionalEnv } from "@mint/core/env";
+import { youtubeGapMs } from "@mint/core/youtube-pace";
 
 export const config = {
   musicDir: optionalEnv("MUSIC_DIR", "/music"),
@@ -21,6 +22,8 @@ export const config = {
     finalize: numberEnv("FINALIZE_CONCURRENCY", 2),
     torbox: numberEnv("TORBOX_CONCURRENCY", 2),
   },
+  /** YouTube imports run one at a time per worker process, with this pause between them. */
+  youtubeImportGapMs: youtubeGapMs(process.env.YOUTUBE_IMPORT_GAP_SECONDS, 15),
   /** A getter: the token and section can be discovered after startup (see integrations.ts). */
   get plexEnabled() {
     return Boolean(process.env.PLEX_URL && process.env.PLEX_TOKEN && process.env.PLEX_MUSIC_SECTION_ID);

@@ -42,7 +42,19 @@ export async function catalogConnectionResponse(request: Request, path: string[]
     }
     if (!parentId) return Response.json({ error: "Invalid catalog identity." }, { status: 400 });
     const page = await bridge.page(kind === "artists" ? "artists" : "albums", parentId, query.data.after ?? null, query.data.limit, request.signal);
-    return Response.json(catalogPageForListener(page, user.id, kind === "artists" ? "artists" : "albums"));
+    let items = page.items;
+    if (localAlbum && items.length) {
+      request.signal.throwIfAborted();
+      const { rows } = await getDb().execute<{ id: string }>(sql`
+        select distinct lower(mb_recording_id) as id from tracks
+        where artist = ${localAlbum[0]} and coalesce(album, '') = ${localAlbum[1]}
+          and ${PLAYABLE} and lower(mb_recording_id) in (${sql.join(items.map((item) => sql`${item.id}`), sql`, `)})
+        limit ${items.length}`);
+      request.signal.throwIfAborted();
+      const owned = new Set(rows.map((row) => row.id));
+      items = items.filter((item) => !owned.has(item.id));
+    }
+    return Response.json(catalogPageForListener({ ...page, items }, user.id, kind === "artists" ? "artists" : "albums"));
   } catch (error) {
     if (request.signal.aborted) return Response.json({ error: "Catalog request cancelled." }, { status: 499 });
     console.error("[catalog-connection] metadata unavailable");

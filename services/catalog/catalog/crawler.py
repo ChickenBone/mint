@@ -20,7 +20,7 @@ from catalog.model import (
 )
 from catalog.providers import PUBLIC_SOURCES, SOURCES, external_identity
 from catalog.sources import Deferred, Sources
-from catalog.store import LeaseLost, Store
+from catalog.store import LeaseLost, SEARCH_TASKS, Store
 from catalog.workers import run_workers
 from catalog.youtube import (
     YOUTUBE_ERRORS,
@@ -31,6 +31,7 @@ from catalog.youtube import (
 )
 
 
+DEMAND_ONLY_TASKS = (*SEARCH_TASKS, "ytm-related")
 log = logging.getLogger(__name__)
 SOURCE_ERRORS = (
     ValueError,
@@ -81,6 +82,18 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         entities = lookup_entities(
             payload, country, 201 if job["kind"] == "song" else 201 * (1 + len(companions))
         )
+    elif task == "apple-search":
+        entities = lookup_entities(payload, country, 50)
+    elif task == "mb-search":
+        rows = payload["recordings"]
+        if not isinstance(rows, list) or len(rows) > 100:
+            raise ValueError("Invalid MusicBrainz search page")
+        entities = []
+        for row in rows:
+            try:
+                entities.append(replace(musicbrainz_entity("song", row), quality=0))
+            except (KeyError, TypeError, ValueError):
+                continue
     elif task == "lb-chart":
         ranked = listenbrainz_entities(payload)
         entities = [entity for entity, _ in ranked]
@@ -124,6 +137,7 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         conn.execute("SELECT entities FROM catalog_budget FOR UPDATE")
         for leased in sorted([job, *companions], key=lambda row: row["key"]):
             store.lock_job(conn, leased)
+        demand_priority = job.get("demand_priority", 0)
         inserted = store.ingest(
             conn, entities, merge_relationships=task.startswith("mb-") or task == "lb-chart"
         )
@@ -131,10 +145,14 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
             store.view_signals(conn, discovery.views)
             store.public_observations(conn, discovery)
             for expansion, kind, identifier in discovery.jobs:
-                store.enqueue(conn, expansion, "global", kind, identifier, job["priority"] * 0.5)
+                store.enqueue(
+                    conn, expansion, "global", kind, identifier, job["priority"] * 0.5,
+                    demand_priority=demand_priority * 0.5,
+                )
             for expansion, kind, identifier, page in discovery.pages:
                 store.enqueue(
-                    conn, expansion, "global", kind, identifier, job["priority"] * 0.5, page
+                    conn, expansion, "global", kind, identifier, job["priority"] * 0.5, page,
+                    demand_priority=demand_priority * 0.5,
                 )
         if task == "mb-lookup":
             links = []
@@ -157,25 +175,30 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
         if task == "mb-lookup" and job["kind"] == "artist":
             for expansion in ("mb-albums", "mb-songs"):
                 store.enqueue(
-                    conn, expansion, "global", "artist", job["provider_id"], job["priority"] * 0.5
+                    conn, expansion, "global", "artist", job["provider_id"], job["priority"] * 0.5,
+                    demand_priority=demand_priority * 0.5,
                 )
         if task == "mb-lookup" and job["kind"] == "album":
-            store.enqueue(conn, "mb-releases", "global", "album", job["provider_id"], job["priority"])
+            store.enqueue(
+                conn, "mb-releases", "global", "album", job["provider_id"], job["priority"],
+                demand_priority=demand_priority,
+            )
         if task == "mb-releases":
             for identifier in releases:
                 store.enqueue(
                     conn, "mb-release", "global", "album", identifier, job["priority"],
-                    album_key=job["entity_key"],
+                    album_key=job["entity_key"], demand_priority=demand_priority,
                 )
         if next_page is not None:
             if task == "mb-release":
                 store.enqueue(
                     conn, task, country, "album", job["provider_id"], job["priority"], next_page,
-                    album_key=job["entity_key"],
+                    album_key=job["entity_key"], demand_priority=demand_priority,
                 )
             else:
                 store.enqueue(
-                    conn, task, country, "artist", job["provider_id"], job["priority"], next_page
+                    conn, task, country, "artist", job["provider_id"], job["priority"], next_page,
+                    demand_priority=demand_priority,
                 )
         for leased in [job, *companions]:
             store.complete(
@@ -183,6 +206,8 @@ def process(store: Store, sources: Sources, job: dict, companions=()):
                 leased,
                 store.settings.chart_interval
                 if ranked is not None or task == "yt-feed"
+                else 30 * 86400
+                if task in DEMAND_ONLY_TASKS
                 else 7 * 86400,
             )
         store.activity(

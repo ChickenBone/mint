@@ -1,4 +1,4 @@
-import { ApiError, confirmsHandoff, deviceEnvelopeSchema, deviceStateSchema, matchesDevicePlayback, type DeviceCommand, type DeviceHandoff, type DeviceState, type MintApi } from "@mint/client";
+import { ApiError, confirmsHandoff, deviceEnvelopeSchema, deviceStateSchema, matchesDevicePlayback, playbackSource, type DeviceCommand, type DeviceHandoff, type DeviceState, type MintApi } from "@mint/client";
 
 type Options = {
   api: Pick<MintApi, "registerDevice" | "pollDevice" | "acknowledgeDevice" | "disconnectDevice" | "handoffDevice" | "deviceCommandStatus">;
@@ -12,6 +12,45 @@ type Options = {
 export type NativeDeviceBridge = { readonly deviceId: string | null; dispose(): void; sleep(): void; wake(): void; handoffTo(id: string): Promise<void> };
 const message = (error: unknown) => error instanceof Error ? error.message : "Device connection failed.";
 const identity = (state: DeviceState) => JSON.stringify([state.trackId, state.queueContext ?? state.queue, state.currentIndex, state.playing]);
+
+export async function movePlaybackToDevice(
+  destinationId: string,
+  api: Pick<MintApi, "devices" | "transferDevice" | "completeDeviceTransfer" | "deviceCommandStatus">,
+  bridge: Pick<NativeDeviceBridge, "deviceId" | "handoffTo">,
+  isCurrent: () => boolean,
+) {
+  const requireCurrent = () => { if (!isCurrent()) throw new Error("Account changed during the playback move."); };
+  const rows = await api.devices();
+  requireCurrent();
+  const destination = rows.find((row) => row.id === destinationId);
+  if (!destination?.online) throw new Error("That device is asleep. Open Mint there and try again.");
+  const source = playbackSource(rows, destinationId);
+  if (!source) {
+    if (!destination.state.queueLength) throw new Error("Play a song on one device before moving it.");
+    return;
+  }
+  if (source.id === bridge.deviceId) {
+    await bridge.handoffTo(destinationId);
+    return;
+  }
+  const wait = async (commandId: string) => {
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline) {
+      requireCurrent();
+      const command = await api.deviceCommandStatus(commandId);
+      if (command.status === "succeeded") return;
+      if (command.status === "failed" || command.status === "expired") throw new Error(command.error || "Playback move was not confirmed.");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw new Error("Device did not confirm the playback move.");
+  };
+  const transferred = await api.transferDevice(destinationId);
+  await wait(transferred.id);
+  requireCurrent();
+  const pause = await api.completeDeviceTransfer(transferred.id);
+  await wait(pause.id);
+}
+
 export function startNativeDeviceBridge(options: Options): NativeDeviceBridge {
   let stopped = false, suspended = false, running = false, busy = false;
   let receiver: { id: string; token: string } | null = null;

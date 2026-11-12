@@ -298,6 +298,33 @@ def test_repair_reserves_admission_for_popular_albums_when_unranked_queue_is_ful
     assert job is not None and job["priority"] > 0
 
 
+def test_artist_priority_labels_are_independent_and_recalculate_album_jobs(store):
+    from catalog.ranker import refresh_batch
+
+    artist = musicbrainz_entity("artist", {"id": ARTIST_ID, "name": "Artist"})
+    album = musicbrainz_entity("album", {
+        "id": ALBUM_ID, "title": "Album",
+        "artist-credit": [{"artist": {"id": ARTIST_ID, "name": "Artist"}}],
+    })
+    with store.transaction() as conn:
+        store.ingest(conn, [artist, album], schedule=False)
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library") == 1
+        assert store.priority_artist(conn, ARTIST_ID, "library-export") == 1
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library") == 0
+        assert store.priority_artist(conn, ARTIST_ID, "mint-library", remove=True) == 1
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority FROM jobs WHERE task='mb-releases' AND entity_key=%s", (album.key,)
+        ).fetchone()["priority"] == 10
+        assert store.priority_artist(conn, ARTIST_ID, "library-export", remove=True) == 1
+    refresh_batch(store)
+    with store.transaction() as conn:
+        assert conn.execute(
+            "SELECT priority FROM jobs WHERE task='mb-releases' AND entity_key=%s", (album.key,)
+        ).fetchone()["priority"] == 0
+
+
 def test_musicbrainz_genre_enrichment_updates_document_and_graph_without_inventing_tags(
     store, song
 ):

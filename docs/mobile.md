@@ -17,7 +17,7 @@ feature models and feature-specific hooks live in `apps/mobile/src/features/`:
 | `artists` | Artist song selection, album shelf, portrait and attributed biography |
 | `albums` | Read-only album song selection and artist navigation |
 | `playlists` | Native/smart/source-managed/liked selections, revision-checked edits and copies |
-| `search` | Library/recording search, explicit requests, Browse all and category/chart paging |
+| `search` | Library search, catalog-backed results beyond the library with honest coverage, unavailable and not-configured states, explicit Add on identified songs, catalog-checked saved song requests, Browse all and category/chart paging |
 | `your-music` | Library facets, playlist creation, invitations, folders, pins and imports |
 | `settings` | Account/privacy, download storage, reports and compatible update controls |
 | `player` | Persistent sheet, lyrics, queue controls, gestures, cover palettes and seek UI |
@@ -129,7 +129,7 @@ The deployed Next.js server must include the native routes:
 | `GET /api/native/auth/session` | Revalidate approval, expiry and revocation |
 | `POST /api/native/auth/logout` | Revoke the specific native credential; no web-cookie changes |
 | `/api/native/player/**` | Allowlisted catalog, progressive queues, track metadata, lyrics, offline entitlement and audio proxy |
-| `/api/native/music/**` | Existing account-owned collections, discovery, likes, preferences, history and explicit acquisition requests |
+| `/api/native/music/**` | Existing account-owned collections, discovery, likes, preferences, history, explicit acquisition requests and search-intent status |
 | `GET /api/native/browse?facet=&offset=&limit=` | Paginated Search categories (`genre`, `mood`, `decade`) derived from playable songs, with song counts and one sample cover |
 | `GET /api/native/charts[?chart=&offset=&limit=&revision=]` | Read-only chart list and chart pages with per-account library availability; chart requests are not routed |
 | `POST /api/native/issue-reports` | Member-submitted reports only, never administrator reports access |
@@ -140,6 +140,31 @@ request-local consumer context; even an administrator account gets only
 consumer privileges here. Ordinary web routes continue using web cookies
 and their existing Origin checks. Native tokens cannot be reused as web
 cookies, and no Origin header is forged.
+
+Search results beyond the library come from Mint's metadata catalog through
+the Mint API (`GET /api/native/music/search`); the app never calls the catalog
+or an upstream metadata provider itself. Rows keep the server's relevance order
+and show their source, a freshness label and, only when known, an attributed
+popularity label (never a score or play count). When nothing matched every
+typed word, the nearest results appear as "Closest in the catalog", which is how
+other spellings and aliases surface. Only rows with a MusicBrainz identity can
+be added; other rows are display-only and marked "Identity unconfirmed". The
+catalog's coverage is stated honestly: results may be incomplete or out of date,
+reduced spelling/alias matching is called out, and a catalog that is
+unavailable or not configured on the server is shown as such while library
+search and playback keep working. Metadata results never download or
+play audio; only the explicit Add to library action on an identified recording
+requests audio.
+
+A no-match Search action ("Ask Mint to look for it") may save an account-owned
+song request and trigger a metadata check against the same catalog. It is
+offered only when the catalog actually answered and no matched, requestable
+recording exists, never when the catalog is unavailable or not configured,
+because that miss would be unverified. The check can identify a recording, but
+it does not create a track or start audio acquisition. The member must still
+choose an identified recording with Add to library; status never implies
+playability unless the linked track passes the normal playable check, and
+completion never starts playback automatically.
 
 Credentials have the same expiry as ordinary sessions, currently 30 days.
 They reuse the existing session table (no database migration), store only a

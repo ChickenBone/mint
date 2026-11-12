@@ -419,7 +419,7 @@ Approved members can browse songs/albums/artists/imported playlists, search, lis
 
 **Play and shuffle collections:** Music and Library have explicit Play/Shuffle actions. A filtered search plays all matching tracks, not just the loaded page; liked songs and imported playlists use member-private collections. Shuffle visits each queued item once before wrapping in repeat-all mode; previous follows the shuffled order. Queue entries have distinct identities even when a song is added twice. Upcoming songs can be moved earlier/later or removed, and clearing upcoming never stops the current song.
 
-**Tolerant search and requests:** indexed search accepts reordered title/artist/album words, prefixes, accents and conservative misspellings. An explicit **Request** action searches MusicBrainz and, when that member has linked YouTube, YouTube at the same time. Ordinary local searches do not leave Mint. Mint queues a download only when the basic matcher, or OpenAI Decisions when enabled, is confident in one recording. An uncertain or failed match asks for an exact HTTPS YouTube video URL instead of showing a list. A pasted URL is requested even when the catalogs disagree. Metadata-only requests try configured Lidarr first; Cobalt fallback requires either that video link or the requesting member's linked Google/YouTube account and available Data API search quota. Verified artist/title/version/duration matching may decline a source rather than download the wrong recording. Missing setup or matches appears as a retriable failed job. Requests remain separate from imported YouTube likes and never download Spotify audio. No recommendation or Spotify sync starts a download automatically.
+**Tolerant search and requests:** indexed search accepts reordered title/artist/album words, prefixes, accents and conservative misspellings. An explicit **Request** action resolves MusicBrainz evidence and then searches YouTube for a matching source. By default, source matching and verification need the requesting member's linked Google/YouTube account and available Data API quota. Operators with YouTube's prior written permission can instead opt in to public-page metadata matching, described below. Ordinary local searches do not leave Mint. Mint queues a download only when the basic matcher, or OpenAI Decisions when enabled, is confident in one recording. An uncertain or failed match asks for an exact HTTPS YouTube audio URL instead of showing a list. A pasted URL is a strict pin, not permission to override a conflicting song, edition or music-video rejection. Metadata-only requests try configured Lidarr first; Cobalt is the fallback. Artist/title/version/duration matching may decline a source rather than download the wrong recording. Policy rejection needs a corrected request, while temporary provider failures retry. Requests remain separate from imported YouTube likes and never download Spotify audio. No recommendation or Spotify sync starts a download automatically.
 
 **Optional OpenAI song matching:** open **Management → Matching**, save an OpenAI API key, and enable matching. Mint encrypts the key and sends only the requested title, artist, duration, and public candidate titles, channels, and durations to OpenAI Decisions. A full decision costs about $0.0005. Audio, account tokens, member data, and media files stay local. At request time, a disabled, missing, unavailable, or timed-out decision uses the deterministic matcher; an uncertain decision asks for a YouTube URL. During later acquisition, uncertain decisions still fall back to the deterministic matcher. Manual YouTube URLs are unchanged.
 
@@ -663,7 +663,251 @@ Set `AUTO_CONFIGURE_INDEXERS=false` to leave all indexer setup to you. `PROWLARR
 
 ### Cobalt
 
-Cobalt runs internally only. If YouTube starts answering "sign in to confirm you're not a bot", export YouTube cookies to `cobalt-cookies.json` (see the [cobalt docs](https://github.com/imputnet/cobalt/blob/main/docs/run-an-instance.md)). Then uncomment the cookie volume and `COOKIE_PATH` under `cobalt` in `docker-compose.yml`. `COBALT_API_KEY` is only needed if you turn on Cobalt's API‑key auth.
+Cobalt runs internally only. `COBALT_API_KEY` is needed only if you enable Cobalt's API-key authentication. Source availability, regional/age restrictions and rights still apply; do not bypass authentication, CAPTCHAs or entitlements.
+
+**Known upstream empty-audio incident:** stock Cobalt **11.7.1**, source
+`a636575b09de1fc55d9b8cd98cac88f5f2f16b42`, using its default **IOS** client
+could resolve YouTube metadata but receive HTTP 403 from Googlevideo media
+requests. Its old chunked-stream handling could close with HTTP 200 and an empty
+file. Mint rejects empty/invalid audio; a healthy API, successful metadata lookup
+or HTTP 200 is **not** proof of full audio delivery. The default Compose image
+remains stock `ghcr.io/imputnet/cobalt:11`; the floating tag is not a fix guarantee.
+
+**Opt-in workaround, not a released upstream fix:** reviewed
+[imputnet/cobalt#1581](https://github.com/imputnet/cobalt/pull/1581) is open and
+unmerged at the time of this documentation. Pin its exact reviewed head
+`2e8c384defaefa381bbdd51053ee0a7ebca2ee2a`, including `b5c4575` (VISIONOS support)
+and `2e8c384` (rejected chunked-media reporting). This head upgrades
+`youtubei.js` from 17.0.1 to **18.1.0**, requires **Node >=20**, supports opt-in
+`CUSTOM_INNERTUBE_CLIENT=VISIONOS`, refreshes rejected media URLs with bounded
+retries, and reports unrecoverable/zero-length streams as errors. Its default
+client remains IOS. Setting VISIONOS on stock 11 alone is insufficient; the old
+Android VR workaround is not recommended.
+
+A standalone local WSL test of that exact head, dependency and VISIONOS recovered
+all 11 previously empty downloads: nonzero files, persisted byte/duration
+agreement and full audio decode. This is **local standalone evidence**, not
+Docker, NAS, remote-agent or all-host verification, and not a promise that every
+source is available.
+
+Build on an operator-controlled machine (these are setup instructions, not a
+reason to restart a shared runtime). The upstream Dockerfile uses Node 24 and a
+frozen pnpm lockfile; preserve `.git` in the build context:
+
+```bash
+git init cobalt-pr1581
+git -C cobalt-pr1581 remote add origin https://github.com/imputnet/cobalt.git
+git -C cobalt-pr1581 fetch --depth=1 origin 2e8c384defaefa381bbdd51053ee0a7ebca2ee2a
+git -C cobalt-pr1581 checkout --detach FETCH_HEAD
+git -C cobalt-pr1581 rev-parse HEAD
+# Verify the printed SHA is exactly the one above before building.
+docker build --tag mint-cobalt:pr1581-2e8c384 cobalt-pr1581
+docker run --rm --entrypoint node mint-cobalt:pr1581-2e8c384 --version
+docker run --rm --entrypoint node mint-cobalt:pr1581-2e8c384 -p "JSON.parse(require('node:fs').readFileSync('node_modules/youtubei.js/package.json','utf8')).version"
+```
+
+Verify Node >=20 and youtubei.js 18.1.0. No patched public image is assumed to
+exist. This pins source/dependencies, not the upstream Dockerfile's floating base
+image; record the resulting image ID/digest and architecture. Build on each
+target host or publish your reviewed build to an operator-controlled registry
+and use its immutable digest; a local image tag on one machine is not available
+on a NAS or volunteer machine automatically.
+
+For command-line Compose and newly downloaded volunteer Compose, set both in
+that deployment's `.env`, then, **with runtime-owner approval**, recreate only
+Cobalt:
+
+```dotenv
+COBALT_IMAGE=mint-cobalt:pr1581-2e8c384
+COBALT_INNERTUBE_CLIENT=VISIONOS
+```
+
+Run `docker compose config --quiet` before applying, then
+`docker compose up -d --no-deps --force-recreate cobalt` with approval. For
+volunteers using the checked-in filename, include
+`-f docker-compose.agent.yml` in both commands. This does not update Mint's
+worker/web images or restart other services.
+
+For the self-contained NAS project editor, replace `services.cobalt.image` with
+the image loaded on that NAS (or your registry digest) and add
+`CUSTOM_INNERTUBE_CLIENT: VISIONOS` under its `environment`. Older volunteer
+Compose files need the same explicit service edits; `.env` cannot override an
+old hardcoded image/environment. Keep existing service URLs, private networks,
+secrets and storage unchanged. A standalone launcher must save the client
+environment as well as setting it in the current process.
+
+**Verify delivery and rollback:** first confirm the running source/image,
+dependency and client environment. The Mint pipeline worker and upload hub
+require **FFmpeg and ffprobe** on PATH (bundled in `mint-worker`; install them for
+bare Node development). The volunteer agent downloads only; the hub validates
+its upload. In an isolated test, use an operator-owned/permitted fixture and
+confirm actual nonzero bytes, ffprobe duration/audio stream, full decode with
+`ffmpeg -v error -i <fixture-file> -f null -`, and agreement with Mint's stored
+bytes/duration. Do not publish signed media URLs, tokens or private logs.
+Without that delivery check, report API health only. If it fails, retain the
+failure and inspect the layer rather than retrying another edition silently.
+To roll back, restore your recorded previous image/digest and client (stock
+default IOS), remove the two opt-ins, and recreate only Cobalt with approval.
+Do not delete volumes or reset Mint's database. Recheck upstream merge/release
+status before adopting any later fix.
+
+**Audio source policy:** automatic resolution prefers artist-associated official
+audio, then explicitly audio-labeled VEVO uploads, then Topic audio, then the
+most-viewed eligible lyric upload **among the bounded returned candidates**.
+Mint searches lazily: one ten-result official-audio search, stopping when an
+eligible official/VEVO audio source is found; otherwise one ten-result Topic
+search, stopping when an eligible audio/Topic source is found; only then one
+ten-result lyric search ordered by provider view count. If nothing is eligible
+after those three, Mint tries the plain query and an "audio" query before
+giving up, stopping as soon as a confidently supported source appears.
+Each `search.list` call
+uses a YouTube `search.list` call; Google's current default is a separate
+**100 search calls/day per project**, shared by all members and interactive
+request Search, resetting at midnight Pacific. Older quota documentation
+described 100 units per call against 10,000 units/day; do not assume a larger
+search allowance from that older unit description.
+If no candidate is eligible after those rounds and the query contains featured,
+producer or remaster credits, Mint runs one more relevance search without them.
+Mint deduplicates IDs and fetches new video statistics once per round.
+Relevance rank is not popularity; lyrics without a validated count cannot win.
+An official title or VEVO channel alone is not proof: identity, channel
+association, version and duration evidence must also pass. Metadata is not an
+audio-content analysis or a provider verified-channel badge.
+Music videos (even same-duration official/VEVO videos), previews, visualizers,
+intros/outros/skits and different editions (including slowed, sped-up and
+chopped-and-screwed versions) are rejected before and after optional
+AI selection. Unknown/ambiguous evidence stays unresolved. Labels such as
+`(Drake Remix - Audio)` count as official audio for that exact remix.
+The shared duration policy allows a 4% difference for evidence-backed studio
+audio (181-second catalog versus 176-second audio is accepted), capped at ten
+seconds; lyric presentations retain a 2.5-second bound.
+The source must always have a known positive duration. An unknown catalog
+duration is allowed without catalog length evidence only with unambiguous
+artist/title/version evidence from artist-associated official/VEVO audio.
+Topic and lyric sources require catalog duration evidence: channel names alone
+cannot distinguish namesake or impersonating Topic uploads. When an imported
+song has several exact-identity official, non-video catalog recordings,
+Mint can use their distinct lengths without claiming a unique recording ID.
+An exact studio recording on an Official compilation can contribute a length;
+live/remix and other secondary release types cannot. Catalog `video:true`
+recordings never contribute audio evidence, even on an Official release.
+Version qualifiers in catalog disambiguation are checked as well as titles.
+Every candidate must match one of those lengths; an eligible lyric source still
+needs validated views. The nearest supporting catalog length is saved only
+after selection so local verification and remote handoff enforce the same bound.
+After source tier,
+studio audio ties prefer closest duration, then validated views; the worker
+uses provider relevance position as its final deterministic tie-breaker.
+Deterministic worker policy rejections need a corrected source rather than
+automatic retries; quota/rate limits and temporary provider failures retry.
+If a later search round fails after eligible candidate metadata was collected, Mint
+retains that candidate rather than discarding it. A bounded degradation warning
+identifies the completed candidate evidence and failed round. This result is
+the best of the completed searches, not a claim that unavailable rounds had no
+better source. Without an eligible completed candidate, provider failure stays
+retryable and is not reported as "no eligible source." Revoked/refused account
+access still requires reconnecting; it cannot reuse earlier account results.
+MusicBrainz outages do not block independently sufficient official/VEVO audio
+evidence. If catalog duration evidence is needed and unavailable, matching
+retries instead of weakening the Topic/lyric rules. Structured catalog credits
+and known aliases accommodate collaboration punctuation and "and" separators,
+while complete band names and guest/version checks remain intact. Similar
+lengths alone cannot distinguish solo and featured editions.
+For YouTube audio sources only, a standalone remaster label such as
+"(Remastered 2011)" is treated as the same recording when catalog duration
+evidence exists; catalog, chart and library matching still keep remaster
+qualifiers distinct. An unlabelled upload on the artist's own channel is the
+lowest-priority fallback and needs a 2.5-second expected-duration match; VEVO
+channels, teasers, live/session performances and full-album uploads are never
+accepted this way, and imported likes/playlists never treat one as clean.
+To see why imports fail, run `npm run -w @mint/worker match-report -- <worker log>`;
+it tallies each failed selection's closest rejection reason.
+**Needs source and Wrong audio:** when no candidate passes automatically but
+some were reviewable, the failed song shows **Needs a source** with a bounded
+pick list (title, channel, length, views and a YouTube preview link) in the web
+and mobile apps; choosing one requeues the import with that exact video. The
+choice must come from that list, and the music-video ban still applies. On a
+ready YouTube import, **Wrong audio** blocks the current video for that song,
+clears it and searches again; blocked videos are never picked automatically.
+After download, the file's decoded length is checked against the expected
+length so a mislabelled upload fails instead of importing.
+`npx tsx apps/worker/src/audio-regression-capture.ts --limit 20 --reported`
+captures paced public search listings into
+`apps/worker/src/fixtures/audio-regression.json`; the worker test
+`audio-regression.test.ts` replays them offline against the current policy and
+fails on wrong-length or member-rejected picks and on dead-ended songs. Change
+the general policy, not per-song rules, when it regresses.
+By default, explicit URL import requires a **linked YouTube account**, even for a
+public URL. With authorized public-page matching enabled, an approved Mint member
+can verify a public pin without linking Google. A pin with a known expected duration may use a label-channel upload
+with a recognized audio label, but artist/title/version/duration checks and the
+music-video ban still apply; automatic matching keeps channel association.
+Pasted/pinned URLs need available metadata and these same checks; Mint never
+silently substitutes another source for a rejected explicit pin.
+
+**Likes and playlist import:** already-clean audio imports stay pinned and cost
+no search. Music videos, unknown upload kinds and unsafe versions become one
+unresolved song entry, with the original video ID retained as an alias so
+re-sync and playlist/un-like reconciliation do not duplicate it. The imported
+video's duration is not trusted for re-matching. Acquisition resolves a clean
+audio source in the priority above, using a unique catalog recording's duration
+when available; it never downloads the imported music video. Exact source-ID
+collisions reuse the existing owner and move member/playlist/alias references,
+not another fuzzy same-name recording. Existing acquired files and read-only
+originals are never replaced. Legacy, not-ready imported music-video pins from
+before this policy may still fail verification; they need review and a corrected
+audio URL on retry rather than an automatic substitution.
+
+In the default Data API mode, set `YOUTUBE_SYNC_SEARCH_DAILY_LIMIT` in the pipeline worker environment
+(default **60**, integer 0-100) to reserve a conservative part of each Pacific
+day's search allowance for sync-origin re-matches. CLI Compose forwards this
+setting; add it explicitly to existing self-contained NAS worker environments.
+This is a per-project deployment budget, not per member. Each actual search
+round reserves one slot atomically in Redis; interactive requests do not consume
+this sync-only budget but share the provider's limit. Exhaustion/rate-limit
+responses set a shared five-minute cooldown for worker and web searches.
+Waiting jobs poll Redis, not Google, and display a quota/budget waiting status.
+Daily budget keys expire at the Pacific reset, including daylight-saving changes.
+Already-clean imports need zero searches; re-matched songs commonly need one
+or two (at most four), so a large library can finish over several days.
+The deployment cannot account for other applications using the same Google
+project; lower the budget when necessary. Keep Redis available: budget failures
+must not permit unbounded searches.
+
+**Optional public-page source matching:** YouTube's published
+[Terms of Service](https://www.youtube.com/static?template=terms) restrict
+automated access without prior written permission. A public page is not permission
+to scrape it. Only if the operator has that permission for this deployment, set
+`YOUTUBE_SCRAPE_AUTHORIZED=true` in `.env`, or set the NAS settings-block value
+to `"true"`, and recreate **both** web and pipeline worker with the updated
+version. For a separately hosted web service, configure the same value there.
+The default is `false`; an invalid value is an error.
+
+This mode uses public YouTube search and watch-page **metadata only** for source
+matching and pin/volunteer-claim verification. It does not refresh Google tokens,
+consume the Data API search budget or silently fall back to the Data API.
+Approved-member checks and the same recording, edition, duration and audio-only
+policy still apply. Search and watch results are bounded and cached as validated
+public fields; Redis coordinates requests across web and workers, and an outage
+pauses upstream reads. The adapter does not store raw pages, descriptions,
+cookies or media URLs. It honors rate limits and access refusals without bypassing
+CAPTCHAs, age gates or entitlements. Sign-in, consent or challenge redirects
+pause public-page matching for an hour; a refusal of watch pages only pauses
+watch pages, and matching continues from search-listing title, channel, length
+and views (pinned videos use their exact-ID listing). A redirect to another
+YouTube search or watch page is followed once, and other redirects pause for
+five minutes. Public metadata connections allow 2.5 seconds per address, so
+slow IPv4/IPv6 routes (such as WSL NAT) are not dropped after Node's 250 ms default.
+YouTube may change its pages, rate-limit or
+refuse access; scraping is not a guarantee of matching or delivery. Existing
+quota-delayed jobs resume on their next scheduled retry. Interactive catalog and
+public-page lookups share a 35-second budget; a verified candidate can survive
+a later timeout, while an unresolved request reports a temporary error.
+
+This setting changes **source discovery**, not account sync: reading personal
+YouTube likes and playlists still requires linked Google OAuth and the YouTube
+Data API, including its limits. It does not grant rights to acquire media.
+Metadata-only fixtures do not establish successful media delivery.
 
 ### Album artwork
 
@@ -714,7 +958,7 @@ Anyone with an approved account on **your instance** can lend a machine for YouT
 
 3. The worker appears online within a minute. Admins approve new workers in **Admin → Workers**, unless `WORKER_AUTO_APPROVE=true`. Owners can revoke their own workers at any time, and revoking releases any job the worker held.
 
-The image is `ghcr.io/chickenbone/mint-agent`. It bundles nothing but Node, and runs read‑only with all capabilities dropped. The compose file pairs it with a private Cobalt container. Tuning: `AGENT_CONCURRENCY` (1–4, default 2).
+The image is `ghcr.io/chickenbone/mint-agent`. It bundles nothing but Node, and runs read‑only with all capabilities dropped. The compose file pairs it with a private Cobalt container. Tuning: `AGENT_CONCURRENCY` (1–4, default 2) and `AGENT_YOUTUBE_GAP_SECONDS` (0–600, default 15). Each agent runs YouTube downloads one at a time regardless of concurrency: a slot waits for its turn before claiming a job, so it holds no lease while waiting, then leaves a jittered pause of about this many seconds before the next download. Uploads and other slots' uploads still overlap. Run more volunteer workers, not more concurrency, to add YouTube throughput. The main worker paces its own YouTube searches and Cobalt downloads the same way with `YOUTUBE_IMPORT_GAP_SECONDS` (default 15); Lidarr steps are not paced.
 
 Volunteer agents perform **downloads only**, not sonic/audio analysis. Use the separate private-network analysis setup above for that work. The NAS template defaults to local acquisition (`REMOTE_DOWNLOADS=never`); set the NAS pipeline worker to `REMOTE_DOWNLOADS=auto` or `always` if you want approved volunteers to receive downloads.
 

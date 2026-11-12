@@ -37,6 +37,12 @@ Delivery: <review only / explicitly authorized commit and push>
 Acceptance: <observable outcome and required verification>
 ```
 
+## Concurrent sessions
+
+Add this to a request when other sessions may be active:
+
+> Work in a new isolated worktree and feature branch, not another session's dirty checkout. Read the current guides and route this request before editing. Discover active sessions using the available session tools and obtain their explicit owned paths, shared contracts and runtime ownership; session names or an idle status are not proof of no conflicts. Announce your narrow owned paths and any shared-contract needs before editing, negotiate overlaps, and designate one writer for shared manifests, generated domain maps and dependency lockfiles. If session tools are unavailable, request an ownership handoff rather than claiming no conflicts. Do not edit peer worktrees, reset their changes, copy their uncommitted files or cherry-pick their work without authorization. Shared runtimes, databases and ports have an owner: coordinate changes, migrations, restarts and test resources with that owner; prefer isolated fixtures. Preserve public DTO/API compatibility unless a contract change is agreed. Hand off exact changed files/contracts, checks actually run, limitations and integration order. Keep secrets, private logs and transcripts out of the repository. Do not commit, push or deploy unless the current user explicitly authorizes it.
+
 Deployment authorization is separate from Git publication. A passing test, APK
 build, export or workflow is not proof that a running backend or physical device
 has received and verified the change. Do not attach private logs or filled

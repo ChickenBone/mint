@@ -30,7 +30,7 @@ Details: [sleeves and shelves](../sleeves-and-shelves.md) and [playback and libr
 - **Scope:** Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves.
 - **Read before editing:** [agents/playback-and-library.md](../playback-and-library.md), [agents/sleeves-and-shelves.md](../sleeves-and-shelves.md), [agents/design.md](../design.md) (UI: also check desktop/mobile per DESIGN.md).
 - **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
-- **Imported by:** [`acquisition`](acquisition.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md)
+- **Imported by:** [`acquisition`](acquisition.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map collections` (exports, line counts, cross-domain import edges).
 
 ### Owned files (29)
@@ -51,7 +51,7 @@ Owned tests: 2.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/music-gestures.test.ts tests/music-platform.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/music-gestures.test.ts tests/music-platform.test.ts
 npm run typecheck -w @mint/core
 ```
 

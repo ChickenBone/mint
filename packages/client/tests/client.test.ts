@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { z } from "zod";
 import {
   ApiError, MintApi, nativeBearer, nativeCredentialSchema, nativeLoginSchema, normalizeServerUrl,
-  connectionErrorMessage, preferencesSchema, queuePageSchema,
+  connectionErrorMessage, preferencesSchema, queuePageSchema, requestRecordingInputSchema, searchRequestViewSchema,
 } from "../src/index";
 
 const deviceId = "12345678-1234-4234-8234-123456789012";
@@ -163,4 +163,128 @@ test("search browsing sends bounded category, filter and chart reads through the
   const invalid = new MintApi({ serverUrl: "https://mint.example.com", token,
     fetch: async () => Response.json({ facet: "genre", offset: 0, total: 1, nextOffset: null, items: [{ value: "", label: "", tracks: -1, artwork: null }] }) });
   await assert.rejects(invalid.browseCategories("genre"), /incompatible/);
+});
+test("search requests use the bounded native contract and support abortable list reads", async () => {
+  const request = {
+    id: deviceId, query: "An unreleased song", status: "active", enrichmentStatus: "queued",
+    musicBrainzRecordingId: null, trackId: null, track: null,
+    createdAt: "2026-11-10T12:00:00.000Z", updatedAt: "2026-11-10T12:00:00.000Z", closedAt: null,
+  };
+  const calls: Array<{ url: string; method: string; body: string | null; signal?: AbortSignal | null }> = [];
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url, init) => {
+    const target = new URL(String(url));
+    calls.push({ url: `${target.pathname}${target.search}`, method: init?.method ?? "GET",
+      body: typeof init?.body === "string" ? init.body : null, signal: init?.signal });
+    return Response.json(calls.length === 1 ? { requests: [request] } : { request });
+  } });
+
+  const controller = new AbortController();
+  assert.deepEqual(await api.listSearchRequests(controller.signal), { requests: [request] });
+  assert.deepEqual(await api.createSearchRequest("  An unreleased song  "), { request });
+  assert.deepEqual(await api.actOnSearchRequest(deviceId, "retry"), { request });
+  assert.deepEqual(calls, [
+    { url: "/api/native/music/search/requests", method: "GET", body: null, signal: controller.signal },
+    { url: "/api/native/music/search/requests", method: "POST", body: JSON.stringify({ query: "An unreleased song" }), signal: undefined },
+    { url: "/api/native/music/search/requests", method: "POST", body: JSON.stringify({ id: deviceId, action: "retry" }), signal: undefined },
+  ]);
+  assert.throws(() => api.createSearchRequest("  "), /too_small/);
+  assert.throws(() => api.createSearchRequest("q".repeat(101)), /too_big/);
+  assert.equal(searchRequestViewSchema.safeParse({ ...request, query: "q".repeat(101) }).success, false);
+  assert.throws(() => api.actOnSearchRequest("not-a-uuid", "cancel"), /Invalid UUID/);
+  assert.throws(() => api.actOnSearchRequest(deviceId, "close" as "cancel"), /Invalid option/);
+
+  const invalid = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () =>
+    Response.json({ requests: Array(51).fill(request) }) });
+  await assert.rejects(invalid.listSearchRequests(), /incompatible/);
+});
+test("search request response validation and recording linkage are explicit", async () => {
+  const request = {
+    id: deviceId, query: "A song", status: "active", enrichmentStatus: "running",
+    musicBrainzRecordingId: "mb-recording", trackId: deviceId, track: { stage: "ready", playable: true },
+    createdAt: "2026-11-10T12:00:00.000Z", updatedAt: "2026-11-10T12:01:00.000Z", closedAt: null,
+  };
+  let receivedBody: unknown;
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (_url, init) => {
+    receivedBody = JSON.parse(String(init?.body));
+    return Response.json({ trackId: deviceId, needsQueue: false, stage: "ready" });
+  } });
+  await api.requestRecording({ token: "signed-recording-result", searchRequestId: deviceId });
+  assert.deepEqual(receivedBody, { token: "signed-recording-result", searchRequestId: deviceId });
+  await api.requestRecording({ token: "signed-recording-result" });
+  assert.deepEqual(receivedBody, { token: "signed-recording-result" });
+  assert.throws(() => api.requestRecording({ token: "signed-recording-result", searchRequestId: "invalid" }), /Invalid UUID/);
+  assert.equal(requestRecordingInputSchema.safeParse({ token: "t".repeat(10_000) }).success, true);
+  assert.equal(requestRecordingInputSchema.safeParse({ token: "t".repeat(10_001) }).success, false);
+
+  const invalid = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () =>
+    Response.json({ request: { ...request, enrichmentStatus: "done" } }) });
+  await assert.rejects(invalid.createSearchRequest("A song"), /incompatible/);
+});
+test("catalog search separates requestable recordings from catalog-only rows and states coverage explicitly", async () => {
+  const recording = {
+    id: deviceId, title: "Fake Love", artist: "BTS", album: null, durationSec: null, token: "signed-recording-result", existing: null,
+  };
+  const row = {
+    key: `musicbrainz:global:song:${deviceId}`, source: "musicbrainz", kind: "song", title: "Fake Love", artist: "BTS", album: null,
+    genres: [], popularity: null, updatedAt: "2026-11-10T22:51:56.128Z", matched: true, recording,
+  };
+  const catalogOnly = {
+    ...row, key: "deezer:global:song:99", source: "deezer", title: "Fake Love", artist: "Drake", album: "Scorpion", genres: ["Rap"],
+    popularity: { score: 0.04, basis: "catalog-derived", observedAt: "2026-11-10T22:51:56.128Z" }, recording: null,
+  };
+  const catalog = { status: "ok", mode: "hybrid", relevance: "matched", hasMore: false, retryAfterSeconds: null };
+  const requested: string[] = [];
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url) => {
+    requested.push(new URL(String(url)).search);
+    return Response.json({ items: [recording], results: [row, catalogOnly], catalog });
+  } });
+  const response = await api.searchRecordings("fake love & more");
+  assert.deepEqual(requested, ["?q=fake%20love%20%26%20more"]);
+  assert.deepEqual(response.items.map((item) => item.id), [deviceId]);
+  assert.deepEqual(response.results.map((result) => result.recording?.token ?? null), ["signed-recording-result", null]);
+  assert.equal(response.results[1]?.popularity?.basis, "catalog-derived");
+  assert.equal(response.catalog.status, "ok");
+
+  for (const state of [
+    { status: "not_configured", mode: null, relevance: "empty", hasMore: false, retryAfterSeconds: null },
+    { status: "unavailable", mode: null, relevance: "empty", hasMore: false, retryAfterSeconds: 5 },
+    { status: "lexical-only", mode: "lexical", relevance: "related-only", hasMore: true, retryAfterSeconds: null },
+  ]) {
+    const degraded = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () =>
+      Response.json({ items: [], results: [], catalog: state }) });
+    assert.equal((await degraded.searchRecordings("fake love")).catalog.status, state.status);
+  }
+
+  const incompatible = (body: unknown) => new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () => Response.json(body) })
+    .searchRecordings("fake love");
+  await assert.rejects(incompatible({ items: [] }), /incompatible/);
+  await assert.rejects(incompatible({ items: [], results: [], catalog: { ...catalog, status: "mystery" } }), /incompatible/);
+  await assert.rejects(incompatible({ items: [], results: [{ ...catalogOnly, popularity: { ...catalogOnly.popularity, score: 0 } }], catalog }), /incompatible/);
+  await assert.rejects(incompatible({ items: [], results: Array(51).fill(catalogOnly), catalog }), /incompatible/);
+  await assert.rejects(incompatible({ items: [], results: [{ ...catalogOnly, title: "" }], catalog }), /incompatible/);
+});
+
+test("catalog collection responses preserve only valid optional release-group identities", async () => {
+  const verifiedReleaseGroupId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const albums = [
+    { id: "al_verified", title: "Fixture album", artist: "Fixture artist", verifiedReleaseGroupId },
+    { id: "al_legacy", title: "Another album", artist: "Fixture artist" },
+  ];
+  const catalog = { status: "ok", mode: "lexical", relevance: "matched", hasMore: false, retryAfterSeconds: null };
+  const response = { items: [], albums, catalog };
+  const controller = new AbortController();
+  const api = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async (url, init) => {
+    assert.equal(url, "https://mint.example.com/api/native/music/search/collection?id=ar_fixture");
+    assert.equal(init?.signal, controller.signal);
+    return Response.json(response);
+  } });
+  const result = await api.collectionRecordings("ar_fixture", controller.signal);
+  assert.equal(result.albums[0]?.verifiedReleaseGroupId, verifiedReleaseGroupId);
+  assert.equal("verifiedReleaseGroupId" in result.albums[1]!, false, "Older server responses remain compatible.");
+
+  for (const invalid of ["not-an-mbid", verifiedReleaseGroupId.toUpperCase(), null]) {
+    const malformed = new MintApi({ serverUrl: "https://mint.example.com", token, fetch: async () =>
+      Response.json({ ...response, albums: [{ ...albums[0], verifiedReleaseGroupId: invalid }] }) });
+    await assert.rejects(malformed.collectionRecordings("ar_fixture"), /incompatible/);
+  }
 });

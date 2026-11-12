@@ -78,6 +78,14 @@ export const connectableDeviceSchema = z.object({
   state: z.object({ playing: z.boolean(), queueLength: z.number().int().nonnegative(), volume: fields.volume, trackId: fields.trackId }),
 });
 export type ConnectableDevice = z.infer<typeof connectableDeviceSchema>;
+export function playbackSource<T extends { id: string; online: boolean; lastSeenAt: string; state: { playing: boolean; queueLength: number } }>(
+  devices: readonly T[], destinationId: string,
+) {
+  const ready = devices.filter((device) => device.online && device.state.queueLength > 0);
+  const playing = ready.find((device) => device.state.playing);
+  if (playing) return playing.id === destinationId ? null : playing;
+  return ready.filter((device) => device.id !== destinationId).sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
+}
 export const deviceRegistrationSchema = z.object({ id: z.uuid(), token: z.string() });
 export const deviceCommandStatusSchema = z.object({
   id: z.uuid(), status: z.enum(["pending", "delivered", "succeeded", "failed", "expired"]),

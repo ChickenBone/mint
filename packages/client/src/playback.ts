@@ -136,6 +136,21 @@ function identity(value: string) {
 export const albumPlayerId = (artist: string, album: string) => `al_${identity(JSON.stringify([artist, album]))}`;
 export const artistPlayerId = (artist: string) => `ar_${identity(artist)}`;
 
+/** Decodes artist/album player ids back to names so catalog-only pages can show a title before anything is imported. */
+export function collectionIdentity(id: string): { artist: string; album?: string } | null {
+  const match = /^(ar|al)_([A-Za-z0-9_-]{1,8000})$/.exec(id);
+  if (!match) return null;
+  try {
+    const base64 = match[2]!.replace(/-/g, "+").replace(/_/g, "/");
+    const binary = atob(base64 + "=".repeat((4 - base64.length % 4) % 4));
+    const text = decodeURIComponent(Array.from(binary, (char) => `%${char.charCodeAt(0).toString(16).padStart(2, "0")}`).join(""));
+    if (match[1] === "ar") return text.trim() ? { artist: text } : null;
+    const parsed: unknown = JSON.parse(text);
+    return Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === "string" && typeof parsed[1] === "string" && parsed[0].trim() && parsed[1].trim()
+      ? { artist: parsed[0], album: parsed[1] } : null;
+  } catch { return null; }
+}
+
 export function trackPlayerItem(track: { id: string; title: string; artist: string; album: string | null; artworkUrl: string }): PlayerItem {
   return { id: track.id, type: "track",
     title: track.title, artist: track.artist, album: track.album ?? undefined, thumb: track.artworkUrl || undefined,

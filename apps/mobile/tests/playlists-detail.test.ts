@@ -57,6 +57,7 @@ function renderedPlaylist(id: string, metadata: CollectionDetail | null, source?
       if (name === "../../components/ui/primitives") return { Button: "Button", Field: "Field", Notice: "Notice" };
       if (name === "../../hooks/useResource") return { useResource: () => ({ data: { page: catalogPage, metadata }, reload() {} }) };
       if (name === "./playlist-model") return playlistModel;
+      if (name === "./LikedImports") return { LikedImports: "LikedImports" };
       assert.equal(name, "./usePlaylistActions");
       return { usePlaylistActions: () => ({ editing: false, editingSongs: true, busy: false,
         removeEntry() {}, moveEntry() {}, setName() {}, setEditing() {}, setEditingSongs() {}, setDeleting() {} }) };

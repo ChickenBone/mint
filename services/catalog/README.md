@@ -364,6 +364,11 @@ library/user details. An empty or partial catalog is not proof that music does
 not exist. Separately containerized deployments can use the opt-in TLS/private
 network overlay described in [bridge operations](OPERATIONS.md#optional-mint-bridge).
 
+Mint can also use the separate private consumer connection for catalog search
+and optional authenticated demand hints. It may run alongside the bridge with a
+different token; neither connection shares database access. See
+[connecting Mint](OPERATIONS.md#connecting-mint).
+
 ### Higher request rates
 
 The four-second default is configurable, not a hard throughput ceiling.

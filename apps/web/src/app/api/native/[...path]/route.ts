@@ -13,6 +13,8 @@ import * as queue from "../../player/queue/[[...path]]/route";
 import * as items from "../../player/items/route";
 import * as music from "../../music/[...path]/route";
 import * as search from "../../music/search/route";
+import * as searchRequests from "../../music/search/requests/route";
+import * as searchCollection from "../../music/search/collection/route";
 import * as reports from "../../issue-reports/route";
 import * as charts from "../../charts/route";
 import { nativeBrowseResponse } from "@/lib/native-browse";
@@ -51,6 +53,10 @@ async function dispatch(request: Request, path: string[]) {
     return queue.GET(request, { params: Promise.resolve({ path: path.slice(2) }) });
   }
   if (key === "music/search") return search.GET(request);
+  if (key === "music/search/requests") return request.method === "GET"
+    ? searchRequests.GET()
+    : searchRequests.POST(request);
+  if (key === "music/search/collection") return searchCollection.GET(request);
   if (key === "issue-reports") return reports.POST(request);
   if (key === "browse") return nativeBrowseResponse(request);
   if (path[0] === "catalog") return catalogConnectionResponse(request, path);

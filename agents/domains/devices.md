@@ -39,7 +39,7 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 - `apps/web/src/lib/` `device-client.ts`, `device-http.ts`, `devices-store.ts`, `devices.ts`
 - `apps/web/tests/` `devices-db.test.ts`, `devices.test.ts`
 - `docs/` `devices.md`
-- `packages/core/migrations/` `0007_devices.sql`, `0018_device_lifecycle.sql`
+- `packages/core/migrations/` `0007_devices.sql`, `0020_device_lifecycle.sql`
 - `packages/core/src/` `devices.ts`
 - `packages/core/src/db/` `devices.ts`
 
@@ -50,7 +50,7 @@ Owned tests: 2.
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test tests/devices-db.test.ts tests/devices.test.ts
+npm exec -w @mint/web -- tsx --test --test-force-exit tests/devices-db.test.ts tests/devices.test.ts
 npm run typecheck -w @mint/core
 ```
 

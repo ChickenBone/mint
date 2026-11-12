@@ -31,33 +31,33 @@
 
 - **Scope:** Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle.
 - **Read before editing:** [agents/mobile-features.md](../mobile-features.md).
-- **Imports from:** [`mobile-contracts`](mobile-contracts.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md)
+- **Imports from:** [`mobile-contracts`](mobile-contracts.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md), [`mobile-playlists`](mobile-playlists.md)
 - **Imported by:** [`mobile-albums`](mobile-albums.md), [`mobile-artists`](mobile-artists.md), [`mobile-home`](mobile-home.md), [`mobile-playback`](mobile-playback.md), [`mobile-player`](mobile-player.md), [`mobile-playlists`](mobile-playlists.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md), [`mobile-your-music`](mobile-your-music.md)
 - **Live detail:** `npm run agents -- map mobile` (exports, line counts, cross-domain import edges).
 
-### Owned files (42)
+### Owned files (46)
 
 - `apps/mobile/` `app.json`, `eas.json`, `eslint.config.cjs`, `metro.config.cjs`, `package.json`, `tsconfig.json`
 - `apps/mobile/app/` `_layout.tsx`, `sign-in.tsx`
 - `apps/mobile/src/api/` `create-api.ts`, `index.ts`
 - `apps/mobile/src/auth/` `AuthProvider.tsx`, `SignInScreen.tsx`, `account-request.ts`, `index.ts`, `persistence.ts`, `storage.native.ts`, `storage.ts`
-- `apps/mobile/src/components/music/` `CollectionDetail.tsx`, `detail-model.ts`, `screen-styles.ts`
+- `apps/mobile/src/components/music/` `CatalogCollectionSection.tsx`, `CollectionDetail.tsx`, `catalog-model.ts`, `catalog-requests.tsx`, `detail-model.ts`, `screen-styles.ts`
 - `apps/mobile/src/components/ui/` `PageTitle.tsx`, `SongOptions.tsx`, `music.tsx`, `primitives.tsx`
 - `apps/mobile/src/hooks/` `paged-model.ts`, `song-likes.ts`, `useDebouncedValue.ts`, `usePagedResource.ts`, `usePlaybackAction.tsx`, `useResource.ts`, `useSongLike.ts`
 - `apps/mobile/src/shell/` `ConsumerShell.tsx`, `navigation.ts`
 - `apps/mobile/src/theme/` `tokens.ts`
-- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `screens.test.ts`, `song-likes.test.ts`
+- `apps/mobile/tests/` `app-config.test.ts`, `auth-storage.test.ts`, `catalog-likes.test.ts`, `screens.test.ts`, `song-likes.test.ts`
 - `apps/mobile/tests/helpers/` `hook-harness.ts`, `music-fixtures.ts`
 - `docs/` `mobile-design.md`, `mobile.md`
 
 ### Validate
 
-Owned tests: 4.
+Owned tests: 5.
 
 ```bash
 npm run typecheck -w @mint/mobile
 npm run lint -w @mint/mobile
-npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/screens.test.ts tests/song-likes.test.ts
+npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/catalog-likes.test.ts tests/screens.test.ts tests/song-likes.test.ts
 ```
 
 <!-- agents:generated:end -->

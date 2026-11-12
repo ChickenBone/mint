@@ -1,4 +1,4 @@
-import type { CollectionDetail, MintApi, PlayerCollection } from "@mint/client";
+import type { CollectionDetail, MintApi, PlayerCollection, TrackView } from "@mint/client";
 import { loadCollectionTracks } from "../../components/music/detail-model";
 import { reorderedEntries } from "./collection-model";
 
@@ -41,4 +41,20 @@ export function movePlaylistEntry(api: Pick<MintApi, "mutateCollection">, id: st
 
 export function removePlaylistEntry(api: Pick<MintApi, "mutateCollection">, id: string, metadata: CollectionDetail, entryId: string) {
   return api.mutateCollection(id, { action: "remove", revision: metadata.revision, entryId });
+}
+
+/** Mirrors the web Liked Songs import status; progress is 0–1. */
+export function likedImportStatus(track: Pick<TrackView, "stage" | "progress"> & Partial<Pick<TrackView, "detail">>) {
+  if (track.stage === "failed") return track.detail === "Needs a source" ? "Needs a source" : "Couldn't import";
+  if (track.stage === "downloading" && track.progress > 0) return `Importing · ${Math.round(track.progress * 100)}%`;
+  if (track.stage === "queued") return "Waiting to import";
+  if (track.stage === "matching" || track.stage === "searching") return "Finding a source…";
+  return "Importing…";
+}
+
+/** Channel, length and views for a reviewable audio source. */
+export function sourceChoiceSummary(choice: { channel: string; durationSec: number | null; viewCount: number | null }) {
+  const length = choice.durationSec === null ? null : `${Math.floor(choice.durationSec / 60)}:${String(Math.round(choice.durationSec % 60)).padStart(2, "0")}`;
+  const views = choice.viewCount === null ? null : `${new Intl.NumberFormat(undefined, { notation: "compact" }).format(choice.viewCount)} views`;
+  return [choice.channel, length, views].filter(Boolean).join(" · ");
 }

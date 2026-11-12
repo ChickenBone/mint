@@ -16,6 +16,7 @@ import { torboxTick } from "./torbox-bridge";
 import { backfillArtwork } from "./artwork";
 import { scheduleArtistMetadata } from "./artist-metadata";
 import { scheduleCatalogPriority } from "../catalog-priority";
+import { processSearchRequestEnrichment } from "./search-request-enrichment";
 
 let lastStats = "";
 
@@ -127,6 +128,8 @@ export async function processMaintenance(job: Job<MaintenanceJob>) {
       return torboxTick();
     case "plex-playlists":
       return plexPlaylists(data.userId);
+    case "search-request-enrichment":
+      return processSearchRequestEnrichment(data.searchRequestId);
     case "schedule-sync": {
       const accts = await getDb().query.youtubeAccounts.findMany({ where: eq(schema.youtubeAccounts.autoSync, true), columns: { userId: true } });
       for (const a of accts) {

@@ -45,6 +45,9 @@ def test_musicbrainz_album_release_and_recording_requests_are_bounded(settings):
     assert url == "https://musicbrainz.org/ws/2/recording"
     assert params["release"] == ARTIST_ID
     assert params["limit"] == 100 and params["offset"] == 100
+    for task in ("mb-releases", "mb-release"):
+        with pytest.raises(ValueError):
+            request_url(job(task, country="global", kind="album", provider_id="https://localhost"), settings)
 
 
 def test_release_recording_page_follows_explicit_album_and_paginates():

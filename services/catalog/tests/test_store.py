@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +9,120 @@ from catalog.store import LeaseLost
 
 
 pytestmark = pytest.mark.integration
+
+
+def test_main_v9_upgrades_forward_preserving_metadata_and_pending_demand(unmigrated_store, song):
+    from unittest.mock import MagicMock
+
+    from fastapi.testclient import TestClient
+
+    from catalog.api import create_app
+    from catalog.identity import rebuild_artists
+
+    store = unmigrated_store
+    schema = Path(__file__).parents[1] / "catalog"
+    with store.transaction() as conn:
+        conn.execute((schema / "schema.sql").read_text())
+        for version in range(2, 10):
+            conn.execute((schema / f"schema-v{version}.sql").read_text())
+            if version == 4:
+                rebuild_artists(conn)
+        store.ingest(conn, [song], schedule=False)
+        conn.execute(
+            """INSERT INTO jobs(key,task,entity_key,country,kind,provider_id,priority,source,host)
+               VALUES
+                 ('legacy-search','mb-search',NULL,'global','song','example query',95,
+                  'musicbrainz','musicbrainz.org'),
+                 ('legacy-album','mb-lookup',%s,'global','album',%s,90,
+                  'musicbrainz','musicbrainz.org'),
+                 ('legacy-chart','chart',NULL,'us','song','',100,
+                  'apple','rss.marketingtools.apple.com')""",
+            (song.album_keys[0], song.album_keys[0].split(":")[-1]),
+        )
+        conn.execute(
+            """UPDATE jobs SET attempts=2,last_error='fixture',ready=false,
+               due_at=now()+interval '1 hour' WHERE key='legacy-search'"""
+        )
+        conn.execute("UPDATE source_controls SET paused=true WHERE source='musicbrainz'")
+        before = conn.execute(
+            "SELECT task,provider_id,priority,attempts,last_error,ready,due_at FROM jobs WHERE key='legacy-search'"
+        ).fetchone()
+        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 9
+
+    with TestClient(create_app(store.settings, store, MagicMock(), MagicMock())) as client:
+        assert client.get("/readyz").status_code == 503
+        store.migrate()
+        store.migrate()
+        assert client.get("/readyz").status_code == 200
+    with store.transaction() as conn:
+        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 10
+        assert conn.execute("SELECT title FROM entities WHERE key=%s", (song.key,)).fetchone()[
+            "title"
+        ] == song.title
+        assert conn.execute("SELECT entities FROM catalog_budget").fetchone()["entities"] == 1
+        assert conn.execute(
+            "SELECT task,provider_id,priority,attempts,last_error,ready,due_at FROM jobs WHERE key='legacy-search'"
+        ).fetchone() == before
+        priorities = conn.execute(
+            "SELECT key,demand_priority FROM jobs WHERE key LIKE 'legacy-%' ORDER BY key"
+        ).fetchall()
+        assert priorities == [
+            {"key": "legacy-album", "demand_priority": 90},
+            {"key": "legacy-chart", "demand_priority": 0},
+            {"key": "legacy-search", "demand_priority": 95},
+        ]
+        assert conn.execute(
+            "SELECT paused FROM source_controls WHERE source='musicbrainz'"
+        ).fetchone()["paused"]
+        assert conn.execute(
+            "SELECT 1 FROM pg_indexes WHERE indexname='jobs_mb_releases_pending'"
+        ).fetchone()
+        album_id = song.album_keys[0].split(":")[-1]
+        store.enqueue(conn, "mb-releases", "global", "album", album_id)
+        store.enqueue(
+            conn, "mb-release", "global", "album", album_id, album_key=song.album_keys[0]
+        )
+        store.enqueue(conn, "ytm-search", "global", "song", "example search")
+        store.enqueue(conn, "apple-search", "us", "song", "example search")
+        store.enqueue(conn, "ytm-related", "global", "song", "abcdefghijk")
+        assert store.priority_artist(conn, song.artist_keys[0].split(":")[-1], "library-export") == 1
+        tasks = {row["task"] for row in conn.execute("SELECT task FROM jobs").fetchall()}
+        assert {
+            "mb-releases", "mb-release", "mb-search", "ytm-search", "apple-search", "ytm-related"
+        } <= tasks
+
+
+def test_fresh_database_installs_both_demand_and_album_schema(store):
+    with store.transaction() as conn:
+        assert conn.execute("SELECT max(version) AS n FROM catalog_schema").fetchone()["n"] == 10
+        assert conn.execute("SELECT count(*) AS n FROM priority_artists").fetchone()["n"] == 0
+        store.enqueue(conn, "mb-search", "global", "song", "example query", demand_priority=95)
+        store.enqueue(
+            conn, "mb-releases", "global", "album", "00000000-0000-4000-8000-000000000002"
+        )
+
+
+def test_artist_priority_does_not_bypass_failed_or_deferred_job_backoff(store):
+    artist_id = "00000000-0000-4000-8000-000000000001"
+    with store.transaction() as conn:
+        for task in ("mb-lookup", "mb-albums", "mb-songs"):
+            store.enqueue(conn, task, "global", "artist", artist_id)
+        conn.execute(
+            """UPDATE jobs SET due_at=now()+interval '1 hour',ready=false,
+               last_error=CASE WHEN task='mb-lookup' THEN NULL ELSE 'retry later' END,
+               attempts=CASE WHEN task='mb-songs' THEN 1 ELSE 0 END"""
+        )
+        before = conn.execute(
+            "SELECT task,due_at,ready,attempts,last_error FROM jobs WHERE task<>'mb-lookup' ORDER BY task"
+        ).fetchall()
+        store.priority_artist(conn, artist_id, "library-export")
+        after = conn.execute(
+            "SELECT task,due_at,ready,attempts,last_error FROM jobs WHERE task<>'mb-lookup' ORDER BY task"
+        ).fetchall()
+        assert after == before
+        assert conn.execute(
+            "SELECT ready,due_at<=now() AS due FROM jobs WHERE task='mb-lookup'"
+        ).fetchone() == {"ready": True, "due": True}
 
 
 def test_ingestion_is_idempotent_and_indexes_only_changed_documents(store, song):

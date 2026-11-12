@@ -12,7 +12,7 @@ The native device bridge belongs to the persistent player provider. It supports 
 
 Remote play/pause, previous/next, seek, volume and queue changes wait for the receiving device's acknowledgment. Browser autoplay restrictions still apply. Open Mint and press Play on the receiving device if playback is blocked.
 
-Selecting a device or **Move this tab's playback here** transfers the entire logical queue (including duplicates), current track, position, shuffle and repeat. Progressive library/source queues transfer their owner-bound server context and at most 100 metadata entries, without a browser 50,000-song library ceiling. Legacy explicit queues support up to 50,000 entries. The source pauses only after the destination confirms the requested playback, not when the command is admitted. Failed, blocked or expired moves leave the source playing. A remote-source move binds its completion to the original acting session and checks source identity both before enqueueing and at delivery of the pause; a changed source asks the listener to choose which player to pause. Queues are never silently truncated.
+Selecting a device or **Move this tab's playback here** transfers the entire logical queue (including duplicates), current track, position, shuffle and repeat. When all players are paused, the most recently seen awake player other than the destination with a queue supplies the paused state. Progressive library/source queues transfer their owner-bound server context and at most 100 metadata entries, without a browser 50,000-song library ceiling. Legacy explicit queues support up to 50,000 entries. The source pauses only after the destination confirms the requested playback, not when the command is admitted. Failed, blocked or expired moves leave the source playing. A remote-source move binds its completion to the original acting session and checks source identity both before enqueueing and at delivery of the pause; a changed source asks the listener to choose which player to pause. Queues are never silently truncated.
 
 ## Parties
 
@@ -51,7 +51,7 @@ REST endpoints:
 - `GET /api/parties/:id`: member-visible party state.
 - `POST /api/parties/:id/{queue,invite,control,leave}`.
 
-The database migrations are `0007_devices.sql` and `0018_device_lifecycle.sql`, registered in the migration journal.
+The database migrations are `0007_devices.sql` and `0020_device_lifecycle.sql`, registered in the migration journal.
 
 ## Tests
 

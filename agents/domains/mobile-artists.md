@@ -19,7 +19,7 @@ Use generated focused checks; service metadata changes require the library owner
 
 - **Scope:** Artist detail navigation, artist identity and bounded artist song/album presentation.
 - **Read before editing:** [agents/mobile-features.md](../mobile-features.md).
-- **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md)
+- **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md), [`mobile-playback`](mobile-playback.md)
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map mobile-artists` (exports, line counts, cross-domain import edges).
 

@@ -16,6 +16,46 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("Cobalt opt-in image and client preserve private defaults across CLI, NAS and volunteer setup", () => {
+  const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
+  const agent = readFileSync(new URL("../../docker-compose.agent.yml", import.meta.url), "utf8");
+  for (const yaml of [cli, agent]) {
+    const defaults = resolve(yaml, { MINT_WORKER_TOKEN: "fixture-only-worker-token" }).services.cobalt;
+    assert.equal(defaults.image, "ghcr.io/imputnet/cobalt:11");
+    assert.equal(defaults.environment.CUSTOM_INNERTUBE_CLIENT, "IOS");
+    assert.equal(defaults.ports, undefined);
+    const optedIn = resolve(yaml, { MINT_WORKER_TOKEN: "fixture-only-worker-token",
+      COBALT_IMAGE: "mint-cobalt:pr1581-2e8c384", COBALT_INNERTUBE_CLIENT: "VISIONOS" }).services.cobalt;
+    assert.equal(optedIn.image, "mint-cobalt:pr1581-2e8c384");
+    assert.equal(optedIn.environment.CUSTOM_INNERTUBE_CLIENT, "VISIONOS");
+    assert.equal(optedIn.environment.API_URL, defaults.environment.API_URL);
+    assert.deepEqual(optedIn.networks, defaults.networks);
+    assert.equal(optedIn.ports, undefined);
+  }
+  const nas = resolve(source).services.cobalt;
+  assert.equal(nas.image, "ghcr.io/imputnet/cobalt:11");
+  assert.equal(nas.environment.CUSTOM_INNERTUBE_CLIENT, undefined, "NAS remains explicitly edited, not .env-dependent");
+  assert.equal(nas.ports, undefined);
+  assert.deepEqual(Object.keys(nas.networks), ["media"]);
+});
+
+test("authorized YouTube metadata matching is opt-in and reaches web and pipeline worker", () => {
+  const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
+  for (const [value, expected] of [["", "false"], ["true", "true"]]) {
+    const { services } = resolve(cli, { YOUTUBE_SCRAPE_AUTHORIZED: value });
+    assert.equal(services.web.environment.YOUTUBE_SCRAPE_AUTHORIZED, expected);
+    assert.equal(services.worker.environment.YOUTUBE_SCRAPE_AUTHORIZED, expected);
+    assert.equal(services.hub.environment.YOUTUBE_SCRAPE_AUTHORIZED, undefined);
+  }
+  for (const [value, expected] of [["false", "false"], ["true", "true"]]) {
+    const yaml = source.replace('&youtube-scrape-authorized "false"', `&youtube-scrape-authorized "${value}"`);
+    const { services } = resolve(yaml);
+    assert.equal(services.web.environment.YOUTUBE_SCRAPE_AUTHORIZED, expected);
+    assert.equal(services.worker.environment.YOUTUBE_SCRAPE_AUTHORIZED, expected);
+    assert.equal(services.hub.environment.YOUTUBE_SCRAPE_AUTHORIZED, undefined);
+  }
+});
+
 test("Docker release ignores only mobile-only branch pushes, preserving shared and mixed changes", () => {
   const release = readFileSync(new URL("../../.github/workflows/release.yml", import.meta.url), "utf8");
   const triggers = release.match(/^on:\n([\s\S]*?)^\S/m)?.[1];

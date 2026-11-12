@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import Link from "next/link";
-import { ArrowDownToLine, Disc3, ListMusic, Loader2, MicVocal, Play, Search, TrendingUp } from "lucide-react";
+import { CirclePlus, Disc3, Heart, ListMusic, Loader2, MicVocal, MoreHorizontal, Play, RotateCcw, Search, TrendingUp } from "lucide-react";
 import type { TrackView } from "@mint/core/events";
 import { Artwork } from "@/components/artwork";
+import { Dialog } from "@/components/ui/interactive";
 import { ReportIssueButton } from "@/components/app/report-issue";
 import { fetchCatalog } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
@@ -25,16 +26,33 @@ const browseTiles = [
   { label: "Charts", href: "#charts", icon: TrendingUp, className: "bg-warn/20" },
 ];
 const emptyRecent: string[] = [];
+
+/** Requests a signed catalog recording; `like` also saves it to Liked songs so it appears there while importing. */
+export async function requestCatalogRecording(token: string, youtubeUrl?: string, like = false) {
+  const response = await fetch("/api/music/search", { method: "POST", cache: "no-store", credentials: "same-origin",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, ...(youtubeUrl?.trim() ? { youtubeUrl: youtubeUrl.trim() } : {}), ...(like ? { like: true } : {}) }) });
+  const body = await response.json();
+  if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The request could not be completed.");
+  if (typeof body.trackId !== "string" || typeof body.stage !== "string") throw new Error("The request could not be confirmed.");
+  return body as { trackId: string; stage: string };
+}
 type ResultGroup = { label: string; type: "track" | "artist" | "album"; items: PlayerItem[] };
 type LocalResult = { query: string; groups: ResultGroup[]; errors: number; loading: boolean };
 type RecordingResult = RecordingSearchItem;
 type TopCandidate = Pick<PlayerItem, "title" | "artist" | "type"> & (
-  { source: "library"; item: PlayerItem } | { source: "recording"; recording: RecordingResult }
+  { source: "library" | "catalog-artist"; item: PlayerItem } | { source: "recording"; recording: RecordingResult }
 );
-type ExternalResult = { query: string; items: RecordingResult[]; loading: boolean; error: string };
-type RequestState = { trackId: string; stage: string; progress: number; error: string | null };
+type CatalogArtist = { id: string; name: string };
+type ExternalResult = { query: string; items: RecordingResult[]; artists: CatalogArtist[]; loading: boolean; error: string };
+export type RequestState = { trackId: string; stage: string; progress: number; error: string | null; liked?: boolean };
+const emptyArtists: CatalogArtist[] = [];
 const emptyGroups: ResultGroup[] = [];
 const emptyRecordings: RecordingResult[] = [];
+const resultFilters = ["All", "Songs", "Artists", "Albums"] as const;
+type ResultFilter = typeof resultFilters[number];
+const songRowClass = "group flex min-h-16 items-center gap-3 rounded-control px-2 py-2 hover:bg-hover focus-within:bg-hover";
+const songActionClass = "grid size-11 shrink-0 place-items-center rounded-full text-muted hover:bg-line hover:text-fg focus-visible:outline-2 focus-visible:outline-mint disabled:opacity-40";
 let recentRaw: string | null = null;
 let recentValue: string[] = emptyRecent;
 
@@ -67,6 +85,7 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
   const [requests, setRequests] = useState<Record<string, RequestState>>({});
   const [playable, setPlayable] = useState<Record<string, PlayerItem>>({});
   const [online, setOnline] = useState(true);
+  const [filter, setFilter] = useState<ResultFilter>("All");
   const normalized = query.trim();
   const input = useRef<HTMLInputElement>(null), player = usePlayer(), requestGeneration = useRef(0);
   const recent = useSyncExternalStore(subscribeRecent, getRecentSearches, () => emptyRecent);
@@ -76,12 +95,6 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
   const catalogMatches = useMemo(() => groups.find((group) => group.type === "track")?.items ?? [], [groups]);
   const externalItems = activeExternal?.items ?? emptyRecordings;
   const visibleExternal = uniqueExternalResults(catalogMatches, externalItems);
-  const top = topSearchResult<TopCandidate>(normalized, [
-    ...groups.flatMap((group) => group.items.map((item): TopCandidate => ({ ...item, source: "library", item }))),
-    ...visibleExternal.map((recording): TopCandidate => ({
-      type: "track", title: recording.title, artist: recording.artist, source: "recording", recording,
-    })),
-  ]);
   const remember = useCallback((value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return;
@@ -161,11 +174,15 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
         const body = await response.json();
         if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The music catalog could not be reached.");
         if (!Array.isArray(body.items)) throw new Error("The music catalog returned an invalid response.");
-        return body.items as RecordingResult[];
-      }).then((items) => {
+        if (body.catalog?.status === "unavailable") throw new Error("The music catalog is unavailable right now. Try again shortly.");
+        if (body.catalog?.status === "not_configured") throw new Error("This server has no music catalog configured.");
+        const artists = Array.isArray(body.artists) ? (body.artists as unknown[]).filter((artist): artist is CatalogArtist =>
+          !!artist && typeof artist === "object" && typeof (artist as CatalogArtist).id === "string" && typeof (artist as CatalogArtist).name === "string") : [];
+        return { items: body.items as RecordingResult[], artists };
+      }).then(({ items, artists }) => {
         if (!searchResponseIsCurrent(normalized, input.current?.value.trim().slice(0, 100) ?? "", controller.signal.aborted) ||
             generation !== requestGeneration.current) return;
-        setExternal({ query: normalized, items, loading: false, error: "" });
+        setExternal({ query: normalized, items, artists, loading: false, error: "" });
         for (const item of items) {
           if (item.existing?.playable) void hydratePlayable(item.existing.id);
         }
@@ -181,7 +198,7 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
         });
       }).catch((error: unknown) => {
         if (searchResponseIsCurrent(normalized, input.current?.value.trim().slice(0, 100) ?? "", controller.signal.aborted) &&
-            generation === requestGeneration.current) setExternal({ query: normalized, items: [], loading: false,
+            generation === requestGeneration.current) setExternal({ query: normalized, items: [], artists: [], loading: false,
           error: error instanceof Error ? error.message : "The music catalog could not be reached." });
       });
     }, 300);
@@ -211,8 +228,8 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
       const matches = Object.entries(current).filter(([, request]) => request.trackId === track.id);
       if (!matches.length) return current;
       const next = { ...current };
-      for (const [recordingId] of matches) next[recordingId] = {
-        trackId: track.id, stage: track.stage, progress: track.progress,
+      for (const [recordingId, request] of matches) next[recordingId] = {
+        trackId: track.id, stage: track.stage, progress: track.progress, liked: request.liked,
         error: track.stage === "failed" ? "Couldn’t add this song." : null,
       };
       return next;
@@ -220,20 +237,19 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
     if (track.stage === "ready" || track.stage === "analyzing") void hydratePlayable(track.id);
   });
 
-  const addToLibrary = async (item: RecordingResult, youtubeUrl?: string) => {
-    if (requests[item.id] && requests[item.id]!.stage !== "failed") return;
-    setRequests((current) => ({ ...current, [item.id]: { trackId: item.existing?.id ?? "", stage: "matching", progress: 0, error: null } }));
+  const addToLibrary = async (item: RecordingResult, youtubeUrl?: string, like = false) => {
+    const previous = requests[item.id];
+    if (previous && previous.stage !== "failed" && (!like || previous.liked)) return;
+    setRequests((current) => ({ ...current, [item.id]: { trackId: previous?.trackId || item.existing?.id || "",
+      stage: previous && previous.stage !== "failed" ? previous.stage : "matching", progress: previous?.progress ?? 0, error: null, liked: like || previous?.liked } }));
     try {
-      const response = await fetch("/api/music/search", { method: "POST", cache: "no-store", credentials: "same-origin",
-        headers: { "content-type": "application/json" }, body: JSON.stringify({ token: item.token, ...(youtubeUrl?.trim() ? { youtubeUrl: youtubeUrl.trim() } : {}) }) });
-      const body = await response.json();
-      if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "The request could not be completed.");
-      if (typeof body.trackId !== "string" || typeof body.stage !== "string") throw new Error("The request could not be confirmed.");
-      setRequests((current) => ({ ...current, [item.id]: { trackId: body.trackId, stage: body.stage, progress: 0, error: null } }));
+      const body = await requestCatalogRecording(item.token, youtubeUrl, like);
+      setRequests((current) => ({ ...current, [item.id]: { trackId: body.trackId, stage: body.stage, progress: 0, error: null, liked: like || previous?.liked } }));
       if (body.stage === "ready" || body.stage === "analyzing") void hydratePlayable(body.trackId);
     } catch (error) {
       console.error("Search recording request failed", error);
-      setRequests((current) => ({ ...current, [item.id]: { trackId: item.existing?.id ?? "", stage: "failed", progress: 0, error: "Couldn’t add this song. Try again." } }));
+      setRequests((current) => ({ ...current, [item.id]: { trackId: item.existing?.id ?? "", stage: "failed", progress: 0,
+        error: "Couldn’t add this song. Try again.", liked: previous?.liked } }));
     }
   };
 
@@ -250,7 +266,7 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
   };
   const retrySearch = () => {
     setLocal({ query: normalized, groups: [], errors: 0, loading: true });
-    setExternal({ query: normalized, items: [], loading: true, error: "" });
+    setExternal({ query: normalized, items: [], artists: [], loading: true, error: "" });
     requestGeneration.current++;
     setRetry((value) => value + 1);
   };
@@ -259,9 +275,8 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
     if (player) void player.command({ action: "play", item });
   };
   const localLoading = normalized.length >= 2 && activeLocal?.loading !== false;
-  const moreExternal = recordingsOutsideTop(visibleExternal, top?.source === "recording" ? top.recording : null, !localLoading);
   const externalLoading = normalized.length >= 2 && activeExternal?.loading !== false;
-  const isEmpty = !localLoading && !externalLoading && !groups.length && !visibleExternal.length &&
+  const isEmpty = !localLoading && !externalLoading && !groups.length && !visibleExternal.length && !activeExternal?.artists.length &&
     !activeExternal?.error && !activeLocal?.errors;
 
   return <div onKeyDown={onKeyDown} className="w-full">
@@ -291,143 +306,194 @@ export function GlobalSearch({ initialQuery, discoverySeeds }: { initialQuery: s
     </>}
 
     {normalized.length === 1 && <p className="mt-6 text-sm text-muted">Type at least two characters to search.</p>}
+    {normalized.length >= 2 && <nav aria-label="Search filters" className="mt-5 flex gap-2 overflow-x-auto">
+      {resultFilters.map((value) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}
+        className={`min-h-11 shrink-0 rounded-full px-4 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-mint ${filter === value
+          ? "bg-fg text-bg" : "bg-elevated text-fg hover:bg-hover"}`}>{value}</button>)}
+    </nav>}
     {normalized.length >= 2 && activeLocal?.errors ? <p role="status" className="mt-5 text-sm text-warn">
       Some library results couldn’t load. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
     </p> : null}
-    {normalized.length >= 2 && localLoading && !groups.length && <p role="status" className="mt-6 text-sm text-muted">Searching your library…</p>}
-    {!localLoading && top && <SearchResults groups={groups} top={top.source === "library" ? top.item : null}
-      externalTop={top.source === "recording" ? <ol className="rounded-lg bg-elevated px-5">
-        <ExternalRecording item={top.recording} request={requests[top.recording.id]}
-          playable={playable[top.recording.existing?.id ?? ""] ?? (requests[top.recording.id] ? playable[requests[top.recording.id]!.trackId] : undefined)}
-          busy={!online} playDisabled={!player?.ready || !!player?.busy} onPlay={chooseTrack}
-          onAdd={(youtubeUrl) => void addToLibrary(top.recording, youtubeUrl)} />
-      </ol> : null} canPlay={!!player} playDisabled={!player?.ready || !!player?.busy}
-      onPlay={chooseTrack} onNavigate={() => remember(query)} />}
-    {normalized.length >= 2 && (externalLoading || activeExternal?.error || moreExternal.length > 0 || isEmpty) && <section className="mt-8" aria-labelledby="external-results-heading">
-      <h2 id="external-results-heading" className="mb-3 text-xl font-bold">More songs</h2>
-      {externalLoading && <p role="status" className="text-sm text-muted">Searching more songs…</p>}
-      {activeExternal?.error && <p role="alert" className="text-sm text-warn">
-        Couldn’t search more songs. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
+    {normalized.length >= 2 && <>
+      <SearchResults groups={groups} recordings={visibleExternal} requests={requests} playable={playable} filter={filter}
+        query={normalized} localLoading={localLoading} catalogArtists={activeExternal?.artists ?? emptyArtists}
+        canPlay={!!player} playDisabled={!player?.ready || !!player?.busy} offline={!online}
+        onPlay={chooseTrack} onNavigate={() => remember(query)} onAdd={(item, youtubeUrl, like) => void addToLibrary(item, youtubeUrl, like)} />
+      {(localLoading || externalLoading) && <p role="status" className="mt-5 text-sm text-muted">Searching music…</p>}
+      {activeExternal?.error && <p role="alert" className="mt-5 text-sm text-warn">
+        Some songs couldn’t load. <button type="button" className="underline" onClick={retrySearch}>Retry</button>
       </p>}
-      {!externalLoading && !activeExternal?.error && moreExternal.length > 0 && <ol className="divide-y divide-line">
-        {moreExternal.map((item) => <ExternalRecording key={item.id} item={item}
-          request={requests[item.id]} playable={playable[item.existing?.id ?? ""] ?? (requests[item.id] ? playable[requests[item.id]!.trackId] : undefined)}
-          busy={!online} playDisabled={!player?.ready || !!player?.busy} onPlay={chooseTrack} onAdd={(youtubeUrl) => void addToLibrary(item, youtubeUrl)} />)}
-      </ol>}
-      {isEmpty && <p className="text-sm text-muted">No matches. Try another spelling.</p>}
-    </section>}
+      {isEmpty && <p className="mt-6 text-sm text-muted">No matches. Try another spelling.</p>}
+      {!localLoading && !externalLoading && !isEmpty && !activeLocal?.errors &&
+        (filter !== "Songs" || !activeExternal?.error) && filter !== "All" &&
+        (filter === "Songs" ? !catalogMatches.length && !visibleExternal.length :
+          !groups.some((group) => group.type === (filter === "Artists" ? "artist" : "album")) &&
+          (filter !== "Artists" || !activeExternal?.artists.length)) &&
+        <p className="mt-6 text-sm text-muted">No {filter.toLowerCase()} found.</p>}
+    </>}
   </div>;
 }
 
-function ExternalRecording({ item, request, playable, busy, playDisabled, onPlay, onAdd }: {
+export function ExternalRecording({ item, request, playable, busy, playDisabled, onPlay, onAdd }: {
   item: RecordingResult; request?: RequestState; playable?: PlayerItem; busy: boolean; playDisabled: boolean;
-  onPlay: (item: PlayerItem) => void; onAdd: (youtubeUrl?: string) => void;
+  onPlay: (item: PlayerItem) => void; onAdd: (youtubeUrl?: string, like?: boolean) => void;
 }) {
   const current = request ?? (item.existing ? { trackId: item.existing.id, stage: item.existing.stage,
     progress: 0, error: item.existing.stage === "failed" ? "Couldn’t add this song." : null } : undefined);
   const failed = current?.stage === "failed" || !!current?.error;
   const processing = !!current && !failed && !playable;
+  const liked = !!request?.liked;
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  return <li className="flex min-h-20 flex-wrap items-center gap-3 py-3">
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const status = processing ? current.stage === "ready" || current.stage === "analyzing"
+    ? "Checking availability…" : current.progress > 0 ? `Adding · ${Math.round(current.progress * 100)}%` : "Adding to your library…" : "";
+  return <MusicItem as="li" item={playable ?? null} className={`${songRowClass} flex-wrap`}>
     <Artwork track={{ artworkUrl: playable?.thumb ?? "" }} className="size-12 shrink-0 rounded" />
     <div className="min-w-0 flex-1">
-      <p className="truncate font-semibold">{item.title}</p>
-      <p className="truncate text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}{item.durationSec ? ` · ${formatDuration(item.durationSec)}` : ""}</p>
-      {processing && <p className="mt-1 text-xs text-muted">{current.stage === "ready" || current.stage === "analyzing"
-        ? "Checking availability…" : current.progress > 0 ? `Adding · ${Math.round(current.progress * 100)}%` : "Adding to your library…"}</p>}
+      {playable ? <button type="button" disabled={playDisabled} onClick={() => onPlay(playable)}
+        className="block max-w-full truncate text-left font-semibold hover:underline disabled:opacity-40">{item.title}</button>
+        : <p className="truncate font-semibold">{item.title}</p>}
+      <p className="truncate text-sm text-muted">{item.artist}{item.album ? ` · ${item.album}` : ""}</p>
+      {processing && <p className="mt-1 text-xs text-muted">{liked ? `Liked · ${status}` : status}</p>}
       {failed && <p role="alert" className="mt-1 text-xs text-warn">Couldn’t add this song.</p>}
     </div>
-    {playable ? <button type="button" disabled={playDisabled} onClick={() => onPlay(playable)}
-      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-mint px-4 text-sm font-semibold text-mint-ink disabled:opacity-40">
-      <Play className="size-4 fill-current" aria-hidden />Play
-    </button> : processing ? <span className="inline-flex min-h-11 shrink-0 items-center gap-2 px-3 text-sm text-muted" role="status">
-      <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />Adding
-    </span> : <button type="button" disabled={busy} onClick={() => onAdd()}
-      className="inline-flex min-h-11 shrink-0 items-center gap-2 rounded-full bg-mint px-4 text-sm font-semibold text-mint-ink disabled:opacity-40">
-      <ArrowDownToLine className="size-4" aria-hidden />{failed ? "Retry" : "Add to library"}
+    {item.durationSec ? <span className="hidden text-xs tabular-nums text-muted sm:inline">{formatDuration(item.durationSec)}</span> : null}
+    {playable ? <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(playable)}
+      className={songActionClass}><Play className="size-4 fill-current" aria-hidden /></button>
+      : processing ? <>
+        {liked ? <span className="grid size-11 shrink-0 place-items-center text-mint" aria-label={`Liked ${item.title}`} role="img">
+          <Heart className="size-4 fill-current" aria-hidden /></span>
+          : <button type="button" disabled={busy} onClick={() => onAdd(undefined, true)} aria-label={`Like ${item.title} by ${item.artist}`}
+            title="Like" className={songActionClass}><Heart className="size-4" aria-hidden /></button>}
+        <span className="grid size-11 shrink-0 place-items-center text-muted" role="status" aria-label={`Adding ${item.title}`}>
+          <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+        </span>
+      </> : failed ? <button type="button" disabled={busy} onClick={() => onAdd(undefined, liked)}
+        aria-label={`Retry adding ${item.title} by ${item.artist}`} title="Retry adding to library" className={songActionClass}>
+        <RotateCcw className="size-4" aria-hidden />
+      </button> : <button type="button" disabled={busy} onClick={() => onAdd(undefined, true)}
+        aria-label={`Like and add: ${item.title} by ${item.artist}`} title="Like (adds the song to your library)" className={songActionClass}>
+        <Heart className="size-4" aria-hidden />
+      </button>}
+    {playable && <TrackMenuButton item={playable} />}
+    {!processing && !playable && <button type="button" aria-label={`Song options: ${item.title}`}
+      onClick={() => setSourceOpen(true)} className={songActionClass}>
+      <MoreHorizontal className="size-4" aria-hidden />
     </button>}
-    {failed && <ReportIssueButton className="min-h-11 rounded-control px-2 text-sm text-muted hover:bg-hover hover:text-fg"
-      context={`${item.title} — ${item.artist}`} icon={false} />}
-    {!processing && !playable && <details className="basis-full pl-14">
-      <summary className="inline-flex min-h-11 cursor-pointer items-center text-sm text-muted hover:text-fg">Advanced source option</summary>
-      <label className="mt-1 block max-w-lg text-xs text-muted">YouTube video URL
+    <Dialog open={sourceOpen} onOpenChange={setSourceOpen} title={item.title}>
+      <button type="button" disabled={busy || processing || !!playable} onClick={() => { onAdd(); setSourceOpen(false); }}
+        className="inline-flex min-h-11 items-center gap-2 rounded-full bg-hover px-4 text-sm font-semibold text-fg disabled:opacity-40">
+        <CirclePlus className="size-4" aria-hidden /> Import without liking
+      </button>
+      <p className="mb-3 mt-5 text-sm text-muted">Advanced source option</p>
+      <label className="block text-xs text-muted">YouTube video URL
         <input type="url" maxLength={2048} value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)}
           placeholder="https://music.youtube.com/watch?v=…"
-          className="mt-2 min-h-11 w-full rounded-control bg-elevated px-3 text-sm text-fg ring-1 ring-line focus-visible:ring-2 focus-visible:ring-mint" />
+          className="mt-2 min-h-11 w-full rounded-control bg-surface px-3 text-sm text-fg ring-1 ring-line focus-visible:ring-2 focus-visible:ring-mint" />
       </label>
-      <button type="button" disabled={busy || !youtubeUrl.trim()} onClick={() => onAdd(youtubeUrl)}
-        className="mt-2 inline-flex min-h-11 items-center rounded-full bg-elevated px-4 text-sm font-semibold text-fg ring-1 ring-line hover:bg-hover disabled:opacity-40">
+      <button type="button" disabled={busy || processing || !!playable || !youtubeUrl.trim()} onClick={() => { onAdd(youtubeUrl); setSourceOpen(false); }}
+        className="mt-3 inline-flex min-h-11 items-center rounded-full bg-hover px-4 text-sm font-semibold text-fg disabled:opacity-40">
         Add using this source
       </button>
-    </details>}
-  </li>;
+    </Dialog>
+    {failed && <ReportIssueButton className="min-h-11 rounded-control px-2 text-sm text-muted hover:bg-hover hover:text-fg"
+      context={`${item.title} — ${item.artist}`} icon={false} />}
+  </MusicItem>;
 }
 
 const albumHref = (id: string) => `/app/library/albums/${encodeURIComponent(id)}`;
 const artistHref = (id: string) => `/app/library/artists/${encodeURIComponent(id)}`;
 
-function SearchResults({ groups, top, externalTop, canPlay, playDisabled, onPlay, onNavigate }: {
-  groups: ResultGroup[]; top: PlayerItem | null; externalTop: ReactNode; canPlay: boolean; playDisabled: boolean;
+export function SearchResults({ groups, recordings, requests, playable, filter, query, localLoading, offline, canPlay, playDisabled,
+  onPlay, onNavigate, onAdd, catalogArtists = emptyArtists }: {
+  groups: ResultGroup[]; canPlay: boolean; playDisabled: boolean; catalogArtists?: CatalogArtist[];
+  recordings: RecordingResult[]; requests: Record<string, RequestState>; playable: Record<string, PlayerItem>;
+  filter: ResultFilter; query: string; localLoading: boolean; offline: boolean;
+  onAdd: (item: RecordingResult, youtubeUrl?: string, like?: boolean) => void;
   onPlay: (item: PlayerItem) => void; onNavigate: () => void;
 }) {
-  const songs = groups.find((group) => group.type === "track")?.items.slice(0, 6) ?? [];
-  const artists = groups.find((group) => group.type === "artist")?.items ?? [];
+  const songs = groups.find((group) => group.type === "track")?.items ?? [];
+  const localArtists = groups.find((group) => group.type === "artist")?.items ?? [];
+  const localNames = new Set(localArtists.map((item) => item.title.trim().toLowerCase()));
+  const catalogOnly = catalogArtists.filter((artist) => !localNames.has(artist.name.trim().toLowerCase()))
+    .map((artist): PlayerItem => ({ id: artist.id, type: "artist", title: artist.name }));
+  const catalogIds = new Set(catalogOnly.map((item) => item.id));
+  const artists = [...localArtists, ...catalogOnly];
   const albums = groups.find((group) => group.type === "album")?.items ?? [];
+  const top = filter === "All" && !localLoading ? topSearchResult<TopCandidate>(query, [
+    ...groups.flatMap((group) => group.items.map((item): TopCandidate => ({ ...item, source: "library", item }))),
+    ...catalogOnly.map((item): TopCandidate => ({ ...item, source: "catalog-artist", item })),
+    ...recordings.map((recording): TopCandidate => ({
+      type: "track", title: recording.title, artist: recording.artist, source: "recording", recording,
+    })),
+  ]) : null;
+  const topItem = top && top.source !== "recording" ? top.item : null;
+  const topRecording = top?.source === "recording" ? top.recording : null;
+  const remainingRecordings = recordingsOutsideTop(recordings, topRecording, !!topRecording);
   const typeLabel = (item: PlayerItem) => item.type === "artist" ? "Artist" : item.type === "album" ? "Album" : "Song";
   return <>
-    <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-      {(top || externalTop) && <section aria-label="Top result">
+    <div className={`mt-6 grid items-start gap-6 ${top ? "lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : ""}`}>
+      {top && <section aria-label="Top result">
         <h2 className="mb-3 text-xl font-bold">Top result</h2>
-        {top ? <MusicItem item={top} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
-          {top.type === "artist" ? <Link href={artistHref(top.id)} onClick={onNavigate} aria-label={`Open ${top.title}`} tabIndex={-1}>
-            <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-full shadow-floating" />
-          </Link> : <Artwork track={{ artworkUrl: top.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
+        {topItem ? <MusicItem item={top.source === "library" ? topItem : null} className="group relative flex h-[calc(100%-2.5rem)] min-h-52 flex-col gap-4 rounded-lg bg-elevated p-5 transition hover:bg-hover">
+          {topItem.type === "artist" ? <Link href={artistHref(topItem.id)} onClick={onNavigate} aria-label={`Open ${topItem.title}`} tabIndex={-1}>
+            <Artwork track={{ artworkUrl: topItem.thumb ?? "" }} className="size-24 rounded-full! shadow-floating" />
+          </Link> : <Artwork track={{ artworkUrl: topItem.thumb ?? "" }} className="size-24 rounded-lg shadow-floating" />}
           <div className="min-w-0">
-            {top.type === "track" ? <button type="button" onClick={() => onPlay(top)} className="block max-w-full truncate text-left text-3xl font-bold tracking-tight hover:underline">{top.title}</button>
-              : <Link href={top.type === "album" ? albumHref(top.id) : artistHref(top.id)} onClick={onNavigate} className="block truncate text-3xl font-bold tracking-tight hover:underline">{top.title}</Link>}
+            {topItem.type === "track" ? <button type="button" disabled={playDisabled} onClick={() => onPlay(topItem)} className="block max-w-full truncate text-left text-3xl font-bold tracking-tight hover:underline disabled:opacity-40">{topItem.title}</button>
+              : <Link href={topItem.type === "album" ? albumHref(topItem.id) : artistHref(topItem.id)} onClick={onNavigate} className="block truncate text-3xl font-bold tracking-tight hover:underline">{topItem.title}</Link>}
             <p className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted">
-              {top.type !== "artist" && <span onClick={onNavigate} className="min-w-0 truncate"><ArtistLink item={top} /></span>}
-              <span className="shrink-0 rounded-full bg-bg/60 px-3 py-1 text-xs font-semibold text-fg">{typeLabel(top)}</span>
+              {topItem.type !== "artist" && <span onClick={onNavigate} className="min-w-0 truncate"><ArtistLink item={topItem} /></span>}
+              <span className="shrink-0 rounded-full bg-bg/60 px-3 py-1 text-xs font-semibold text-fg">{typeLabel(topItem)}</span>
             </p>
           </div>
-          {top.type === "track" && canPlay && <button type="button" aria-label={`Play ${top.title}`} disabled={playDisabled} onClick={() => onPlay(top)}
+          {topItem.type === "track" && canPlay && <button type="button" aria-label={`Play ${topItem.title}`} disabled={playDisabled} onClick={() => onPlay(topItem)}
             className="absolute bottom-5 right-5 grid size-12 place-items-center rounded-full bg-mint text-mint-ink shadow-floating transition hover:scale-105 disabled:opacity-40"><Play className="size-5 fill-current" aria-hidden /></button>}
-          {canPlay && <span className="absolute right-3 top-3"><TrackMenuButton item={top} /></span>}
-        </MusicItem> : externalTop}
+          {canPlay && top.source === "library" && <span className="absolute right-3 top-3"><TrackMenuButton item={topItem} /></span>}
+        </MusicItem> : topRecording && <ul className="rounded-lg bg-elevated px-5">
+          <ExternalRecording item={topRecording} request={requests[topRecording.id]}
+            playable={playable[topRecording.existing?.id ?? ""] ?? playable[requests[topRecording.id]?.trackId ?? ""]}
+            busy={offline} playDisabled={playDisabled} onPlay={onPlay}
+            onAdd={(youtubeUrl, like) => onAdd(topRecording, youtubeUrl, like)} />
+        </ul>}
       </section>}
-      {!!songs.length && <section aria-label="Songs">
+      {(filter === "All" || filter === "Songs") && (!!songs.length || !!remainingRecordings.length) && <section aria-label="Songs" className="min-w-0">
         <h2 className="mb-3 text-xl font-bold">Songs</h2>
-        <ul>{songs.map((item) => <MusicItem as="li" item={item} key={item.id} className="group flex min-h-14 items-center gap-3 rounded-control px-2 py-1 hover:bg-hover">
-          <span className="relative shrink-0"><Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-10 rounded" /></span>
+        <ul>{songs.map((item) => <MusicItem as="li" item={item} key={item.id} className={songRowClass}>
+          <span className="relative shrink-0"><Artwork track={{ artworkUrl: item.thumb ?? "" }} className="size-12 rounded" /></span>
           <div className="min-w-0 flex-1">
-            <button type="button" onClick={() => onPlay(item)} className="block max-w-full truncate text-left text-sm font-medium hover:underline">{item.title}</button>
-            <p onClick={onNavigate} className="mt-0.5 truncate text-xs text-muted"><ArtistLink item={item} /></p>
+            <button type="button" disabled={playDisabled} onClick={() => onPlay(item)} className="block max-w-full truncate text-left font-semibold hover:underline disabled:opacity-40">{item.title}</button>
+            <p onClick={onNavigate} className="truncate text-sm text-muted"><ArtistLink item={item} />{item.album ? ` · ${item.album}` : ""}</p>
           </div>
           {item.duration ? <span className="hidden text-xs tabular-nums text-muted sm:inline">{formatDuration(item.duration / 1000)}</span> : null}
-          {item !== top && canPlay && <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(item)}
-            className="grid size-11 shrink-0 place-items-center rounded-full text-fg hover:bg-line disabled:opacity-40"><Play className="size-4 fill-current" aria-hidden /></button>}
+          {item !== topItem && canPlay && <button type="button" aria-label={`Play ${item.title}`} disabled={playDisabled} onClick={() => onPlay(item)}
+            className={songActionClass}><Play className="size-4 fill-current" aria-hidden /></button>}
           {canPlay && <TrackMenuButton item={item} />}
-        </MusicItem>)}</ul>
+        </MusicItem>)}
+        {remainingRecordings.map((item) => <ExternalRecording key={`recording:${item.id}`} item={item} request={requests[item.id]}
+          playable={playable[item.existing?.id ?? ""] ?? playable[requests[item.id]?.trackId ?? ""]}
+          busy={offline} playDisabled={playDisabled} onPlay={onPlay} onAdd={(youtubeUrl, like) => onAdd(item, youtubeUrl, like)} />)}
+        </ul>
       </section>}
     </div>
-    {!!artists.length && <CardShelf label="Artists" items={artists} round canMenu={canPlay} onNavigate={onNavigate} />}
-    {!!albums.length && <CardShelf label="Albums" items={albums} canMenu={canPlay} onNavigate={onNavigate} />}
+    {(filter === "All" || filter === "Artists") && !!artists.length && <CardShelf label="Artists" items={artists} round canMenu={canPlay} catalogIds={catalogIds} onNavigate={onNavigate} />}
+    {(filter === "All" || filter === "Albums") && !!albums.length && <CardShelf label="Albums" items={albums} canMenu={canPlay} onNavigate={onNavigate} />}
   </>;
 }
 
-function CardShelf({ label, items, round = false, canMenu, onNavigate }: {
-  label: string; items: PlayerItem[]; round?: boolean; canMenu: boolean; onNavigate: () => void;
+function CardShelf({ label, items, round = false, canMenu, catalogIds, onNavigate }: {
+  label: string; items: PlayerItem[]; round?: boolean; canMenu: boolean; catalogIds?: Set<string>; onNavigate: () => void;
 }) {
   return <section className="mt-8" aria-label={label}>
     <h2 className="mb-3 text-xl font-bold">{label}</h2>
-    <ul className="-mx-2 flex snap-x gap-2 overflow-x-auto pb-2">{items.map((item) => <MusicItem as="li" item={item} key={item.id}
+    <ul className="-mx-2 flex snap-x gap-2 overflow-x-auto pb-2">{items.map((item) => <MusicItem as="li" item={catalogIds?.has(item.id) ? null : item} key={item.id}
       className="group relative w-36 shrink-0 snap-start rounded-lg p-2 transition hover:bg-hover sm:w-40">
       <Link href={item.type === "album" ? albumHref(item.id) : artistHref(item.id)} onClick={onNavigate} className="block">
-        <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`aspect-square w-full shadow-floating ${round ? "rounded-full" : "rounded-lg"}`} />
+        <Artwork track={{ artworkUrl: item.thumb ?? "" }} className={`aspect-square w-full shadow-floating ${round ? "rounded-full!" : "rounded-lg"}`} />
         <span className="mt-2 block truncate text-sm font-semibold">{item.title}</span>
       </Link>
       <p onClick={onNavigate} className="mt-0.5 truncate text-xs text-muted">{item.type === "artist" ? "Artist" : <ArtistLink item={item} />}</p>
-      {canMenu && <span className="absolute right-3 top-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><TrackMenuButton item={item} /></span>}
+      {canMenu && !catalogIds?.has(item.id) && <span className="absolute right-3 top-3 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"><TrackMenuButton item={item} /></span>}
     </MusicItem>)}</ul>
   </section>;
 }

@@ -1,0 +1,28 @@
+# Optional private connection from Mint to a separately run metadata catalog (services/catalog).
+# Web (listener Search) and the pipeline worker (search-request enrichment) call the catalog's
+# read-only HTTP API server-side. This adds no service, database or published port, and nothing
+# depends on the catalog: while it is down or MINT_CATALOG_URL is unset, Search says so and
+# library search and playback keep working. Acquisition-time MusicBrainz matching is unchanged.
+# Use with docker-compose.yml (or docker-compose.nas.yml), preserving existing overlays.
+#
+# Once per host, before the first start:   docker network create mint-catalog-link
+# Start the catalog with services/catalog/compose.consumer.yml so its search service joins that
+# network as `catalog-search`. The catalog read API is unauthenticated: keep this network private
+# and never publish it. Set MINT_CATALOG_URL (origin only) to override the default below.
+services:
+  web:
+    environment:
+      MINT_CATALOG_URL: ${MINT_CATALOG_URL:-http://catalog-search:8080}
+      # Optional shared secret; when set (same value as the catalog's), Web sends anonymous, batched
+      # demand hints (searches, opened artists/albums, recorded plays) that prioritise crawling.
+      CATALOG_DEMAND_TOKEN: ${CATALOG_DEMAND_TOKEN:-}
+    networks: [edge, data, mint-catalog-link]
+  worker:
+    environment:
+      MINT_CATALOG_URL: ${MINT_CATALOG_URL:-http://catalog-search:8080}
+    networks: [data, media, mint-catalog-link]
+
+networks:
+  mint-catalog-link:
+    external: true
+    name: mint-catalog-link

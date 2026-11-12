@@ -96,6 +96,12 @@ test("chart → exact local playback / explicit acquisition → progress → pla
     delete process.env.MINT_CHARTS_ENABLED;
   } finally {
     shared.__mintDb = previous; shared.__mintChartRedis?.disconnect(); delete shared.__mintChartRedis;
+    // Acquisition opens the shared command connection and BullMQ queues; close them so the test process can exit.
+    // BullMQ leaves the caller-provided shared connection open, so disconnect it explicitly.
+    const opened = globalThis as typeof globalThis & { __mintRedis?: Redis; __mintQueues?: Record<string, { close(): Promise<void>; client: Promise<Redis> }> };
+    const queues = Object.values(opened.__mintQueues ?? {}), connections = new Set(await Promise.all(queues.map((queue) => queue.client)));
+    await Promise.all(queues.map((queue) => queue.close())); for (const connection of connections) connection.disconnect();
+    opened.__mintRedis?.disconnect(); delete opened.__mintQueues; delete opened.__mintRedis;
     if (previousSecret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = previousSecret;
     if (previousRedis === undefined) delete process.env.REDIS_URL; else process.env.REDIS_URL = previousRedis;
     await redis.del(chartCacheKey(CHARTS[0]!)); redis.disconnect();

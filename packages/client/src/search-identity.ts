@@ -2,7 +2,7 @@ import type { PlayerItem } from "./playback";
 
 type RecordingIdentity = {
   id?: string; title: string; artist: string; album: string | null; durationSec: number | null;
-  existing?: { id: string; playable: boolean } | null;
+  existing?: { id: string; playable: boolean; recordingId?: string | null } | null;
 };
 
 export function normalizeSearchText(value: string) {
@@ -13,6 +13,8 @@ function sameRecording(local: PlayerItem, recording: RecordingIdentity) {
   if (local.type !== "track" || !normalizeSearchText(local.title) || !normalizeSearchText(local.artist ?? "") ||
       normalizeSearchText(local.title) !== normalizeSearchText(recording.title) ||
       normalizeSearchText(local.artist ?? "") !== normalizeSearchText(recording.artist)) return false;
+  if (recording.existing?.id === local.id && recording.id && recording.existing.recordingId &&
+      recording.id.toLowerCase() !== recording.existing.recordingId.toLowerCase()) return false;
   const duration = local.duration ? local.duration / 1000 : null;
   if (duration && recording.durationSec && Math.abs(duration - recording.durationSec) > 2.5) return false;
   // The same recording can appear on a compilation or have incomplete public metadata.

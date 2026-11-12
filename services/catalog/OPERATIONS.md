@@ -2,10 +2,11 @@
 
 For local startup and the live dashboard, use [README.md](README.md).
 
-Independent multi-source aggregation and search for a future Mint consumer.
-Nothing imports Mint packages, connects to Mint databases, modifies its API or
-starts with its main Compose stack. Build context, dependencies, databases and
-volumes are confined to this directory/project.
+Independent multi-source aggregation and search. Mint's web and worker consume
+its read-only HTTP API ([Connecting Mint](#connecting-mint)). Nothing imports
+Mint packages, connects to Mint databases, modifies its API or starts with its
+main Compose stack. Build context, dependencies, databases and volumes are
+confined to this directory/project.
 
 ## Sources and coverage
 
@@ -202,13 +203,15 @@ is CSRF protection for a loopback operator tool, **not user authentication**.
 Do not expose it publicly. Remote operators should use a local tunnel rather
 than publishing the console to a LAN. Use one search replica as configured.
 
-Schema v9 migrates standalone v1/v2/v3/v4/v5/v6/v7/v8 databases automatically during `initialize`,
+Schema v10 migrates standalone v1 through v9 databases automatically during `initialize`,
 preserving metadata, queues, counters and pauses, and adding source-host jobs,
 provider links, attribution annotations, reversible artist identity groups and
 per-host dispatch cursors/indexes, source contracts, import checkpoints and indexed
-recording-provider link lookups. It also adds provenance-bearing artist priority
-state and release-expansion job support for bounded album population. Back up
-before upgrading. Rebuild with `docker compose up --build -d`.
+recording-provider link lookups. The existing v9 adds demand jobs; v10 adds
+provenance-bearing artist priority, release-expansion jobs and separate pending
+demand priority so ranker sweeps do not erase it. Existing non-chart v9 jobs at
+the demand priority floor are conservatively retained as pending demand. Back
+up before upgrading. Rebuild with `docker compose up --build -d`.
 
 ## Large database imports
 
@@ -594,6 +597,79 @@ Upstream rate budgets remain shared in PostgreSQL: more crawler replicas do
 model; size CPU/RAM and PostgreSQL connection budgets accordingly. Search's
 published host port permits one replica as configured; multiple replicas require
 an operator-managed load balancer instead of this fixed port.
+
+## Connecting Mint
+
+Mint's web service (listener Search) and pipeline worker (search-request
+enrichment) read this catalog over HTTP only, through `MINT_CATALOG_URL`, an
+origin such as `http://catalog-search:8080`. Neither side connects to the other's
+databases; Mint matches results app-side using explicit MusicBrainz recording
+IDs. Catalog metadata never creates Mint tracks, ownership or acquisition jobs.
+
+Mint runs in another Compose project and cannot reach the loopback-only host
+port, so both projects join an external Docker network. Start the catalog first:
+
+```sh
+docker network create mint-catalog-link              # once per host
+# In services/catalog:
+docker compose -f compose.yml -f compose.consumer.yml up -d
+# In the Mint checkout (keep any other overlays you already use):
+docker compose -f docker-compose.yml -f docker-compose.catalog.yml up -d web worker
+```
+
+`compose.consumer.yml` attaches only `search` to that network, as
+`catalog-search`, and sets `ALLOWED_HOSTS` (default `catalog-search`;
+`CATALOG_ALLOWED_HOSTS` replaces it). The API answers any other `Host` header with
+400, which Mint reports as a misconfigured catalog. Loopback names always work.
+Values are bare DNS names or IPv4 addresses without schemes, ports or wildcards,
+at most 16 names beyond the built-in loopback ones. No port is published beyond the existing
+loopback one. Check the link from Mint's side; `200` means ready:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.catalog.yml exec worker \
+  node -e "fetch('http://catalog-search:8080/readyz').then(r => console.log(r.status))"
+```
+
+`/v1/search` and `/v1/entities/...` are unauthenticated and read-only. Keep
+`mint-catalog-link` private: attach only Mint's web and worker and this stack's
+`search`, never publish `search` on a public interface and never route it
+through a public proxy.
+
+This consumer connection is independent of the authenticated bridge above. They
+may be used together: the consumer network carries read-only search and optional
+demand hints; the separate bridge carries bounded relationship reads and
+explicit artist-priority changes. Use different random tokens for demand and
+the bridge. Neither connection grants access to either service's database.
+
+### Demand-driven crawling
+
+Set the same `CATALOG_DEMAND_TOKEN` (32-256 printable characters) for the
+catalog's `search` service and Mint's web service to let listener behaviour
+steer the crawler. Mint batches anonymous hints (no user ids) every two seconds
+to `POST /v1/demand` with a bearer token: listener searches, opened artist and
+album pages, and recorded plays (never private sessions or paused history). The
+catalog turns them into high-priority jobs: YouTube Music, MusicBrainz and (when
+enabled) Apple searches for queries and unmatched plays; discography/album
+lookups for matched artists and albums; and YouTube Music related-song radios
+for played songs. Pending demand survives ranker sweeps and follows bounded
+release expansion; once served, demand clears and the ranker recalculates the
+regular popularity/provenance score. Demand-only searches repeat at most monthly. The endpoint answers 404 when no
+token is set, 401 for a wrong token and 429 past 120 batches a minute; Mint
+never waits for it and drops hints on failure.
+
+When the catalog is down, unreachable, over its search-capacity budget or past
+Mint's short timeout (2.5 seconds for Search, 5 for request enrichment), Mint reports it as unavailable
+with a retry hint, never as "no results". If only Qdrant is down, hybrid search
+answers 503 and Mint retries once in `lexical` mode, labelling those results
+`lexical-only` (less tolerant of misspellings). With `MINT_CATALOG_URL` unset,
+Mint reports that no catalog is configured. Existing-library search and
+playback, and Mint's acquisition-time MusicBrainz matching, do not depend on the
+catalog.
+
+Mint's song-request search collapses MusicBrainz recordings of one song (same
+artist edges and title, sharing a release or a length, or known only from
+another artist's compilation) into one result. It shows the version on the
+artist's own album, unless another version is already in the library.
 
 ## Search and graph contract
 

@@ -55,7 +55,7 @@ Owned tests: 2.
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
 npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test src/analysis.integration.test.ts src/analysis.test.ts
+npm exec -w @mint/worker -- tsx --test --test-force-exit src/analysis.integration.test.ts src/analysis.test.ts
 npm run typecheck -w @mint/core
 ```
 

@@ -18,7 +18,7 @@ test("PostgreSQL device and party isolation, claims, acknowledgments and revisio
   const pool = new pg.Pool({ connectionString: url.toString() });
   try {
     const root = path.resolve(import.meta.dirname, "../../../packages/core/migrations");
-    for (const file of ["0000_init.sql", "0001_workers.sql", "0002_drop_previews.sql", "0003_track_artwork_url.sql", "0004_existing_library.sql", "0007_devices.sql", "0018_device_lifecycle.sql"]) {
+    for (const file of ["0000_init.sql", "0001_workers.sql", "0002_drop_previews.sql", "0003_track_artwork_url.sql", "0004_existing_library.sql", "0007_devices.sql", "0020_device_lifecycle.sql"]) {
       await pool.query(await readFile(path.join(root, file), "utf8"));
     }
     const db = drizzle(pool, { schema });

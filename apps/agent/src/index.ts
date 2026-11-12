@@ -18,6 +18,7 @@ import {
   type HeartbeatResponse,
   type ProgressRequest,
 } from "@mint/core/agent-protocol";
+import { YoutubeTurns, youtubeGapMs, type YoutubeTurn } from "@mint/core/youtube-pace";
 
 declare const AGENT_VERSION: string;
 const VERSION = typeof AGENT_VERSION === "string" ? AGENT_VERSION : "dev";
@@ -41,6 +42,8 @@ const cfg = {
   audioFormat: process.env.COBALT_AUDIO_FORMAT || "best",
   audioBitrate: process.env.COBALT_AUDIO_BITRATE || "320",
   concurrency: Math.max(1, Math.min(4, Number(process.env.AGENT_CONCURRENCY ?? 2) || 2)),
+  /** Downloads from YouTube run one at a time; uploads can overlap. Pause between downloads to avoid rate limits. */
+  youtubeGapMs: youtubeGapMs(process.env.AGENT_YOUTUBE_GAP_SECONDS, 15),
   workDir: process.env.AGENT_WORK_DIR || "/work",
 };
 
@@ -103,6 +106,7 @@ const state = {
   active: new Map<string, { job: ClaimedJob; abort: AbortController }>(),
 };
 const shutdown = new AbortController();
+const youtubeTurns = new YoutubeTurns(cfg.youtubeGapMs);
 
 async function heartbeat() {
   const body: HeartbeatRequest = {
@@ -263,7 +267,7 @@ async function upload(job: ClaimedJob, file: string, abort: AbortController, rep
   }
 }
 
-async function runJob(job: ClaimedJob) {
+async function runJob(job: ClaimedJob, turn: YoutubeTurn) {
   const abort = new AbortController();
   const onShutdown = () => abort.abort(new Error("shutting down"));
   shutdown.signal.addEventListener("abort", onShutdown, { once: true });
@@ -274,7 +278,11 @@ async function runJob(job: ClaimedJob) {
   log("info", "claimed", { trackId: job.trackId, artist: job.artist, title: job.title });
   try {
     report("downloading", 0, true);
-    await download(job, file, abort, report);
+    try {
+      await download(job, file, abort, report);
+    } finally {
+      turn.release();
+    }
     await upload(job, file, abort, report);
     log("info", "delivered", { trackId: job.trackId, title: job.title, seconds: Math.round((Date.now() - started) / 1000) });
   } catch (err) {
@@ -302,16 +310,22 @@ async function slot(id: number) {
       await sleep(jitter(15_000), shutdown.signal);
       continue;
     }
+    let turn: YoutubeTurn | undefined;
     try {
+      // Take the YouTube turn before claiming so a waiting slot never holds a lease.
+      turn = await youtubeTurns.take(shutdown.signal);
       const res = await api<{ job: ClaimedJob }>("/claim", {});
       if (!res) {
+        turn.release(false);
         idle = Math.min(idle + 1, 4);
         await sleep(jitter(state.pollMs * idle), shutdown.signal);
         continue;
       }
       idle = 0;
-      await runJob(res.job);
+      await runJob(res.job, turn);
     } catch (err) {
+      turn?.release(false);
+      if (shutdown.signal.aborted) break;
       const wait = err instanceof ApiError && err.retryAfterMs ? err.retryAfterMs : 30_000;
       if (err instanceof ApiError && err.status === 403) state.status = "pending";
       log("warn", "claim failed", { slot: id, error: (err as Error).message });

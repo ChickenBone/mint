@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import { getDefaultAutoSelectFamilyAttemptTimeout, setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
 import { createRedis } from "./redis";
+
+// Node's 250 ms per-address connect window drops slow NAT/WSL routes to public providers (ETIMEDOUT).
+if (getDefaultAutoSelectFamilyAttemptTimeout() < 2_500) setDefaultAutoSelectFamilyAttemptTimeout(2_500);
 
 /** Server-only storage: values must be validated public metadata, never account responses. */
 export interface PublicCacheStore {
@@ -40,6 +44,7 @@ export interface PublicReadOptions<T> {
   negative?: (value: T) => boolean;
   spacingSeconds?: number;
   timeoutMs?: number;
+  respectCooldownForFresh?: boolean;
   signal?: AbortSignal;
   load: (signal: AbortSignal) => Promise<T>;
 }
@@ -113,8 +118,13 @@ export class PublicReadCache {
     const cool = `mint:public:cooldown:${options.provider}`;
     const lock = `${options.key}:lease`, token = randomUUID();
     let leased = false;
+    const requireNoCooldown = async () => {
+      if (!options.respectCooldownForFresh) return;
+      const delay = Number(await this.command(() => this.store.get(cool)));
+      if (delay > this.now()) throw new PublicProviderBusyError(options.provider, Math.ceil((delay - this.now()) / 1000));
+    };
     const fallback = (error: unknown) => {
-      if (cached && !options.negative?.(cached.value) && cached.keepUntil > this.now()) {
+      if (cached && !options.negative?.(cached.value) && cached.keepUntil > this.now() && !options.respectCooldownForFresh) {
         console.error("Public metadata refresh unavailable; serving a retained cache value", {
           provider: options.provider, ageSeconds: Math.max(0, Math.floor((this.now() - cached.fetchedAt) / 1000)),
           category: error instanceof Error ? error.name : "UnknownRefreshError",
@@ -127,16 +137,24 @@ export class PublicReadCache {
       const raw = await this.command(() => this.store.get(options.key));
       cached = this.parse(raw, options) ?? cached;
       if (cached && raw) this.remember(options.key, raw);
+      const delay = options.respectCooldownForFresh || !cached || cached.freshUntil <= this.now()
+        ? Number(await this.command(() => this.store.get(cool))) : 0;
+      if (options.respectCooldownForFresh && delay > this.now()) {
+        throw new PublicProviderBusyError(options.provider, Math.ceil((delay - this.now()) / 1000));
+      }
       if (cached && cached.freshUntil > this.now()) return this.result(cached);
-      const delay = Number(await this.command(() => this.store.get(cool)));
       if (delay > this.now()) return fallback(new PublicProviderBusyError(options.provider, Math.ceil((delay - this.now()) / 1000)));
       leased = await this.command(() => this.store.set(lock, token, 2 * Math.ceil((options.timeoutMs ?? 15000) / 1000) + 5, true));
       if (!leased) {
-        if (cached && !options.negative?.(cached.value)) return { ...this.result(cached, 3), stale: true };
+        if (cached && !options.negative?.(cached.value)) {
+          await requireNoCooldown();
+          return { ...this.result(cached, 3), stale: true };
+        }
         const deadline = Date.now() + (options.timeoutMs ?? 15000);
         while (Date.now() < deadline) {
           await new Promise((resolve) => setTimeout(resolve, 50));
           const entry = this.parse(await this.command(() => this.store.get(options.key)), options);
+          await requireNoCooldown();
           if (entry) return this.result(entry);
           if (!await this.command(() => this.store.get(lock))) break;
         }
@@ -144,7 +162,10 @@ export class PublicReadCache {
       }
       // A previous lease holder may have published between our initial read and acquisition.
       const latest = this.parse(await this.command(() => this.store.get(options.key)), options);
-      if (latest && latest.freshUntil > this.now()) return this.result(latest);
+      if (latest && latest.freshUntil > this.now()) {
+        await requireNoCooldown();
+        return this.result(latest);
+      }
       const spacing = options.spacingSeconds ?? 1;
       const throttle = `mint:public:throttle:${options.provider}`, throttleDeadline = Date.now() + (options.timeoutMs ?? 15000);
       while (!await this.command(() => this.store.set(throttle, token, spacing, true))) {
@@ -158,6 +179,7 @@ export class PublicReadCache {
       const signal = AbortSignal.timeout(options.timeoutMs ?? 15000);
       const value = options.validate(await options.load(signal));
       signal.throwIfAborted();
+      await requireNoCooldown();
       const fresh = options.negative?.(value) ? options.negativeSeconds ?? 300 : options.freshSeconds;
       const keep = options.negative?.(value) ? fresh : Math.max(fresh, options.keepSeconds);
       const fetchedAt = this.now();

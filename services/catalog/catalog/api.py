@@ -1,22 +1,24 @@
 import logging
+import secrets
 import threading
 from contextlib import asynccontextmanager
 from typing import Annotated, Literal
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException, Path, Query
+from fastapi import FastAPI, Header, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from catalog.config import Settings
+from catalog import demand as demand_hints
+from catalog.config import Settings, allowed_hosts
 from catalog.indexer import VECTOR_ERRORS
 from catalog.model import fuse
 from catalog.identity import artist_groups
 from catalog.providers import EntitySource
 from catalog.reconcile import ReconciliationBodyLimit
-from catalog.store import Store
+from catalog.store import SCHEMA_VERSION, Store
 from catalog.vectors import Embeddings, Vectors
 
 
@@ -54,10 +56,7 @@ def create_app(
     app.state.log = log
     app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=4)
     app.add_middleware(ReconciliationBodyLimit)
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=["localhost", "127.0.0.1", "testserver"],
-    )
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts())
 
     @app.exception_handler(psycopg.Error)
     async def database_error(request, error):
@@ -68,6 +67,7 @@ def create_app(
         )
 
     capacity = threading.BoundedSemaphore(8)
+    demand_limit = demand_hints.RateLimit()
 
     @app.middleware("http")
     async def headers(request, call_next):
@@ -90,7 +90,11 @@ def create_app(
         try:
             with app.state.store.transaction() as conn:
                 conn.execute("SET LOCAL statement_timeout='2000ms'")
-                conn.execute("SELECT version FROM catalog_schema").fetchone()
+                version = conn.execute(
+                    "SELECT max(version) AS version FROM catalog_schema"
+                ).fetchone()
+                if version["version"] != SCHEMA_VERSION:
+                    return JSONResponse({"status": "unavailable"}, status_code=503)
             app.state.vectors.check()
         except (psycopg.Error, *VECTOR_ERRORS, httpx.HTTPError):
             log.exception("search_not_ready")
@@ -215,6 +219,25 @@ def create_app(
             }
         except psycopg.Error as error:
             log.exception("entity_lookup_failed")
+            raise HTTPException(503, "Metadata database unavailable") from error
+
+    @app.post("/v1/demand", status_code=202)
+    def demand(
+        batch: demand_hints.Batch,
+        authorization: Annotated[str | None, Header(max_length=300)] = None,
+    ):
+        token = app.state.store.settings.demand_token
+        if not token:
+            raise HTTPException(404, "Not Found")
+        supplied = (authorization or "").encode()
+        if not secrets.compare_digest(supplied, f"Bearer {token}".encode()):
+            raise HTTPException(401, "Invalid demand token")
+        if not demand_limit.allow():
+            raise HTTPException(429, "Demand rate limit reached", headers={"Retry-After": "30"})
+        try:
+            return {"queued": demand_hints.record(app.state.store, batch)}
+        except psycopg.Error as error:
+            log.exception("demand_record_failed")
             raise HTTPException(503, "Metadata database unavailable") from error
 
     from catalog.console import router

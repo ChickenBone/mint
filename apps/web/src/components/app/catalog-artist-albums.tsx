@@ -6,6 +6,27 @@ import { z } from "zod";
 
 const action = "inline-flex min-h-11 items-center justify-center rounded-full px-4 text-sm font-semibold ring-1 ring-line hover:bg-hover disabled:opacity-40";
 
+export type AlbumIdentity = { title: string; artist: string; verifiedReleaseGroupId?: string | null };
+const releaseGroupId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+export function catalogQueryMatches(query: string, ...fields: (string | null | undefined)[]) {
+  const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const text = fields.filter(Boolean).join(" ").toLocaleLowerCase();
+  return words.every((word) => text.includes(word));
+}
+
+export function sameCatalogAlbum(item: Pick<ExternalCatalogItem, "id" | "url">, album: AlbumIdentity) {
+  const id = album.verifiedReleaseGroupId;
+  return !!id && releaseGroupId.test(id) && item.id === id && item.url === `https://musicbrainz.org/release-group/${id}`;
+}
+
+export function visibleBridgeItems(items: ExternalCatalogItem[], kind: "artists" | "albums" | "library-albums",
+  query: string, displayedAlbums: AlbumIdentity[], recordingIds: string[]) {
+  const excludedIds = new Set(recordingIds);
+  return items.filter((item) => (!query || catalogQueryMatches(query, item.title, item.artist)) &&
+    (kind === "artists" ? !displayedAlbums.some((album) => sameCatalogAlbum(item, album)) : !excludedIds.has(item.id)));
+}
+
 async function catalogFetch(url: string, init: RequestInit = {}) {
   const response = await fetch(url, { ...init, cache: "no-store", redirect: "error" });
   const text = await response.text();
@@ -18,9 +39,10 @@ async function catalogFetch(url: string, init: RequestInit = {}) {
   return raw;
 }
 
-function CatalogPage({ kind, id, onAlbum, title, onBack }: {
+function CatalogPage({ kind, id, onAlbum, title, onBack, displayedAlbums = [], recordingIds = [], query = "", onPageAlbums }: {
   kind: "artists" | "albums" | "library-albums"; id: string; onAlbum?(album: ExternalCatalogItem): void;
-  title?: string; onBack?(): void;
+  title?: string; onBack?(): void; displayedAlbums?: AlbumIdentity[]; recordingIds?: string[]; query?: string;
+  onPageAlbums?(items: ExternalCatalogItem[]): void;
 }) {
   const [after, setAfter] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -41,6 +63,9 @@ function CatalogPage({ kind, id, onAlbum, title, onBack }: {
       });
     return () => controller.abort();
   }, [kind, id, after, revision]);
+  useEffect(() => {
+    if (kind === "artists") onPageAlbums?.(current?.page?.items ?? []);
+  }, [kind, current?.page, onPageAlbums]);
   async function request(recording: ExternalCatalogItem) {
     if (!recording.requestToken || pending) return;
     setPending(recording.id); setOutcome(null);
@@ -57,19 +82,27 @@ function CatalogPage({ kind, id, onAlbum, title, onBack }: {
     } finally { setPending(null); }
   }
   if (current?.page?.configured === false || current?.page?.identityVerified === false) return null;
+  const items = current?.page?.items ?? [];
+  const matching = items.filter((item) => !query || catalogQueryMatches(query, item.title, item.artist));
+  const visible = visibleBridgeItems(items, kind, query, displayedAlbums, recordingIds);
+  if (matching.length && !visible.length && !current?.page?.nextCursor) return null;
   const content = <section aria-label={kind === "artists" ? "Catalog albums" : "Catalog album recordings"} aria-busy={!current} className="mt-6 space-y-4">
     {kind === "library-albums" ? <h2 className="text-xl font-semibold">Catalog album recordings</h2> : null}
     <p className="text-sm text-muted">MusicBrainz catalog metadata, separate from playable library songs. Browsing does not download music. Add only music you are authorized to acquire.</p>
     {!current ? <p role="status" className="text-sm text-muted">Loading catalog...</p> : null}
     {current?.error ? <div role="alert"><p>{current.error}</p><button className={action} onClick={() => setRevision((value) => value + 1)}>Try again</button></div> : null}
-    {current?.page?.items.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-4 border-b border-line py-3">
+    {visible.map((item) => <div key={item.id} className="flex flex-wrap items-center justify-between gap-4 border-b border-line py-3">
       <div className="min-w-0 flex-1"><p className="break-words font-semibold">{item.title}</p>
         <p className="break-words text-sm text-muted">{item.artist} - Catalog {kind === "artists" ? "album" : "recording"}, not playable here</p></div>
       {kind === "artists" ? <button className={action} onClick={() => onAlbum?.(item)}>Browse recordings<span className="sr-only"> for {item.title}</span></button> :
         item.requestToken ? <button className={action} disabled={pending !== null} onClick={() => void request(item)}>
           {pending === item.id ? "Requesting..." : "Add to library"}<span className="sr-only">: {item.title}</span></button> : null}
     </div>)}
-    {current?.page?.configured && !current.page.items.length ? <p className="text-sm text-muted">No catalog {kind === "artists" ? "albums" : "recordings"} populated yet.</p> : null}
+    {current?.page?.configured && !current.page.items.length ? <p className="text-sm text-muted">
+      {kind === "library-albums" ? "No additional catalog recordings on this page." :
+        `No catalog ${kind === "artists" ? "albums" : "recordings"} populated yet.`}
+    </p> : null}
+    {current?.page?.configured && items.length > 0 && !matching.length ? <p className="text-sm text-muted">No catalog {kind === "artists" ? "albums" : "recordings"} match this search.</p> : null}
     {outcome?.after === after ? <p role="status">{outcome.message}</p> : null}
     <div className="flex flex-wrap gap-3">
       {after ? <button className={action} disabled={pending !== null} onClick={() => setAfter(null)}>First catalog page</button> : null}
@@ -83,16 +116,28 @@ function CatalogPage({ kind, id, onAlbum, title, onBack }: {
   </div> : content;
 }
 
-export function CatalogArtistAlbums({ artistMbid }: { artistMbid: string | null | undefined }) {
-  return artistMbid ? <ArtistCatalog key={artistMbid} artistMbid={artistMbid} /> : null;
+export function CatalogArtistAlbums({ artistMbid, displayedAlbums, query, selectedAlbum, onSelectionChange, onPageAlbums }: {
+  artistMbid: string | null | undefined; displayedAlbums?: AlbumIdentity[]; query?: string;
+  selectedAlbum?: ExternalCatalogItem | null; onSelectionChange?(item: ExternalCatalogItem | null): void;
+  onPageAlbums?(items: ExternalCatalogItem[]): void;
+}) {
+  return artistMbid ? <ArtistCatalog key={artistMbid} artistMbid={artistMbid} displayedAlbums={displayedAlbums} query={query}
+    selectedAlbum={selectedAlbum} onSelectionChange={onSelectionChange} onPageAlbums={onPageAlbums} /> : null;
 }
 
-export function CatalogLibraryAlbum({ albumId }: { albumId: string }) {
-  return <CatalogPage key={albumId} kind="library-albums" id={albumId} />;
+export function CatalogLibraryAlbum({ albumId, recordingIds, query }: { albumId: string; recordingIds?: string[]; query?: string }) {
+  return <CatalogPage key={albumId} kind="library-albums" id={albumId} recordingIds={recordingIds} query={query} />;
 }
 
-function ArtistCatalog({ artistMbid }: { artistMbid: string }) {
-  const [album, setAlbum] = useState<ExternalCatalogItem | null>(null);
-  return album ? <CatalogPage key={album.id} kind="albums" id={album.id} title={album.title} onBack={() => setAlbum(null)} /> :
-    <CatalogPage kind="artists" id={artistMbid} title="Beyond your library" onAlbum={setAlbum} />;
+function ArtistCatalog({ artistMbid, displayedAlbums, query, selectedAlbum, onSelectionChange, onPageAlbums }: {
+  artistMbid: string; displayedAlbums?: AlbumIdentity[]; query?: string;
+  selectedAlbum?: ExternalCatalogItem | null; onSelectionChange?(item: ExternalCatalogItem | null): void;
+  onPageAlbums?(items: ExternalCatalogItem[]): void;
+}) {
+  const [localAlbum, setLocalAlbum] = useState<ExternalCatalogItem | null>(null);
+  const album = onSelectionChange ? selectedAlbum ?? null : localAlbum;
+  const selectAlbum = onSelectionChange ?? setLocalAlbum;
+  return album ? <CatalogPage key={album.id} kind="albums" id={album.id} title={album.title} onBack={() => selectAlbum(null)} /> :
+    <CatalogPage kind="artists" id={artistMbid} title="Beyond your library" onAlbum={selectAlbum}
+      displayedAlbums={displayedAlbums} query={query} onPageAlbums={onPageAlbums} />;
 }

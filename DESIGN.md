@@ -21,6 +21,15 @@ compatibility fixes. Next.js backend/API and admin tools continue.
 
 **Search & Explore:** Search is the single entry for finding music and starting discovery. The focused query searches local and external recordings; the empty-query view includes browse shortcuts, personalized playlist shelves, artist radio, genres and charts. Dedicated mix and chart routes retain their detailed flows, with back links returning to Search. Generated covers carry oversized typography, a confident color palette and small Mint/source credits. These are virtual playlists, never fabricated songs, rankings or claims of human curation. Provider details and acquisition controls belong inside the selected chart.
 
+Browser Search is a scoped exception to the maintenance-only direction: All,
+Songs, Artists and Albums filters organize actual results. Library and catalog
+recordings share one compact Songs list with equal typography and artwork
+fallbacks, not a separate "More songs" section. A quiet, labeled plus action
+explicitly adds a missing song; it never pretends that the song can already
+play. Progress, retry and errors stay on the row, while source overrides live
+behind Song options. This exception does not authorize other browser redesigns
+or automatic acquisition.
+
 **Expo consumer app:** Android/mobile leads with Home, Search and Your Library,
 three phone destinations and a responsive wide-screen sidebar. Native primitives
 reuse Mint's semantic charcoal/mint/artwork identity with platform typography;

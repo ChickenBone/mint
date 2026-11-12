@@ -28,7 +28,7 @@ Use the focused generated engine/offline checks below; presentation-only tests a
 - **Scope:** Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage.
 - **Read before editing:** [docs/mobile-playback.md](../../docs/mobile-playback.md).
 - **Imports from:** [`mobile`](mobile.md), [`mobile-contracts`](mobile-contracts.md)
-- **Imported by:** [`mobile`](mobile.md), [`mobile-player`](mobile-player.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md)
+- **Imported by:** [`mobile`](mobile.md), [`mobile-artists`](mobile-artists.md), [`mobile-player`](mobile-player.md), [`mobile-search`](mobile-search.md), [`mobile-settings`](mobile-settings.md)
 - **Live detail:** `npm run agents -- map mobile-playback` (exports, line counts, cross-domain import edges).
 
 ### Owned files (24)
