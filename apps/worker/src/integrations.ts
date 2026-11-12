@@ -167,6 +167,9 @@ async function configureLidarr() {
 
 export async function wireIntegrations(): Promise<string[]> {
   const notes: string[] = [];
+  if (process.env.COBALT_URL) {
+    notes.push("Cobalt API health is not proof of audio delivery. Stock 11.7.1/IOS can return empty media after upstream 403 errors. See docs/self-hosting.md#cobalt for the pinned, opt-in PR 1581 build and VISIONOS; setting VISIONOS on stock 11 alone is insufficient. Verify nonzero audio with FFmpeg/ffprobe.");
+  }
   for (const [name, step] of [
     ["Plex", wirePlex],
     ["Lidarr", wireLidarr],

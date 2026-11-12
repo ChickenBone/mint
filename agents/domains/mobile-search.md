@@ -10,7 +10,7 @@
 - Preserve independent local and recording search, debouncing/cancellation and partial source failures with retry. Reset pages when query/account/server changes; one page per source in flight.
 - Browse categories, counts, sample covers and mixes are real playable-data results. Categories open distinct filtered destinations; no fabricated ranks or inert cards.
 - Chart paging preserves provider scope/revisions. Available songs play; missing entries route to Search, never automatic acquisition.
-- Only an explicit Add to library requests a missing recording; browsing and Play do not. Requested does not mean playable.
+- Only an explicit Add to library action on an identified recording may start acquisition; browsing and Play do not. A no-result Search intent can request metadata lookup only, never a speculative track or download. Requested does not mean playable.
 - Full-selection Play/Shuffle stays complete while lists and category fetching remain bounded.
 
 Use generated focused tests; new endpoints require native-contract and backend owners.
@@ -25,21 +25,21 @@ Use generated focused tests; new endpoints require native-contract and backend o
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map mobile-search` (exports, line counts, cross-domain import edges).
 
-### Owned files (12)
+### Owned files (14)
 
 - `apps/mobile/app/` `search.tsx`
 - `apps/mobile/app/browse/` `[facet].tsx`
-- `apps/mobile/src/features/search/` `BrowseAll.tsx`, `BrowseCard.tsx`, `BrowseCategoryScreen.tsx`, `SearchScreen.tsx`, `browse-model.ts`, `search-model.ts`, `useBrowseCatalog.ts`
-- `apps/mobile/tests/` `search-browse-hooks.test.ts`, `search-browse.test.ts`, `search-model.test.ts`
+- `apps/mobile/src/features/search/` `BrowseAll.tsx`, `BrowseCard.tsx`, `BrowseCategoryScreen.tsx`, `CatalogResults.tsx`, `SearchScreen.tsx`, `browse-model.ts`, `search-model.ts`, `useBrowseCatalog.ts`
+- `apps/mobile/tests/` `search-browse-hooks.test.ts`, `search-browse.test.ts`, `search-catalog.test.ts`, `search-model.test.ts`
 
 ### Validate
 
-Owned tests: 3.
+Owned tests: 4.
 
 ```bash
 npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-model.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-model.test.ts
+npm exec -w @mint/mobile -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/CatalogResults.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
+npm exec -w @mint/mobile -- tsx --test tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
 ```
 
 <!-- agents:generated:end -->

@@ -9,6 +9,7 @@
     "start": "node --enable-source-maps dist/index.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "tsx --test src/*.test.ts src/**/*.test.ts",
+    "match-report": "tsx src/match-report.ts",
     "dev:hub": "tsx watch --env-file-if-exists=../../.env src/hub.ts",
     "start:hub": "node --enable-source-maps dist/hub.js"
   },

@@ -1,10 +1,25 @@
 import os
 import re
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 MINIMUM_INTERVALS = {"musicbrainz": 1.0, "discogs": 2.5, "openwhyd": 2.0}
+LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "testserver")
+MAX_EXTRA_HOSTS = 16
+
+
+def allowed_hosts() -> list[str]:
+    """Host names the read API answers to: loopback plus explicit private service names."""
+    hosts = list(LOOPBACK_HOSTS)
+    for host in filter(None, (item.strip().lower() for item in os.getenv("ALLOWED_HOSTS", "").split(","))):
+        if not re.fullmatch(r"[a-z0-9](?:[a-z0-9._-]{0,251}[a-z0-9])?", host) or ".." in host:
+            raise ValueError("ALLOWED_HOSTS must contain comma-separated DNS names or IPv4 addresses, without wildcards")
+        if host not in hosts:
+            hosts.append(host)
+    if len(hosts) - len(LOOPBACK_HOSTS) > MAX_EXTRA_HOSTS:
+        raise ValueError(f"ALLOWED_HOSTS may add at most {MAX_EXTRA_HOSTS} names")
+    return hosts
 
 
 def integer(name: str, default: int, minimum: int, maximum: int) -> int:
@@ -67,7 +82,7 @@ class Settings:
     youtube_channels: tuple[str, ...] = ()
     public_sources: tuple[str, ...] = ()
     source_intervals: tuple[tuple[str, float], ...] = ()
-
+    demand_token: str = field(default="", repr=False)
     @classmethod
     def load(cls) -> "Settings":
         from catalog.providers import PUBLIC_SOURCES
@@ -111,6 +126,9 @@ class Settings:
             not re.fullmatch("UC[a-zA-Z0-9_-]{22}", channel) for channel in channels
         ):
             raise ValueError("YOUTUBE_CHANNELS must contain at most 50 comma-separated channel IDs")
+        demand_token = os.getenv("CATALOG_DEMAND_TOKEN", "")
+        if demand_token and not re.fullmatch(r"[\x21-\x7e]{32,256}", demand_token):
+            raise ValueError("CATALOG_DEMAND_TOKEN must be 32-256 printable non-space characters")
         return cls(
             database_url=os.environ["DATABASE_URL"],
             qdrant_url=os.getenv("QDRANT_URL", "http://qdrant:6333"),
@@ -135,6 +153,7 @@ class Settings:
             ytmusic_enabled=flags["YTMUSIC_ENABLED"],
             youtube_channels=channels,
             public_sources=public_sources,
+            demand_token=demand_token,
         )
 
     def request_interval(self, source: str, host: str | None = None) -> float:

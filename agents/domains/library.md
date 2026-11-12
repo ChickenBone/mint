@@ -35,13 +35,13 @@ Details: [playback and library](../playback-and-library.md#artwork) and [integra
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map library` (exports, line counts, cross-domain import edges).
 
-### Owned files (43)
+### Owned files (46)
 
 - `apps/web/src/app/(public)/` `browse/page.tsx`
-- `apps/web/src/app/api/` `artwork/[id]/route.ts`, `library/route.ts`, `music/search/route.ts`
+- `apps/web/src/app/api/` `artwork/[id]/route.ts`, `library/route.ts`, `music/search/collection/route.ts`, `music/search/requests/route.ts`, `music/search/route.ts`
 - `apps/web/src/app/app/` `library/albums/[id]/page.tsx`, `library/artists/[id]/page.tsx`, `library/page.tsx`, `music/page.tsx`, `search/page.tsx`
 - `apps/web/src/components/` `art-wall.tsx`, `artwork.tsx`, `fresh-shelf.tsx`, `library-browser.tsx`, `track-list.tsx`
-- `apps/web/src/components/app/` `global-search.tsx`, `music-browser.tsx`, `music-links.tsx`
+- `apps/web/src/components/app/` `catalog-collection-songs.tsx`, `global-search.tsx`, `music-browser.tsx`, `music-links.tsx`
 - `apps/web/src/lib/` `artwork-query.ts`, `browser-catalog.ts`, `catalog-search.ts`, `data.ts`
 - `apps/web/tests/` `artwork.test.ts`
 - `apps/worker/src/` `artwork-http.ts`, `artwork.integration.test.ts`, `artwork.test.ts`, `artwork.ts`, `library-index.ts`, `library-policy.ts`

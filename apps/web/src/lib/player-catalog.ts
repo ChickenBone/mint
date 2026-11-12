@@ -9,9 +9,23 @@ import { MusicError } from "@mint/core/music";
 import { catalogSearch } from "./catalog-search";
 import { spotifyPlayablePage, spotifyQueueTrackSource } from "@mint/core/spotify-store";
 import { musicLikes } from "@mint/core/music-db";
+import { noteCatalogDemand } from "@mint/core/catalog-client";
 
 const t = schema.tracks;
 export class CatalogInputError extends Error {}
+
+/** Anonymous crawl hint for opened artist/album pages; IDs were already validated by catalogItems. */
+export function noteCollectionDemand(collection: PlayerCollection) {
+  try {
+    if (collection.kind === "artist") {
+      const artist = Buffer.from(collection.id.slice(3), "base64url").toString("utf8");
+      if (artist && artistPlayerId(artist) === collection.id) noteCatalogDemand({ type: "artist", artist });
+    } else if (collection.kind === "album") {
+      const [artist, title] = JSON.parse(Buffer.from(collection.id.slice(3), "base64url").toString("utf8")) as [string, string];
+      if (typeof title === "string" && title && albumPlayerId(artist, title) === collection.id) noteCatalogDemand({ type: "album", title, artist });
+    }
+  } catch { /* hints are best-effort */ }
+}
 
 function collectionFilter(collection: PlayerCollection, userId: string): SQL | undefined {
   const db = getDb();

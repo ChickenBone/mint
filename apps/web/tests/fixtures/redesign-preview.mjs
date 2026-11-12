@@ -197,7 +197,7 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, missingId)), 0, "Chart playback must not acquire missing songs");
     assert.equal((await context.request.post(`${base}/api/charts/request`, { data: { chart: "apple-us", entry: missing.id }, headers: { origin: "https://unrelated.test" } })).status(), 403);
     await shot("charts");
-    await page.getByRole("button", { name: `Add to library: ${missing.title} by ${missing.artist}`, exact: true }).click();
+    await page.getByRole("button", { name: `Like and add: ${missing.title} by ${missing.artist}`, exact: true }).click();
     await page.getByRole("status").filter({ hasText: "Request sent" }).waitFor();
     await shot("chart-requested");
     let requested;
@@ -244,7 +244,8 @@ if (process.env.MINT_PREVIEW_SEED_ONLY === "true") {
     await page.getByText(searchRecording.title, { exact: true }).waitFor();
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 0, "Searching must not request a song");
     await shot("search-missing");
-    await page.getByRole("button", { name: "Add to library", exact: true }).click();
+    assert.equal(await page.getByRole("heading", { name: "More songs", exact: true }).count(), 0, "Catalog songs share the Songs section");
+    await page.getByRole("button", { name: `Like and add: ${searchRecording.title} by ${searchRecording.artist}`, exact: true }).click();
     await page.getByText("Adding to your library…", { exact: true }).waitFor();
     await shot("search-requested");
     assert.equal(await db.$count(schema.tracks, eq(schema.tracks.mbRecordingId, searchRecording.id)), 1, "The selected fictional recording is requested once");

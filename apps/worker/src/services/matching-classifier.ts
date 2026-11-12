@@ -1,4 +1,4 @@
-import { CLEAN_RECORDING_INSTRUCTIONS, isPreviewUpload, recordingUploadKind } from "@mint/core/matching";
+import { CLEAN_RECORDING_INSTRUCTIONS, audioSourceRejection, preferredAudioSources, recordingUploadKind, youtubeDurationSeconds, type RecordingIdentity } from "@mint/core/matching";
 import { getMatchingDecision } from "@mint/core/matching-db";
 import { z } from "zod";
 import { log } from "../log";
@@ -36,10 +36,7 @@ interface ClassifierOptions {
   fetchImpl?: typeof fetch;
 }
 
-function durationSeconds(value: string | null) {
-  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(value ?? "");
-  return match ? Number(match[1] ?? 0) * 3600 + Number(match[2] ?? 0) * 60 + Number(match[3] ?? 0) : null;
-}
+const durationSeconds = youtubeDurationSeconds;
 
 async function boundedText(response: Response) {
   if (!response.body) throw new Error("Decision response has no body");
@@ -64,7 +61,7 @@ async function boundedText(response: Response) {
 }
 
 export async function classifyRequestedVideo(
-  track: { title: string; artist: string; durationSec: number | null },
+  track: RecordingIdentity,
   candidates: YtVideo[],
   options: ClassifierOptions = {},
 ): Promise<ClassifierDecision> {
@@ -76,6 +73,7 @@ export async function classifyRequestedVideo(
       enabled = stored.enabled;
       apiKey ??= stored.apiKey ?? undefined;
     } catch {
+      log.warn("Matching settings unavailable; using deterministic audio matching");
       return { status: "fallback", reason: "unavailable" };
     }
   }
@@ -83,8 +81,11 @@ export async function classifyRequestedVideo(
   if (!apiKey) return { status: "fallback", reason: "unconfigured" };
   if (!candidates.length) return { status: "fallback", reason: "invalid" };
 
-  const clean = candidates.filter((candidate) => !isPreviewUpload(candidate.title) && recordingUploadKind(candidate.title, candidate.channelTitle) === "clean studio audio");
-  const offered = (clean.length ? clean : candidates).slice(0, 10);
+  const preferred = preferredAudioSources(track, candidates.map((candidate) => ({
+    ...candidate, channel: candidate.channelTitle, durationSec: durationSeconds(candidate.durationIso),
+  })));
+  const offered = preferred.slice(0, 10);
+  if (!offered.length) return { status: "fallback", reason: "invalid" };
   const request = {
     model: "gpt-6-luna",
     input: [{
@@ -92,7 +93,8 @@ export async function classifyRequestedVideo(
       content: [
         { type: "input_text", text: "Choose the clean studio audio for this song. Stay away from music videos." },
         { type: "input_json", data: {
-          requested: { title: track.title, artist: track.artist, duration_seconds: track.durationSec },
+          requested: { title: track.title, artist: track.artist, duration_seconds: track.durationSec,
+            official_durations_seconds: track.durationSec === null ? track.officialDurationsSec : undefined },
           candidates: offered.map((candidate) => ({
             id: candidate.id,
             title: candidate.title,
@@ -134,7 +136,8 @@ export async function classifyRequestedVideo(
       return { status: "fallback", reason: "uncertain" };
     }
     if (answer.choice === NONE) return { status: "none", confidence: answer.confidence };
-    if (!offered.some((candidate) => candidate.id === answer.choice)) return { status: "fallback", reason: "invalid" };
+    const chosen = offered.find((candidate) => candidate.id === answer.choice);
+    if (!chosen || audioSourceRejection(track, chosen)) return { status: "fallback", reason: "invalid" };
     return { status: "selected", id: answer.choice, confidence: answer.confidence };
   } catch (error) {
     log.warn({ error: error instanceof Error ? error.message : "Unknown decision failure" },

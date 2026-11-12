@@ -7,7 +7,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { and, eq } from "drizzle-orm";
 import { schema } from "@mint/core/db";
 import { signToken } from "@mint/core/crypto";
-import { readRequestRecording, requestRecording, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
+import { catalogRecordingMetadata, readRequestRecording, requestRecording, searchCatalogRecordings, searchRecordingMetadata, searchRecordings, youtubeSource } from "../src/lib/music-requests";
 import { publicCacheFixture } from "../../../packages/core/src/public-cache-fixture";
 
 const catalogFixture = () => ({ recordings: [{
@@ -29,6 +29,92 @@ test("recording tokens validate owner, signature, purpose, expiry and signed met
     assert.throws(() => readRequestRecording("owner", signToken("music-request", { userId: "owner", recording: { ...item, id: "invalid" } }, 60000)));
   } finally {
     if (secret === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = secret;
+  }
+});
+
+test("search uses catalog graph recordings and a MusicBrainz cooldown cannot fail a catalog answer", async () => {
+  const id = randomUUID(), env = { MINT_CATALOG_URL: "http://catalog.test" };
+  const row = (provider_id: string, extra = {}) => ({ key: `musicbrainz:global:song:${provider_id}`, source: "musicbrainz", kind: "song",
+    provider_id, title: "Red Lipstick", artist: "Rihanna", album: "Talk That Talk", ...extra });
+  const seen: string[] = [];
+  const fetcher = (async (input: string | URL) => {
+    const url = new URL(String(input)); seen.push(url.pathname);
+    if (url.pathname === "/v1/search") return Response.json({ mode: "hybrid", results: [row(id), row(id),
+      { ...row("not-a-uuid"), source: "spotify" }, row(randomUUID(), { artist: "" })] });
+    return Response.json({ entity: row(id), annotations: { duration_ms: 217_400 } });
+  }) as typeof fetch;
+  const items = await catalogRecordingMetadata("rhianna", { catalog: { env, fetcher } });
+  assert.deepEqual(items, [{ id, title: "Red Lipstick", artist: "Rihanna", album: "Talk That Talk", durationSec: 217 }]);
+  assert.equal(seen.filter((path) => path === "/v1/search").length, 1);
+  assert.equal(await catalogRecordingMetadata("rhianna", { catalog: { env: {}, fetcher } }), null, "unconfigured catalog defers to MusicBrainz");
+  const empty = (async () => Response.json({ mode: "hybrid", results: [] })) as typeof fetch;
+  const answer = await searchCatalogRecordings("owner", "rhianna", { catalog: { env, fetcher: empty }, cache: false,
+    fetcher: async () => new Response(null, { status: 503 }) });
+  assert.deepEqual({ items: answer.items, artists: answer.artists }, { items: [], artists: [] }, "an empty catalog answer survives a busy MusicBrainz");
+  await assert.rejects(searchCatalogRecordings("owner", "rhianna", { catalog: { env, fetcher: async () => new Response(null, { status: 500 }) },
+    cache: false, fetcher: async () => new Response(null, { status: 503 }) }), /busy/, "both unavailable still reports the outage");
+});
+
+test("catalog search collapses duplicate recordings of one song onto its own-album version", async () => {
+  const env = { MINT_CATALOG_URL: "http://catalog.test" };
+  const [mix, album, single, introA, introB] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+  const song = (id: string, title: string, artist: string) => ({ key: `musicbrainz:global:song:${id}`, source: "musicbrainz", kind: "song",
+    provider_id: id, title, artist, album: "" });
+  const albumRow = (key: string, title: string, artist: string) => ({ key, source: "musicbrainz", kind: "album", provider_id: key, title, artist, album: "" });
+  const albums: Record<string, ReturnType<typeof albumRow>> = {
+    "mb:album:mix": albumRow("mb:album:mix", "Big Tree Energy Radio, Vol. 1", "Disclosure"),
+    "mb:album:lost": albumRow("mb:album:lost", "The Lost Boy", "YBN Cordae"),
+    "mb:album:single": albumRow("mb:album:single", "RNP", "YBN Cordae feat. Anderson .Paak"),
+    "mb:album:first": albumRow("mb:album:first", "First Album", "Mint Fixture"),
+    "mb:album:second": albumRow("mb:album:second", "Second Album", "Mint Fixture"),
+  };
+  const songs = [song(mix, "RNP", "Cordae feat. Anderson .Paak"), song(single, "RNP", "YBN Cordae feat. Anderson .Paak"),
+    song(album, "RNP", "YBN Cordae feat. Anderson .Paak"), song(introA, "Intro", "Mint Fixture"), song(introB, "Intro", "Mint Fixture")];
+  const links: Record<string, { artists: string[]; albums: string[]; ms?: number }> = {
+    [mix]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:mix"], ms: 166_000 },
+    [single]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:single", "mb:album:lost"] },
+    [album]: { artists: ["a:cordae", "a:paak"], albums: ["mb:album:lost"], ms: 176_000 },
+    [introA]: { artists: ["a:mint"], albums: ["mb:album:first"] },
+    [introB]: { artists: ["a:mint"], albums: ["mb:album:second"] },
+  };
+  const fetcher = (async (input: string | URL) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v1/search") return Response.json({ mode: "hybrid", results: songs });
+    const key = decodeURIComponent(url.pathname.slice("/v1/entities/".length));
+    if (albums[key]) return Response.json({ entity: albums[key] });
+    const entity = songs.find((item) => item.key === key)!, link = links[entity.provider_id]!;
+    return Response.json({ entity, annotations: link.ms ? { duration_ms: link.ms } : {}, edges: [
+      ...link.artists.map((target) => ({ source: key, target, relation: "artist" })),
+      ...link.albums.map((target) => ({ source: key, target, relation: "album" }))] });
+  }) as typeof fetch;
+  const items = await catalogRecordingMetadata("rnp", { catalog: { env, fetcher } });
+  assert.deepEqual(items?.map((item) => [item.id, item.album]), [[single, "The Lost Boy"], [introA, "First Album"], [introB, "Second Album"]],
+    "the DJ-mix and album cuts fold into the own-album version; same-title songs on different albums stay apart");
+});
+
+test("pinned recording sources fail closed before any database write when metadata or audio safety is missing", async () => {
+  const previous = process.env.MINT_SIGNING_SECRET, savedFlag = process.env.YOUTUBE_SCRAPE_AUTHORIZED;
+  process.env.MINT_SIGNING_SECRET = "music-request-fixture-secret-at-least-32-characters";
+  try {
+    const item = { id: randomUUID(), title: "First Light", artist: "Mint Fixture", album: null, durationSec: 181 };
+    const token = signToken("music-request", { userId: "owner", recording: item }, 60000);
+    const video = { id: "fixture0001", title: "Mint Fixture - First Light (Official Audio)", channel: "Mint Fixture", durationSec: 176, rank: 0 };
+    const run = (sourceReader: Parameters<typeof requestRecording>[4]) =>
+      requestRecording("owner", token, "https://youtu.be/fixture0001", undefined, sourceReader);
+    process.env.YOUTUBE_SCRAPE_AUTHORIZED = "false";
+    await assert.rejects(run(async () => null), /Link YouTube/);
+    process.env.YOUTUBE_SCRAPE_AUTHORIZED = "true";
+    await assert.rejects(run(async () => null), (error: Error) =>
+      /metadata is unavailable/.test(error.message) && !/Link YouTube/.test(error.message));
+    await assert.rejects(run(async () => ({ ...video, title: "Mint Fixture - First Light (Official Music Video)", durationSec: 181 })), /music videos are not allowed/);
+    await assert.rejects(run(async () => ({ ...video, durationSec: 242 })), /duration mismatch/);
+    await assert.rejects(run(async () => ({ ...video, durationSec: null })), /missing length evidence/);
+    await assert.rejects(run(async () => ({ ...video, title: "Mint Fixture - First Light", channel: "Unrelated Channel" })), /duration mismatch/);
+    await assert.rejects(run(async () => ({ ...video, title: "Other Artist - Other Song (Official Audio)", channel: "Fictional Label" })), /identity mismatch/);
+    await assert.rejects(run(async () => { throw new Error("YouTube transient provider failure"); }), /transient provider failure/);
+  } finally {
+    if (previous === undefined) delete process.env.MINT_SIGNING_SECRET; else process.env.MINT_SIGNING_SECRET = previous;
+    if (savedFlag === undefined) delete process.env.YOUTUBE_SCRAPE_AUTHORIZED; else process.env.YOUTUBE_SCRAPE_AUTHORIZED = savedFlag;
   }
 });
 
@@ -70,6 +156,20 @@ test("web recording search reads the server mirror configuration", async () => {
   } finally {
     if (previous === undefined) delete process.env.MUSICBRAINZ_MIRROR_URL; else process.env.MUSICBRAINZ_MIRROR_URL = previous;
   }
+});
+
+test("catalog video recordings and unrepresented editions never become signed audio duration evidence", async () => {
+  const base = catalogFixture().recordings[0]!;
+  const items = await searchRecordingMetadata("fixture", async () => Response.json({ recordings: [
+    base,
+    { ...base, id: randomUUID(), video: true, length: 244000 },
+    { ...base, id: randomUUID(), disambiguation: "live at the fixture hall", length: 260000 },
+    { ...base, id: randomUUID(), disambiguation: "cover", length: 185000 },
+    { ...base, id: randomUUID(), disambiguation: "album version", video: false },
+  ] }), undefined, { mirrorUrl: "" });
+  assert.equal(items.length, 2);
+  assert.ok(items.every((item) => item.durationSec === 90));
+  assert.ok(items.every((item) => !("video" in item) && !("disambiguation" in item)), "public DTO stays unchanged");
 });
 
 test("invalid mirror bases never receive a fetch and fall back to canonical public search", async () => {
@@ -268,7 +368,11 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     await db.delete(schema.userTracks).where(and(eq(schema.userTracks.userId, owner!.id), eq(schema.userTracks.origin, "youtube")));
     assert.equal(await db.$count(schema.userTracks), 1, "YouTube reconciliation must not remove explicit requests");
     await db.update(schema.tracks).set({ stage: "failed", error: "No linked source" }).where(eq(schema.tracks.id, trackId));
-    const retried = await requestRecording(owner!.id, token, "https://youtu.be/abcdefghijk");
+    const sourceReader = async () => ({ id: "abcdefghijk", title: "Mint Fixture - First Light (Official Audio)", channel: "Mint Fixture", durationSec: 90, rank: 0 });
+    await assert.rejects(requestRecording(owner!.id, token, "https://youtu.be/abcdefghijk", undefined, async () => null), /metadata is unavailable/);
+    await assert.rejects(requestRecording(owner!.id, token, "https://youtu.be/abcdefghijk", undefined, async () =>
+      ({ ...await sourceReader(), title: "Mint Fixture - First Light (Official Music Video)" })), /music videos are not allowed/);
+    const retried = await requestRecording(owner!.id, token, "https://youtu.be/abcdefghijk", undefined, sourceReader);
     assert.equal(retried.stage, "queued"); assert.equal(retried.needsQueue, true);
     const [stored] = await db.select().from(schema.tracks).where(eq(schema.tracks.id, trackId));
     assert.equal(stored!.youtubeVideoId, "abcdefghijk"); assert.equal(stored!.error, null);
@@ -284,7 +388,7 @@ test("signed recording requests are account-bound, duplicate-safe, retriable and
     const secondToken = signToken("music-request", { userId: other!.id, recording: item }, 60000);
     assert.equal((await requestRecording(other!.id, secondToken)).needsQueue, false);
     const wrongRecording = signToken("music-request", { userId: owner!.id, recording: { ...item, id: randomUUID(), title: "Other Recording" } }, 60000);
-    await assert.rejects(requestRecording(owner!.id, wrongRecording, "https://youtu.be/abcdefghijk"), /different recording/);
+    await assert.rejects(requestRecording(owner!.id, wrongRecording, "https://youtu.be/abcdefghijk", undefined, sourceReader), /identity mismatch/);
     await assert.rejects(searchRecordings(owner!.id, "fixture", async () => new Response(null, { status: 429 })), /busy/);
     await assert.rejects(searchRecordings(owner!.id, "fixture", async () => new Response("x".repeat(1_000_001))), /too large/);
   } finally {

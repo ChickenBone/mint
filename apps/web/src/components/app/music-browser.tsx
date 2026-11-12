@@ -5,10 +5,11 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowDownCircle, ChevronLeft, ChevronRight, Clock3, Play, Search, Shuffle, Volume2, X } from "lucide-react";
 import { Artwork, ArtworkAtmosphere } from "@/components/artwork";
-import { artistPlayerId, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
+import { artistPlayerId, collectionIdentity, type CatalogPage, type PlayerCollection, type PlayerItem } from "@/lib/player-protocol";
 import { collectionFromParams, collectionParams, fetchCatalog, metadataFilterKeys } from "@/lib/browser-catalog";
 import { formatDuration } from "@/lib/format";
 import { CollectionActions } from "./collection-actions";
+import { CatalogAlbumCards, CatalogCollectionRows, catalogQueryMatches, useCatalogCollection } from "./catalog-collection-songs";
 import { TrackMenuButton, usePlayer } from "./player";
 import { AlbumLink, ArtistLink } from "./music-links";
 import { MusicItem } from "./music-item";
@@ -94,6 +95,10 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     for (const [key, value] of Object.entries(patch)) { if (value) next.set(key, value); else next.delete(key); }
     router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false });
   };
+  const catalogId = collection && (collection.kind === "artist" || collection.kind === "album") ? collection.id : null;
+  const catalog = useCatalogCollection(catalogId);
+  const [catalogAlbum, setCatalogAlbum] = useState<{ id: string; album: string } | null>(null);
+  const albumFilter = catalogAlbum?.id === catalogId ? catalogAlbum.album : "";
   const activeFilters = metadataFilterKeys.flatMap((filter) => {
     const value = params.get(filter);
     return value ? [{ filter, value }] : [];
@@ -109,8 +114,9 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
   </div>;
   const detail = identity?.key === identityKey ? identity.page : undefined;
   const first = detail?.items[0] ?? page?.items[0];
-  const title = collection.kind === "album" ? detail?.title ?? first?.album ?? "Album"
-    : collection.kind === "artist" ? detail?.title ?? first?.artist ?? "Artist"
+  const decoded = collection.kind === "artist" || collection.kind === "album" ? collectionIdentity(collection.id) : null;
+  const title = collection.kind === "album" ? detail?.title ?? first?.album ?? decoded?.album ?? "Album"
+    : collection.kind === "artist" ? detail?.title ?? first?.artist ?? decoded?.artist ?? "Artist"
     : collection.kind === "liked" ? "Liked songs"
     : collection.kind === "playlist" ? page?.title ?? "Playlist"
     : pathname === "/app/library" ? "Library" : "Your music";
@@ -120,6 +126,14 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
     ? Math.round(page.items.reduce((sum, item) => sum + (item.duration ?? 0), 0) / 60_000) : null;
   const tabs = kinds.filter((kind) => collection.kind === "library" ? kind !== "playlist" : collection.kind === "artist" ? kind === "album" || kind === "track" : kind === "track");
   const countLabel = (count: number, kind: Kind) => `${count.toLocaleString()} ${count === 1 ? labels[kind].slice(0, -1).toLocaleLowerCase() : labels[kind].toLocaleLowerCase()}`;
+  // Catalog rows continue the library list on its last page, so imported songs always rank first.
+  const lastPage = !!page && start + page.items.length >= page.total;
+  const catalogSongAlbums = collection.kind === "artist" ? [...new Set((catalog.data?.items ?? []).map((item) => item.album).filter((album): album is string => !!album))].slice(0, 20) : [];
+  const catalogSongs = type === "track" && lastPage ? (catalog.data?.items ?? []).filter((item) =>
+    (!albumFilter || item.album === albumFilter) && (!q || catalogQueryMatches(q, item.title, item.artist, item.album))) : [];
+  const catalogAlbums = type === "album" && lastPage ? (catalog.data?.albums ?? []).filter((album) => !q || catalogQueryMatches(q, album.title, album.artist)) : [];
+  const catalogCount = type === "track" ? catalogSongs.length : catalogAlbums.length;
+  const catalogPending = !!catalogId && catalog.loading;
   return <div className="mx-auto max-w-[100rem]">
     {collection.kind !== "library" && <Link href="/app/library" className="mb-4 inline-flex min-h-11 items-center gap-1 text-sm text-muted hover:text-fg"><ChevronLeft className="size-4" aria-hidden />All music</Link>}
     {identity?.key === identityKey && identity.error && <p role="status" className="mb-4 text-sm text-warn">Artwork and details could not load. {identity.error} Reopen this page to retry.</p>}
@@ -245,12 +259,19 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
         Clear all
       </button>
     </div>}
-    {page && page.items.length > 0 && <p role="status" aria-live="polite" className="mb-3 text-sm text-muted tabular">
+    {type === "track" && catalogSongAlbums.length > 1 && <div role="group" aria-label="Filter songs not imported yet by album" className="-mx-1 mb-4 flex gap-2 overflow-x-auto px-1 pb-1">
+      {["", ...catalogSongAlbums].map((album) => <button key={album || "all"} type="button" aria-pressed={albumFilter === album}
+        onClick={() => setCatalogAlbum(album ? { id: catalogId ?? "", album } : null)}
+        className={`min-h-9 shrink-0 rounded-full px-4 text-sm font-semibold ${albumFilter === album ? "bg-fg text-bg" : "bg-elevated hover:bg-hover"}`}>{album || "All songs"}</button>)}
+    </div>}
+    {page && (page.items.length > 0 || catalogCount > 0) && <p role="status" aria-live="polite" className="mb-3 text-sm text-muted tabular">
       {page.total > page.items.length ? `${(start + 1).toLocaleString()}–${Math.min(start + page.items.length, page.total).toLocaleString()} of ${page.total.toLocaleString()} ${labels[type].toLocaleLowerCase()}` : countLabel(page.total, type)}
+      {catalogCount > 0 && ` · ${catalogCount.toLocaleString()} more not imported yet`}
     </p>}
     {error ? <div role="alert" className="py-8"><p className="max-w-prose text-warn">{online ? error : "You’re offline. Browsing needs a connection; downloaded songs are still in Your Library → Downloads."}</p><div className="mt-4 flex flex-wrap gap-3"><button type="button" className="min-h-11 rounded-full bg-elevated px-5 hover:bg-hover" onClick={() => setRetry((n) => n + 1)}>Try again</button>{!online && <Link href="/app/collection?tab=downloads" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Open Downloads</Link>}</div></div>
       : !page ? <p role="status" className="py-12 text-muted">Loading…</p>
-      : !page.items.length ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? `No results for “${q}”` : "Nothing here yet"}</h2><p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
+      : !page.items.length && !catalogCount && catalogPending ? <p role="status" className="py-12 text-muted">Loading…</p>
+      : !page.items.length && !catalogCount ? <div className="py-12"><h2 className="text-xl font-semibold">{q ? `No results for “${q}”` : "Nothing here yet"}</h2><p className="mt-3 max-w-prose text-sm leading-relaxed text-muted">
         {q ? "Check the spelling, or try fewer words."
           : collection.kind === "album" ? "No songs from this album are available yet."
           : collection.kind === "artist" ? `No ${type === "track" ? "songs" : "albums"} from this artist are available yet.`
@@ -258,8 +279,9 @@ export function MusicBrowser({ initialCollection }: { initialCollection?: Player
           : "Music appears here as it’s added."}
       </p>{q ? <Link href={`/app/search?q=${encodeURIComponent(q)}`} className="mt-4 inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Search all music</Link>
         : <div className="mt-5 flex flex-wrap gap-3"><Link href="/app" className="inline-flex min-h-11 items-center rounded-full bg-mint px-5 text-sm font-bold text-mint-ink hover:bg-mint-strong">Go to Home</Link><Link href="/app/collection" className="inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:bg-hover">Your Library</Link></div>}</div>
-      : type === "track" ? <CatalogTracks items={page.items} collection={collection} offset={start} album={collection.kind === "album"} />
-      : <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">{page.items.map((item) => <CollectionCard key={item.id} item={item} />)}</div>}
+      : type === "track" ? <>{page.items.length > 0 && <CatalogTracks items={page.items} collection={collection} offset={start} album={collection.kind === "album"} />}<CatalogCollectionRows items={catalogSongs} /></>
+      : <div className="grid grid-cols-2 gap-x-2 gap-y-4 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-7">{page.items.map((item) => <CollectionCard key={item.id} item={item} />)}<CatalogAlbumCards albums={catalogAlbums} /></div>}
+    {!error && page && lastPage && catalog.error && <p role="status" className="mt-4 text-sm text-muted">More songs from the catalog couldn’t load. <button type="button" onClick={catalog.retry} className="font-semibold text-fg underline underline-offset-4">Try again</button></p>}
     {page && page.total > 100 && <nav aria-label="Library pages" className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-4 text-sm">
       <div className="flex gap-2">
         <button type="button" disabled={!start} onClick={() => change({ start: String(Math.max(0, start - 100)) })} className="inline-flex min-h-11 items-center rounded-full bg-elevated px-4 hover:bg-hover disabled:opacity-40"><ChevronLeft className="mr-1 size-4" aria-hidden />Previous</button>

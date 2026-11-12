@@ -27,7 +27,7 @@ Details: [workers and operations](../workers-and-operations.md).
 
 - **Scope:** Optional mint-agent downloader, upload hub, agent protocol/API and worker onboarding UI.
 - **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`collections`](collections.md), [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Imported by:** [`platform`](platform.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map workers` (exports, line counts, cross-domain import edges).
 

@@ -16,11 +16,80 @@ test("an explicit MusicBrainz recording is looked up by identity and cannot be r
       releases: [{ id: "release", title: "Night Letters", status: "Official", "release-group": { id: "group", "primary-type": "Album" } }] });
   });
   const query = { mbRecordingId: id, title, artist: "The Paper Moons", album: "Night Letters", durationSec: 180 };
-  assert.equal((await matchRecording(query))?.recordingId, id);
+  const matched = await matchRecording(query);
+  assert.equal(matched?.recordingId, id);
+  assert.equal(matched?.durationSec, 180);
   title = "Distant Window (Live)";
   assert.equal(await matchRecording(query), null);
   title = query.title; duration = 184000;
   assert.equal(await matchRecording(query), null);
+});
+test("only one identified recording can supply a missing expected duration", async (t) => {
+  const recording = { id: "fixture-recording", title: "First Light", score: 100, length: 181200,
+    "artist-credit": [{ name: "Mint Fixture", artist: { id: "fixture-artist", name: "Mint Fixture" } }],
+    releases: [{ id: "fixture-release", title: "Fixtures", "release-group": { id: "fixture-group", "primary-type": "Album" } }] };
+  let duplicate = false;
+  t.mock.method(globalThis, "fetch", async () => Response.json({
+    recordings: duplicate ? [recording, { ...recording, id: "different-edition" }] : [recording],
+  }));
+  const wanted = { title: "First Light", artist: "Mint Fixture", durationSec: null };
+  assert.equal((await matchRecording(wanted))?.durationSec, 181);
+  assert.equal((await matchRecording(wanted))?.ambiguous, false);
+  duplicate = true;
+  assert.equal((await matchRecording(wanted))?.durationSec, null);
+  assert.equal((await matchRecording(wanted))?.ambiguous, true, "equal lengths do not prove a unique recording ID");
+});
+test("official non-video durations include exact compilation recordings, not bootlegs, alternate versions or different identities", async (t) => {
+  const base = { id: "fixture-single", title: "First Light", score: 100, length: 267000,
+    "artist-credit": [{ name: "Mint Fixture", artist: { id: "fixture-artist", name: "Mint Fixture" } }],
+    releases: [{ id: "fixture-release", title: "Fixtures", status: "Official",
+      "release-group": { id: "fixture-group", "primary-type": "Album", "secondary-types": [] as string[] } }] };
+  t.mock.method(globalThis, "fetch", async () => Response.json({ recordings: [
+    base, { ...base, id: "fixture-album", length: 229040 }, { ...base, id: "same-length" },
+    { ...base, id: "bootleg", length: 271000, releases: [{ ...base.releases[0], status: "Bootleg" }] },
+    { ...base, id: "compilation", length: 274000, releases: [{ ...base.releases[0],
+      "release-group": { ...base.releases[0]!["release-group"], "secondary-types": ["Compilation"] } }] },
+    { ...base, id: "no-release", length: 268500, releases: [] },
+    { ...base, id: "other-song", title: "Other Song", length: 300000 },
+    { ...base, id: "live-version", title: "First Light (Live)", length: 301000 },
+    { ...base, id: "other-artist", length: 302000, "artist-credit": [{ name: "Other Artist" }] },
+    { ...base, id: "missing-length", length: null },
+    { ...base, id: "official-video", video: true, length: 244000 },
+    { ...base, id: "remix-release", length: 305000, releases: [{ ...base.releases[0],
+      "release-group": { ...base.releases[0]!["release-group"], "secondary-types": ["Remix"] } }] },
+    { ...base, id: "hidden-live", disambiguation: "live at the fixture hall", length: 306000 },
+    { ...base, id: "hidden-cover", disambiguation: "cover", length: 307000 },
+    { ...base, id: "hidden-remaster", disambiguation: "remastered", length: 308000 },
+  ] }));
+  const match = await matchRecording({ title: "First Light", artist: "Mint Fixture", durationSec: null });
+  assert.equal(match?.durationSec, null, "multiple recording IDs still cannot supply a unique duration");
+  assert.deepEqual(match?.officialDurationsSec, [267, 229, 274]);
+});
+test("catalog credits preserve whole band names and accept known credit aliases and featured artists", async (t) => {
+  let title = "First Light", artist = "Mint Fixture", second: string | null = "Amber Example", video = false;
+  t.mock.method(globalThis, "fetch", async () => Response.json({ recordings: [{
+    id: "fixture", title: "First Light", score: 100, video, length: 181000,
+    "artist-credit": [
+      { name: artist, artist: { id: "artist", name: artist, aliases: [{ name: "Mint" }] } },
+      ...(second ? [{ name: second, artist: { id: "guest", name: second } }] : []),
+    ],
+    releases: [{ id: "release", title: "Fixture", status: "Official", "release-group": { id: "group", "primary-type": "Album" } }],
+  }] }));
+  for (const credit of ["Mint Fixture and Amber Example", "Mint Fixture / Amber Example", "Mint Fixture featuring Amber Example"]) {
+    assert.deepEqual((await matchRecording({ title, artist: credit }))?.officialDurationsSec, [181]);
+  }
+  title = "First Light feat. Amber Example";
+  assert.deepEqual((await matchRecording({ title, artist: "Mint Fixture" }))?.officialDurationsSec, [181]);
+  title = "First Light";
+  assert.equal(await matchRecording({ title, artist: "Mint Fixture and Wrong Guest" }), null);
+  second = null; artist = "Florence and the Machine";
+  assert.deepEqual((await matchRecording({ title, artist }))?.officialDurationsSec, [181]);
+  artist = "Earth, Wind & Fire";
+  assert.deepEqual((await matchRecording({ title, artist }))?.officialDurationsSec, [181]);
+  artist = "Mint Fixture";
+  assert.deepEqual((await matchRecording({ title, artist: "Mint" }))?.officialDurationsSec, [181]);
+  video = true;
+  assert.equal(await matchRecording({ title, artist }), null, "an Official release never makes video:true clean-audio evidence");
 });
 test("Lidarr cannot fall back to another same-name recording when a recording identity was selected", async (t) => {
   const oldUrl = process.env.LIDARR_URL, oldKey = process.env.LIDARR_API_KEY;

@@ -1,4 +1,5 @@
 import { optionalEnv } from "@mint/core/env";
+import { catalogIdentityMatches, sameRecordingVersion } from "@mint/core/matching";
 import { HttpError, type RequestOpts } from "../http";
 import { log } from "../log";
 import { canonicalPublicUrl, getPublicReadCache, PublicProviderBusyError, publicCacheKey, publicRetryAfter,
@@ -124,14 +125,27 @@ interface MbRecording {
   score: number;
   title: string;
   length?: number;
-  "artist-credit"?: Array<{ name: string; artist: { id: string; name: string } }>;
+  video?: boolean;
+  disambiguation?: string;
+  "artist-credit"?: Array<{ name: string; artist: { id: string; name: string; aliases?: Array<{ name: string }> } }>;
   releases?: Array<{
     id: string;
     title: string;
     status?: string;
     date?: string;
     "release-group"?: { id: string; "primary-type"?: string; "secondary-types"?: string[] };
+    media?: Array<{ track?: Array<{ length?: number | null }>; tracks?: Array<{ length?: number | null }> }>;
   }>;
+}
+
+/** The recording length, or else the length its release tracks agree on (within 3s); never a guess. */
+function recordingLengthMs(rec: MbRecording): number | null {
+  if (rec.length && Number.isFinite(rec.length) && rec.length > 0) return rec.length;
+  const lengths = (rec.releases ?? []).flatMap((release) => (release.media ?? []).flatMap((medium) =>
+    [...(medium.track ?? []), ...(medium.tracks ?? [])].flatMap((track) =>
+      typeof track.length === "number" && Number.isFinite(track.length) && track.length > 0 ? [track.length] : []))).sort((a, b) => a - b);
+  if (!lengths.length || lengths[lengths.length - 1]! - lengths[0]! > 3000) return null;
+  return lengths[Math.floor(lengths.length / 2)]!;
 }
 
 export interface MbMatch {
@@ -142,6 +156,9 @@ export interface MbMatch {
   releaseGroupId: string;
   album: string;
   year: number | null;
+  durationSec: number | null;
+  officialDurationsSec: number[];
+  ambiguous: boolean;
 }
 
 const esc = (s: string) => s.replace(/(["\\+\-!(){}[\]^~*?:/]|&&|\|\|)/g, "\\$1");
@@ -154,11 +171,11 @@ export async function matchRecording(q: {
   durationSec?: number | null;
   mbRecordingId?: string | null;
 }, cache?: PublicReadCache | null): Promise<MbMatch | null> {
-  const primaryArtist = q.artist.split(/,|&| feat\.? | ft\.? /i)[0]!.trim();
+  const primaryArtist = q.artist.split(/,|&| feat\.? | ft\.? | with /i)[0]!.trim();
   const query = `recording:"${esc(q.title)}" AND artist:"${esc(primaryArtist)}"`;
   const data = q.mbRecordingId ? { recordings: [{ ...await musicBrainzJson<MbRecording>(
     `${API}/recording/${encodeURIComponent(q.mbRecordingId)}`,
-    { inc: "artists+releases+release-groups", fmt: "json" },
+    { inc: "artists+releases+release-groups+media", fmt: "json" },
     { cache },
   ), score: 100 }] } : await musicBrainzJson<{ recordings: MbRecording[] }>(
     `${API}/recording`,
@@ -168,10 +185,15 @@ export async function matchRecording(q: {
 
   type Candidate = { rec: MbRecording; rel: NonNullable<MbRecording["releases"]>[number]; score: number };
   const candidates: Candidate[] = [];
-  for (const rec of data.recordings ?? []) {
+  for (const found of data.recordings ?? []) {
+    const length = recordingLengthMs(found);
+    const rec = length ? { ...found, length } : found;
     if (rec.score < 80 || !rec["artist-credit"]?.length) continue;
-    if (q.mbRecordingId && (rec.id !== q.mbRecordingId || norm(rec.title) !== norm(q.title) ||
-      norm(rec["artist-credit"].map((credit) => credit.name).join(" / ")) !== norm(q.artist))) continue;
+    if (rec.video === true || !sameRecordingVersion(q.title, `${rec.title} ${rec.disambiguation ?? ""}`) ||
+      !catalogIdentityMatches(q, { title: rec.title, artists: rec["artist-credit"].map((credit) => ({
+      name: credit.name, aliases: [credit.artist?.name, ...(credit.artist?.aliases?.map((alias) => alias.name) ?? [])].filter((name): name is string => Boolean(name)),
+    })) })) continue;
+    if (q.mbRecordingId && rec.id !== q.mbRecordingId) continue;
     if (q.mbRecordingId && q.durationSec && (!rec.length || Math.abs(rec.length / 1000 - q.durationSec) > 2.5)) continue;
     if (q.durationSec && rec.length && Math.abs(rec.length / 1000 - q.durationSec) > 12) continue;
     for (const rel of rec.releases ?? []) {
@@ -191,6 +213,7 @@ export async function matchRecording(q: {
   const best = candidates[0];
   if (!best) return null;
   const credit = best.rec["artist-credit"]![0]!;
+  const ambiguous = new Set(candidates.map((candidate) => candidate.rec.id)).size > 1;
   return {
     recordingId: best.rec.id,
     artistId: credit.artist.id,
@@ -199,6 +222,13 @@ export async function matchRecording(q: {
     releaseGroupId: best.rel["release-group"]!.id,
     album: best.rel.title,
     year: best.rel.date ? Number(best.rel.date.slice(0, 4)) || null : null,
+    ambiguous,
+    durationSec: !ambiguous &&
+      best.rec.length && Number.isFinite(best.rec.length) && best.rec.length > 0 ? Math.round(best.rec.length / 1000) : null,
+    officialDurationsSec: [...new Set(candidates.filter(({ rec, rel }) =>
+      rel.status === "Official" && (rel["release-group"]?.["secondary-types"] ?? []).every((type) => type === "Compilation") &&
+      rec.length && Number.isFinite(rec.length) && rec.length > 0)
+      .map(({ rec }) => Math.round(rec.length! / 1000)).filter((length) => length > 0))],
   };
 }
 

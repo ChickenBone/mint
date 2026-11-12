@@ -1,5 +1,6 @@
 import { CHANNEL, jobId, publish, type SyncJob, type SyncState } from "@mint/core";
-import { getDb, schema } from "@mint/core/db";
+import { getDb, schema, type Db } from "@mint/core/db";
+import { audioSourceRejection, sameRecordingVersion, sourceKind } from "@mint/core/matching";
 import { getRedis } from "@mint/core/redis";
 import type { Job } from "bullmq";
 import { and, eq, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
@@ -17,12 +18,26 @@ async function emit(userId: string, state: SyncState) {
   await publish(getRedis(), CHANNEL.user(userId), { type: "sync", data: state });
 }
 
-/** Inserts unknown videos as tracks and queues them for acquisition. Returns track ids keyed by video id. */
-async function upsertTracks(videos: yt.YtVideo[]): Promise<Map<string, string>> {
-  const db = getDb();
+export function importedSource(video: yt.YtVideo) {
+  const meta = parseYoutubeMeta(video);
+  const durationSec = parseIsoDuration(video.durationIso);
+  const candidate = yt.audioCandidate(video);
+  // The upload's own length is not independent evidence, so unlabelled uploads are never clean imports.
+  const clean = sameRecordingVersion("", video.title) && sourceKind(candidate) !== "unknown" &&
+    !audioSourceRejection({ ...meta, durationSec }, candidate, true);
+  return { ...meta, durationSec: clean ? durationSec : null, youtubeVideoId: clean ? video.id : null };
+}
+
+/** Alias ownership is committed before the map is consumed by likes/playlists. No provider searches. */
+export async function upsertTracks(videos: yt.YtVideo[], userId: string, options: {
+  db?: Db; enqueue?: (tracks: Array<{ id: string }>) => Promise<unknown>;
+  indexReady?: () => Promise<void>; upgrade?: typeof requestExistingUpgrade;
+} = {}): Promise<Map<string, string>> {
+  const db = options.db ?? getDb();
   const ids = new Map<string, string>();
   if (!videos.length) return ids;
-  if (libraryIndexEnabled()) {
+  if (options.indexReady) await options.indexReady();
+  else if (libraryIndexEnabled()) {
     const raw = await getRedis().get("mint:library-index");
     const status = raw ? JSON.parse(raw) as LibraryIndexStatus : null;
     if (status?.state !== "ready") throw new Error("Existing library must finish indexing before syncing likes, to avoid duplicate downloads. Check Admin.");
@@ -49,8 +64,8 @@ async function upsertTracks(videos: yt.YtVideo[]): Promise<Map<string, string>> 
     isNotNull(schema.tracks.existingLibraryKey),
     inArray(schema.tracks.libraryMatchKey, rows.map((r) => libraryMatchKey(r.artist, r.title))),
   ));
-  const fresh: typeof rows = [];
   const existingById = new Map(existing.map((track) => [track.id, track]));
+  const videoById = new Map(videos.map((video) => [video.id, video]));
   const byKey = new Map<string, typeof existing>();
   for (const track of existing) {
     const key = track.libraryMatchKey!;
@@ -59,9 +74,11 @@ async function upsertTracks(videos: yt.YtVideo[]): Promise<Map<string, string>> 
     byKey.set(key, group);
   }
   for (const row of rows) {
+    const video = videoById.get(row.youtubeVideoId)!;
+    const source = importedSource(video);
     if (ids.has(row.youtubeVideoId)) {
       const original = existingById.get(ids.get(row.youtubeVideoId)!);
-      if (original) await requestExistingUpgrade(original, row.youtubeVideoId);
+      if (original) await (options.upgrade ?? requestExistingUpgrade)(original, source.youtubeVideoId);
       continue;
     }
     const matches = (byKey.get(libraryMatchKey(row.artist, row.title)) ?? []).filter((t) =>
@@ -74,36 +91,52 @@ async function upsertTracks(videos: yt.YtVideo[]): Promise<Map<string, string>> 
         row.error = "Existing-library match needs review: album, duration or edition is ambiguous.";
         row.detail = "Duplicate download held for review";
       }
-      fresh.push(row);
-      continue;
     }
-    await db.insert(schema.trackVideos).values({ videoId: row.youtubeVideoId, trackId: match.id }).onConflictDoNothing();
-    ids.set(row.youtubeVideoId, match.id);
-    await requestExistingUpgrade(match, row.youtubeVideoId);
-  }
-  for (let i = 0; i < fresh.length; i += 200) {
-    const inserted = await db
-      .insert(schema.tracks)
-      .values(fresh.slice(i, i + 200))
-      .onConflictDoNothing({ target: schema.tracks.youtubeVideoId })
-      .returning({ id: schema.tracks.id, stage: schema.tracks.stage });
-    if (inserted.length) {
-      await queues.acquire.addBulk(
-        inserted.filter((t) => t.stage !== "failed").map((t) => ({ name: "acquire", data: { trackId: t.id }, opts: { jobId: jobId.acquire(t.id) } })),
-      );
+    const stored = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`video:${video.id}`}, 783))`);
+      const [alias] = await tx.select().from(schema.trackVideos).where(eq(schema.trackVideos.videoId, video.id));
+      const [known] = await tx.select().from(schema.tracks).where(eq(schema.tracks.youtubeVideoId, video.id));
+      if (alias || known) return { id: alias?.trackId ?? known!.id, fresh: false, stage: known?.stage };
+      let owner = match;
+      let fresh = false;
+      if (!owner) {
+        [owner] = await tx.insert(schema.tracks).values({ ...row, ...source }).onConflictDoNothing().returning();
+        fresh = Boolean(owner);
+        if (!owner) [owner] = await tx.select().from(schema.tracks).where(eq(schema.tracks.youtubeVideoId, video.id));
+      }
+      if (!owner) throw new Error("Imported source ownership could not be resolved.");
+      const [claimed] = await tx.insert(schema.trackVideos).values({ videoId: video.id, trackId: owner.id }).onConflictDoNothing().returning();
+      if (!claimed) {
+        const [aliasOwner] = await tx.select().from(schema.trackVideos).where(eq(schema.trackVideos.videoId, video.id));
+        if (!aliasOwner) throw new Error("Imported source alias disappeared.");
+        if (fresh && aliasOwner.trackId !== owner.id) await tx.delete(schema.tracks).where(eq(schema.tracks.id, owner.id));
+        return { id: aliasOwner.trackId, fresh: false, stage: owner.stage };
+      }
+      return { id: owner.id, fresh, stage: owner.stage };
+    });
+    ids.set(video.id, stored.id);
+    if (match && stored.id === match.id) await (options.upgrade ?? requestExistingUpgrade)(match, source.youtubeVideoId);
+    if (stored.fresh && stored.stage !== "failed") {
+      await (options.enqueue ?? ((tracks) => queues.acquire.addBulk(tracks.map((track) => ({
+        name: "acquire", data: { trackId: track.id, requestedBy: userId }, opts: { jobId: jobId.acquire(track.id) },
+      })))))([{ id: stored.id }]);
     }
   }
-  const all = await db
-    .select({ id: schema.tracks.id, videoId: schema.tracks.youtubeVideoId })
-    .from(schema.tracks)
-    .where(inArray(schema.tracks.youtubeVideoId, videos.map((v) => v.id)));
-  for (const t of all) if (t.videoId) ids.set(t.videoId, t.id);
   return ids;
 }
 
 export async function processSync(job: Job<SyncJob>) {
   const { userId } = job.data;
   const db = getDb();
+  const pending: Array<{ id: string }> = [];
+  const enqueue = async (tracks: Array<{ id: string }>) => { pending.push(...tracks); };
+  const flush = async () => {
+    if (!pending.length) return;
+    await queues.acquire.addBulk(pending.map((track) => ({
+      name: "acquire", data: { trackId: track.id, requestedBy: userId }, opts: { jobId: jobId.acquire(track.id) },
+    })));
+    pending.length = 0;
+  };
   const acct = await db.query.youtubeAccounts.findFirst({ where: eq(schema.youtubeAccounts.userId, userId) });
   if (!acct) return { skipped: "not linked" };
 
@@ -120,7 +153,7 @@ export async function processSync(job: Job<SyncJob>) {
       if (liked.length % 100 === 0) await emit(userId, { status: "syncing", message: `Found ${liked.length} liked songs…`, found: liked.length });
     }
     const before = await db.$count(schema.userTracks, eq(schema.userTracks.userId, userId));
-    const likedIds = await upsertTracks(liked);
+    const likedIds = await upsertTracks(liked, userId, { enqueue });
     const trackIds = [...likedIds.values()];
     if (trackIds.length) {
       await db
@@ -156,7 +189,7 @@ export async function processSync(job: Job<SyncJob>) {
     for (const pl of enabled) {
       const videoIds = await yt.playlistVideoIds(token, pl.youtubePlaylistId);
       const fresh = await yt.videosById(token, videoIds);
-      const map = await upsertTracks(fresh);
+      const map = await upsertTracks(fresh, userId, { enqueue });
       const all = await db
         .select({ id: schema.tracks.id, videoId: schema.tracks.youtubeVideoId })
         .from(schema.tracks)
@@ -173,6 +206,7 @@ export async function processSync(job: Job<SyncJob>) {
     }
 
     const after = await db.$count(schema.userTracks, eq(schema.userTracks.userId, userId));
+    await flush();
     const now = new Date();
     await db
       .update(schema.youtubeAccounts)
@@ -193,6 +227,7 @@ export async function processSync(job: Job<SyncJob>) {
     );
     return { liked: liked.length, added: after - before, playlists: remote.length };
   } catch (err) {
+    await flush();
     const message = err instanceof yt.YoutubeAuthError ? "YouTube access expired. Reconnect your account." : (err as Error).message;
     log.warn({ err, userId }, "sync failed");
     await db.update(schema.youtubeAccounts).set({ syncStatus: "error", syncError: message }).where(eq(schema.youtubeAccounts.userId, userId));

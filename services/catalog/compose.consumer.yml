@@ -1,0 +1,26 @@
+# Optional override that lets a separately run Mint reach this catalog's read-only HTTP API.
+# Once per host:  docker network create mint-catalog-link
+# Start with:     docker compose -f compose.yml -f compose.consumer.yml up -d
+# Mint's web and worker join the same external network (Mint's docker-compose.catalog.yml) and call
+# http://catalog-search:8080. The link is HTTP only: the databases stay separate and nothing is shared.
+# Only `search` joins it, under the alias below; no port is published beyond compose.yml's loopback one.
+# ALLOWED_HOSTS accepts the Host header Mint sends (loopback always works). Set CATALOG_ALLOWED_HOSTS to
+# replace the default, comma-separated, and keep catalog-search in the list. The read API is
+# unauthenticated: keep this network private and never attach untrusted containers to it.
+# CATALOG_DEMAND_TOKEN (optional, 32-256 characters, shared with Mint) enables POST /v1/demand,
+# Mint's only write: anonymous, rate-limited hints that raise crawl priority. Unset = endpoint 404.
+services:
+  search:
+    environment:
+      ALLOWED_HOSTS: ${CATALOG_ALLOWED_HOSTS:-catalog-search}
+      CATALOG_DEMAND_TOKEN: ${CATALOG_DEMAND_TOKEN:-}
+    networks:
+      private: {}
+      egress: {}
+      mint-catalog-link:
+        aliases: [catalog-search]
+
+networks:
+  mint-catalog-link:
+    external: true
+    name: mint-catalog-link

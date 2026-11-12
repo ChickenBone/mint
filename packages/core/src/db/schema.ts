@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  check,
   jsonb,
   index,
   integer,
@@ -22,6 +23,15 @@ export const stageEnum = pgEnum("stage", STAGES);
 export const sourceEnum = pgEnum("source", SOURCES);
 export const syncStatusEnum = pgEnum("sync_status", ["idle", "syncing", "error"]);
 export const workerStatusEnum = pgEnum("worker_status", ["pending", "active", "disabled"]);
+export const searchRequestStatusEnum = pgEnum("search_request_status", ["active", "closed", "cancelled"]);
+export const searchRequestEnrichmentStatusEnum = pgEnum("search_request_enrichment_status", [
+  "queued",
+  "running",
+  "complete",
+  "not_found",
+  "ambiguous",
+  "failed",
+]);
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -153,6 +163,11 @@ export const tracks = pgTable(
     leaseWorkerId: uuid("lease_worker_id").references(() => workers.id, { onDelete: "set null" }),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     remoteFailures: integer("remote_failures").notNull().default(0),
+    /** Up to three veto-passing uploads awaiting a member's choice when automatic matching was not confident. */
+    sourceChoices: jsonb("source_choices").$type<Array<{ id: string; title: string; channel: string;
+      durationSec: number | null; viewCount: number | null; score: number | null }>>(),
+    /** Uploads a member reported as the wrong audio; never selected for this track again. */
+    blockedVideoIds: text("blocked_video_ids").array().notNull().default(sql`'{}'::text[]`),
     ...timestamps,
   },
   (t) => [
@@ -292,6 +307,39 @@ export const issueReports = pgTable(
   (t) => [
     index("issue_reports_status_idx").on(t.status, t.createdAt),
     index("issue_reports_user_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+/** A member's explicit request for a search that did not match existing catalog content. */
+export const searchRequests = pgTable(
+  "search_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The exact query submitted by the member; it is only stored on this account-owned row. */
+    query: text("query").notNull(),
+    /** Canonicalized query identity, unique only within one member's active requests. */
+    normalizedQuery: text("normalized_query").notNull(),
+    status: searchRequestStatusEnum("status").notNull().default("active"),
+    enrichmentStatus: searchRequestEnrichmentStatusEnum("enrichment_status").notNull().default("queued"),
+    /** Set only after metadata confirms a recording; this does not imply audio availability. */
+    musicBrainzRecordingId: text("musicbrainz_recording_id"),
+    /** Optional Mint track linkage; track playability remains governed by PLAYABLE. */
+    trackId: uuid("track_id").references(() => tracks.id, { onDelete: "set null" }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("search_requests_active_identity_idx")
+      .on(t.userId, t.normalizedQuery)
+      .where(sql`${t.status} = 'active'`),
+    index("search_requests_user_status_created_idx").on(t.userId, t.status, t.createdAt),
+    check(
+      "search_requests_closed_at_status_check",
+      sql`(${t.status} = 'active' and ${t.closedAt} is null) or (${t.status} <> 'active' and ${t.closedAt} is not null)`,
+    ),
   ],
 );
 

@@ -8,7 +8,7 @@ import httpx
 
 from catalog.config import Settings
 from catalog.model import provider_id
-from catalog.store import Store
+from catalog.store import Store, search_text
 from catalog.providers import HOSTS as SOURCE_HOSTS, PUBLIC_SOURCES, task_source
 
 
@@ -21,6 +21,12 @@ HOSTS = {
 }
 HOSTS.update(SOURCE_HOSTS.values())
 MAX_BODY = 4 * 1024 * 1024
+LUCENE_SPECIAL = set('+-&|!(){}[]^"~*?:\\/')
+
+
+def lucene_text(value: str) -> str:
+    """Listener text as literal MusicBrainz search terms, never Lucene operators or fields."""
+    return "".join(f"\\{char}" if char in LUCENE_SPECIAL else char for char in value)
 
 
 class Deferred(RuntimeError):
@@ -69,7 +75,7 @@ def request_url(job: dict, settings: Settings) -> tuple[str, dict]:
             "url": f"https://www.youtube.com/watch?v={identifier}",
             "format": "json",
         }
-    if task in ("chart", "lookup"):
+    if task in ("chart", "lookup", "apple-search"):
         if not settings.apple_enabled:
             raise Deferred("Apple source is disabled", 3600)
         if country not in settings.countries:
@@ -80,6 +86,14 @@ def request_url(job: dict, settings: Settings) -> tuple[str, dict]:
                 "most-played/100/songs.json",
                 {},
             )
+        if task == "apple-search":
+            return "https://itunes.apple.com/search", {
+                "term": search_text(job["provider_id"]),
+                "country": country,
+                "media": "music",
+                "entity": "song",
+                "limit": 25,
+            }
         identifier = provider_id(job["provider_id"])
         if "lookup_ids" in job:
             identifiers = job["lookup_ids"]
@@ -107,8 +121,14 @@ def request_url(job: dict, settings: Settings) -> tuple[str, dict]:
         }
     if not settings.musicbrainz_enabled:
         raise Deferred("MusicBrainz source is disabled", 3600)
-    identifier = provider_id(job["provider_id"], "musicbrainz")
     root = "https://musicbrainz.org/ws/2"
+    if task == "mb-search":
+        return f"{root}/recording", {
+            "query": lucene_text(search_text(job["provider_id"])),
+            "limit": 25,
+            "fmt": "json",
+        }
+    identifier = provider_id(job["provider_id"], "musicbrainz")
     if task in ("mb-albums", "mb-songs"):
         resource = "release-group" if task == "mb-albums" else "recording"
         return f"{root}/{resource}", {
@@ -216,7 +236,7 @@ class Sources:
                 is_feed = job["task"] == "yt-feed"
                 content_type = response.headers.get("content-type", "").lower()
                 apple_json = (
-                    job["task"] == "lookup"
+                    job["task"] in ("lookup", "apple-search")
                     and host == "itunes.apple.com"
                     and content_type.split(";", 1)[0].strip() == "text/javascript"
                 )

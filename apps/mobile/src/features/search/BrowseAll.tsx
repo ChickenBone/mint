@@ -1,5 +1,5 @@
 import type { CatalogPage, ChartDefinition, Discovery } from "@mint/client";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { FlatList, Platform, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import { useApi } from "../../api";
 import { BrowseCard } from "./BrowseCard";
@@ -14,7 +14,7 @@ import {
 const mixes = Object.keys(mixTitles) as MixMode[];
 const personalKeys: SourceKey[] = [...mixes, "albums"];
 
-export function BrowseAll() {
+export function BrowseAll({ footer }: { footer?: ReactNode }) {
   const api = useApi();
   const { width } = useWindowDimensions();
   const columns = gridColumns(width >= layout.wide ? width - layout.sidebar : width);
@@ -55,11 +55,14 @@ export function BrowseAll() {
         : <Notice loading />}</View>
       : <View style={s.row}>{row.cards.map((card) => <BrowseCard key={card.key} card={card} width={cardWidth} />)}
         {cardWidth ? null : Array.from({ length: columns - row.cards.length }, (_, index) => <View key={`spacer-${index}`} style={s.spacer} />)}</View>}
-    ListFooterComponent={<View style={s.footer}>
-      {browse.facetsLoading ? <Notice loading /> : browse.facetsError ?
-        <Notice title="More categories couldn't load" message={browse.facetsError} retry={() => loadMore(true)} /> : null}
-      {empty ? <Notice title="Nothing to browse yet" message="Categories appear as music with years, moods or genres arrives in your library. Search above to find something now." /> : null}
-    </View>} />;
+    ListFooterComponent={<>
+      <View style={s.footer}>
+        {browse.facetsLoading ? <Notice loading /> : browse.facetsError ?
+          <Notice title="More categories couldn't load" message={browse.facetsError} retry={() => loadMore(true)} /> : null}
+        {empty ? <Notice title="Nothing to browse yet" message="Categories appear as music with years, moods or genres arrives in your library. Search above to find something now." /> : null}
+      </View>
+      {footer}
+    </>} />
 }
 
 const s = StyleSheet.create({
