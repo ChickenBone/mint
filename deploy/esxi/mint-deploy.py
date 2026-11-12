@@ -432,6 +432,11 @@ def activate(config, state, sha, maintenance, emergency=False):
             config = managed_proxy(config)
             save_compose(ROOT / "next.json", config)
             compose(ROOT / "next.json", "up", "-d", "--no-deps", "caddy")
+            # An already-managed Caddy is not recreated, so the new routing must be loaded explicitly.
+            proxy_command(ROOT / "next.json", "validate", "--config", "/etc/mint-rollout/Caddyfile",
+                          "--adapter", "caddyfile")
+            proxy_command(ROOT / "next.json", "reload", "--config", "/etc/mint-rollout/Caddyfile",
+                          "--adapter", "caddyfile")
         else:
             config = managed_proxy(config)
             proxy_command(live, "validate", "--config", "/etc/mint-rollout/Caddyfile", "--adapter", "caddyfile")
@@ -443,6 +448,8 @@ def activate(config, state, sha, maintenance, emergency=False):
         if maintenance:
             # Recovery belongs to the already-admitted maintenance, even if its window has elapsed.
             compose(live, "up", "-d", "--no-deps", "caddy")
+            if previous_proxy and state.get("proxy_ready"):
+                proxy_command(live, "reload", "--config", "/etc/mint-rollout/Caddyfile", "--adapter", "caddyfile")
         elif previous_proxy:
             proxy_command(live, "reload", "--config", "/etc/mint-rollout/Caddyfile", "--adapter", "caddyfile")
         raise

@@ -1107,6 +1107,18 @@ SHA are retained as `last_emergency` in the private deployment state and the
 reason is printed to the operator log. Dry runs do not persist an authorization.
 Future scheduled runs still obey the 4am Central window.
 
+**Optional standalone catalog on the guest:** run `services/catalog` as its
+own Compose project (for example in a root-only `/srv/mint-catalog` with a
+private 0600 `.env`) using `compose.yml` and `compose.consumer.yml`, after
+`docker network create --internal mint-catalog-link`. The catalog image builds
+locally and does not auto-update with Mint. Connect Mint by adding the
+[catalog overlay](../docker-compose.catalog.yml)'s web/worker
+`MINT_CATALOG_URL`, optional `CATALOG_DEMAND_TOKEN` and `mint-catalog-link`
+network (declared `external`) to `/srv/mint/compose.vm.yml`. Adding a network
+is a topology change: the updater fails closed until an operator records the
+same external network definition in the private `base-state.json`, then
+applies it through a maintenance (or `--emergency`) rollout.
+
 `/srv/mint/deploy-state.json` records the deployed/pending SHA, gate check,
 selected slot and interrupted/failed rollout. `live.json` and `base-state.json`
 are private deployment records, not files to edit casually. A bad standby never
