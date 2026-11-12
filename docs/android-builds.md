@@ -2,6 +2,9 @@
 
 [Mobile setup](mobile.md) | [Expo dashboard](https://expo.dev)
 
+For iPhone/iPad signing, installation and fingerprint-gated delivery, see
+[iPhone builds and Expo updates](ios-builds.md).
+
 Mint uses **EAS Build** to build installable arm64 Android APKs and **EAS Update** to
 host compatible JavaScript/assets. GitHub Actions coordinates distribution.
 The Mint server continues to serve account APIs and music; no application

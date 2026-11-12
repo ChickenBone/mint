@@ -26,9 +26,9 @@ export function validateUpdateRuntime(current, update) {
   }
 }
 
-export function compatibleBuild(build, runtime) {
-  return build?.status === "FINISHED" && build.platform === "ANDROID" &&
-    build.distribution === "INTERNAL" && build.buildProfile === "production" &&
+export function compatibleBuild(build, runtime, target = { platform: "ANDROID", profile: "production" }) {
+  return build?.status === "FINISHED" && build.platform === target.platform &&
+    build.distribution === "INTERNAL" && build.buildProfile === target.profile &&
     build.updateChannel?.name === "production" &&
     build.appIdentifier === "org.mintmusic.mobile" &&
     build.runtime?.version === runtime && build.fingerprint?.hash === runtime &&
@@ -56,9 +56,9 @@ export function validateLink(original, initialized, result) {
   }
 }
 
-export function selectBuild(builds, runtime) {
+export function selectBuild(builds, runtime, target) {
   if (!Array.isArray(builds)) throw new Error("Invalid EAS build list.");
-  return builds.find((build) => compatibleBuild(build, runtime)) ?? null;
+  return builds.find((build) => compatibleBuild(build, runtime, target)) ?? null;
 }
 
 export function parseManifestTree(tree) {

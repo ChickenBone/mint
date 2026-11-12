@@ -12,7 +12,7 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [Connect an existing Plex library](#use-an-existing-plex-music-library-read-only)
 - [Linux server and command-line installation](#command-line-setup)
 - [Vercel limitations and setup](#optional-the-website-on-vercel)
-- [Expo app and Android updates](#expo-consumer-app-and-browser-sign-in)
+- [Expo app and native updates](#expo-consumer-app-and-browser-sign-in)
 - [Listening features](#native-browser-listening)
 - [Chart discovery](#chart-discovery)
 - [Upgrades and backups](#updating-an-existing-installation)
@@ -45,6 +45,9 @@ origin. Native iOS/Android do not need browser CORS. Existing web-cookie
 authentication and CSRF protections remain unchanged.
 
 Android APKs and OTA application updates now use [EAS Build and EAS Update](android-builds.md).
+The separate [iPhone distribution workflow](ios-builds.md) builds signed ad hoc
+IPAs and publishes compatible iOS updates using the same per-platform
+fingerprint gate; Apple signing/device registration is independent of Android.
 Mint's backend still serves native account and music APIs; Expo does not receive
 your music library or backend credentials. No OTA server/container/volume is
 required. When upgrading from the previous self-hosted OTA setup, remove

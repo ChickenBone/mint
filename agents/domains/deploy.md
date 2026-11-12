@@ -18,6 +18,7 @@
 - Android distribution uses EAS Build and EAS Update. Compare the native fingerprint with a successfully built APK, not the previous commit; compatible JavaScript changes only publish an update, and missing native history builds conservatively.
 - EAS baselines must be finished builds with the exact runtime/channel/fingerprint and validated signer; submitted or queued builds authorize no update. Do not restore the retired self-hosted OTA API/volume. EAS hosts application assets, not private media or backend secrets.
 - Preserve stable APK signing, exact native runtimes, default-branch publication and embedded/offline recovery. Never distribute Expo's debug-signed release default or claim an APK/device check from prebuild alone. EAS quotas still apply. See [Android builds](../../docs/android-builds.md).
+- iOS uses the separate EAS-managed `ios-production` ad hoc profile. Gate iOS OTA on a finished IPA with its exact fingerprint, verified Apple team/signature, unexpired device provisioning and embedded recovery. CI refreshes profiles with an Apple team API key; device additions require a new IPA even without fingerprint changes. See [iPhone builds](../../docs/ios-builds.md).
 
 Details: [workers and operations](../workers-and-operations.md#self-hosting-and-upgrades).
 
@@ -31,28 +32,28 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 ## Generated map
 
 - **Scope:** Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs.
-- **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md), [docs/self-hosting.md](../../docs/self-hosting.md), [docs/android-builds.md](../../docs/android-builds.md).
+- **Read before editing:** [agents/workers-and-operations.md](../workers-and-operations.md), [agents/architecture.md](../architecture.md), [docs/self-hosting.md](../../docs/self-hosting.md), [docs/android-builds.md](../../docs/android-builds.md), [docs/ios-builds.md](../../docs/ios-builds.md).
 - **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (28)
+### Owned files (32)
 
 - `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.catalog.yml`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
-- `.github/workflows/` `android-apk.yml`, `ci.yml`, `release.yml`
+- `.github/workflows/` `android-apk.yml`, `ci.yml`, `ios-eas.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
 - `deploy/docker/` `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`
-- `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`
-- `docs/` `android-builds.md`, `self-hosting.md`
+- `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`, `ios-distribution.mjs`, `ios-distribution.test.mjs`
+- `docs/` `android-builds.md`, `ios-builds.md`, `self-hosting.md`
 
 ### Validate
 
-Owned tests: 4.
+Owned tests: 5.
 
 ```bash
 npm run typecheck -w @mint/web
 npm run lint -w @mint/web
-node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs
+node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
 docker compose config --quiet
 node --import tsx --test deploy/mobile/*.test.mjs
 ```

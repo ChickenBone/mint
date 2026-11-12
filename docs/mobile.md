@@ -106,6 +106,12 @@ distribution uses **EAS Build** for an installable APK and **EAS Update** for
 compatible JavaScript/assets. No Play Store submission is configured. The public
 Expo project ID/update URL are not credentials or a Mint backend address.
 
+iPhone/iPad distribution uses the separate `ios-production` profile with
+EAS-managed Apple signing and the same production update channel. Follow
+[iPhone builds and updates](ios-builds.md) for device registration, the initial
+signed build and Apple CI credentials. Each platform gates updates independently
+against a finished, verified build with its exact native fingerprint.
+
 Follow [Android builds and updates](android-builds.md) for GitHub authentication,
 stable Android signing, native compatibility gating and downloads. A new
 native runtime still requires installing a new APK. EAS hosts application

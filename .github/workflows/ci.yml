@@ -75,6 +75,7 @@ jobs:
           ANALYSIS_SERVER_URL=http://worker:8080 ANALYSIS_WORKER_TOKEN=fixture-only-analysis-token-not-production docker compose -f docker-compose.analysis.yml config --quiet
           MINT_DOMAIN=mint.example.com docker compose -f docker-compose.yml -f docker-compose.vercel.yml config --quiet
           node --test deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs
+          node --test deploy/mobile/*.test.mjs
           docker create --name mint-caddy-test-binary caddy:2
           docker cp mint-caddy-test-binary:/usr/bin/caddy /tmp/mint-caddy
           docker rm mint-caddy-test-binary
