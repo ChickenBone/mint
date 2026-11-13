@@ -151,16 +151,16 @@ function createRouter(dependencies: ApiServerDependencies) {
     if (error instanceof ListeningHistoryInputError) {
       throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
     }
-    function playbackQueueError(error: unknown): never {
-      if (error instanceof PlaybackQueueError) {
-        const code = error.code === "NOT_FOUND" ? "NOT_FOUND"
-          : error.code === "CONFLICT" ? "CONFLICT" : "BAD_REQUEST";
-        throw new TRPCError({ code, message: error.message });
-      }
-      throw error;
-    }
     if (error instanceof ListeningHistoryMediaUnavailableError) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Playable song not found." });
+    }
+    throw error;
+  }
+  function playbackQueueError(error: unknown): never {
+    if (error instanceof PlaybackQueueError) {
+      const code = error.code === "NOT_FOUND" ? "NOT_FOUND"
+        : error.code === "CONFLICT" ? "CONFLICT" : "BAD_REQUEST";
+      throw new TRPCError({ code, message: error.message });
     }
     throw error;
   }

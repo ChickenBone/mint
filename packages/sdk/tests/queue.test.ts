@@ -24,9 +24,14 @@ test("queue SDK validates inputs, sends only explicit credentials and checks pag
   const sdk = createMintSdk({
     url: "http://fixture.test/trpc", gatewayToken, sessionToken,
     fetch: async (url, init) => {
+      const requestUrl = new URL(String(url));
+      const query = requestUrl.searchParams.get("input");
+      const rpcInput = init?.body === undefined
+        ? query ? JSON.parse(query)?.json : undefined
+        : JSON.parse(String(init.body));
       calls.push({
-        path: new URL(String(url)).pathname.slice("/trpc/".length),
-        input: init?.body === undefined ? undefined : JSON.parse(String(init.body)),
+        path: requestUrl.pathname.slice("/trpc/".length),
+        input: rpcInput,
         cookie: new Headers(init?.headers).get("cookie"),
       });
       assert.equal(new Headers(init?.headers).get("x-user-role"), null);
