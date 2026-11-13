@@ -34,9 +34,9 @@ Use generated focused checks; service metadata changes require the library owner
 Owned tests: 1.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/artist/[id].tsx' src/features/artists/ArtistScreen.tsx src/features/artists/CatalogArtistAlbums.tsx src/features/artists/artist-model.ts tests/artists-detail.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/artists-detail.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint 'app/artist/[id].tsx' src/features/artists/ArtistScreen.tsx src/features/artists/CatalogArtistAlbums.tsx src/features/artists/artist-model.ts tests/artists-detail.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/artists-detail.test.ts
 ```
 
 <!-- agents:generated:end -->

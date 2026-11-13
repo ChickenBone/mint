@@ -55,7 +55,7 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | Domain | Covers |
 | --- | --- |
 | [`mobile`](agents/domains/mobile.md) | Expo configuration, navigation shell, shared UI/theme/hooks and client account lifecycle |
-| [`mobile-contracts`](agents/domains/mobile-contracts.md) | Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions |
+| [`mobile-contracts`](agents/domains/mobile-contracts.md) | Shared contracts, native @mint/client transport, a separate runtime-validated @mint/sdk wrapper, and allowlisted native API |
 | [`mobile-playback`](agents/domains/mobile-playback.md) | Expo audio engine, progressive queues, lyrics parsing, local diagnostics, native adapters and account-scoped offline storage |
 | [`mobile-home`](agents/domains/mobile-home.md) | Listener Home recommendations, bounded album shelves and recent additions |
 | [`mobile-artists`](agents/domains/mobile-artists.md) | Artist detail navigation, artist identity and bounded artist song/album presentation |
@@ -66,9 +66,10 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | [`mobile-settings`](agents/domains/mobile-settings.md) | Listener settings, privacy/history, local storage, developer options, app information and compatible update checks |
 | [`mobile-player`](agents/domains/mobile-player.md) | Persistent mini-player and expanded sheet, lyrics/queue UI, seek controls, gestures, artwork colors and Stats for nerds |
 | [`mobile-design`](agents/domains/mobile-design.md) | Compact Mint mobile UX skill and pinned official Expo native UI/animation references, loaded on demand |
-| [`platform`](agents/domains/platform.md) | Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime |
+| [`accounts`](agents/domains/accounts.md) | Target account policy, browser sessions, authentication ports and fresh account schema |
+| [`platform`](agents/domains/platform.md) | Shared schemas, database and platform primitives, workspace plumbing, and target API composition/transport |
 | [`playback`](agents/domains/playback.md) | Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery |
-| [`library`](agents/domains/library.md) | Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing |
+| [`library`](agents/domains/library.md) | Target read-only root/media identity, plus existing bounded browsing/search, artwork, artist metadata and Plex indexing |
 | [`collections`](agents/domains/collections.md) | Native playlists, likes, smart rules, folders and imports, your-music views, discovery shelves, mixes, radios and playlist sleeves |
 | [`providers`](agents/domains/providers.md) | Provider charts, Spotify playlist metadata, YouTube Music linking/sync and provider OAuth |
 | [`acquisition`](agents/domains/acquisition.md) | Music requests, backlog, download/finalize jobs, Lidarr/TorBox/Prowlarr/Cobalt/MusicBrainz matching and pipeline stages |
@@ -78,10 +79,10 @@ See [working at scale](agents/working-at-scale.md) for adding or splitting domai
 | [`realtime`](agents/domains/realtime.md) | WebSocket service, Redis event channels, realtime tickets and live client components |
 | [`web-shell`](agents/domains/web-shell.md) | App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views |
 | [`deploy`](agents/domains/deploy.md) | Docker images, Compose stacks, deploy scripts, CI/release workflows, env examples and self-hosting docs |
-| [`catalog`](agents/domains/catalog.md) | Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge |
+| [`catalog`](agents/domains/catalog.md) | Standalone metadata aggregation and reconciliation, plus the target recording schema and migration |
 | [`library-auditor`](agents/domains/library-auditor.md) | Read-only metadata manifest audits for duplicates, identifier conflicts and tag gaps with optional catalog matching |
 | [`agent-tooling`](agents/domains/agent-tooling.md) | Domain manifest/cards, generated path instructions, bounded context tooling and opt-in ignored task memory |
-| [`handbook`](agents/domains/handbook.md) | README, product/design decisions, curated engineering/topic guides, UX docs and screenshots |
+| [`handbook`](agents/domains/handbook.md) | README, product/design decisions, curated guides, rewrite planning, UX docs and screenshots |
 
 <!-- agents:generated:end -->
 

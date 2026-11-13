@@ -30,12 +30,6 @@ export function RequestForm() {
           >
             Go to Sign in
           </Link>
-          <Link
-            href="/browse"
-            className="inline-flex min-h-11 items-center rounded-full border border-line px-4 text-sm font-semibold text-fg hover:bg-hover"
-          >
-            Browse the library
-          </Link>
         </div>
       </div>
     );

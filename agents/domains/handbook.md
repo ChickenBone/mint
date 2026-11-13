@@ -10,6 +10,9 @@
 ## Invariants
 
 - The handbook is curated guidance, not transcripts. Keep it public-safe and use generic examples.
+- `plan/**` holds the full-rewrite knowledge base. Separate confirmed decisions,
+  source facts and recommendations; future packages/gates are not implemented
+  behavior or permission to rewrite, publish, deploy or install external tooling.
 - Generated sections are never hand-edited; coordinate the single map writer and run `npm run agents:sync`.
 - Screenshots use fictional content and original or licensed assets.
 - `context` packets reuse manifest routing, remain bounded metadata and exclude private/ignored paths. Do not build whole-repository source dumps or persist session history in public guidance.
@@ -26,19 +29,24 @@ Details: [working at scale](../working-at-scale.md) and [engineering](../enginee
 
 ## Generated map
 
-- **Scope:** README, product/design decisions, curated engineering/topic guides, UX docs and screenshots.
+- **Scope:** README, product/design decisions, curated guides, rewrite planning, UX docs and screenshots.
 - **Read before editing:** [agents/README.md](../README.md), [agents/browser-testing-and-mocks.md](../browser-testing-and-mocks.md).
 - **Imports from:** none
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map handbook` (exports, line counts, cross-domain import edges).
 
-### Owned files (44)
+### Owned files (56)
 
 - `./` `.gitignore`, `AGENTS.md`, `DESIGN.md`, `PRODUCT.md`, `README.md`
 - `agents/` `README.md`, `architecture.md`, `browser-testing-and-mocks.md`, `design.md`, `engineering.md`, `integrations-and-charts.md`, `playback-and-library.md`, `product-decisions.md`, `sleeves-and-shelves.md`, `workers-and-operations.md`
 - `docs/` `ui-library.md`
 - `docs/screenshots/` `admin.png`, `analysis.png`, `browse.png`, `chart-requested.png`, `charts.png`, `discover-mix.png`, `discover.png`, `expo-browse-phone.png`, `expo-browse-wide.png`, `home.png`, `jobs.png`, `landing-stats.png`, `landing.png`, `library.png`, `liked.png`, `mobile-charts.png`, `mobile-discover.png`, `mobile-home.png`, `mobile-landing.png`, `mobile-player.png`, `mobile-small-charts.png`, `mobile-small-discover.png`, `now-playing.png`, `search-missing.png`, `settings.png`, `workers.png`
 - `docs/ux/` `current-state.md`, `target-ux.md`
+- `plan/` `README.md`
+- `plan/architecture/` `plex-free.md`, `target.md`
+- `plan/execution/` `decisions.md`, `phases.md`
+- `plan/migration/` `compatibility.md`, `features.md`
+- `plan/research/` `agentic-coding.md`, `audio-copy-operation-inventory.md`, `baselines.md`, `discovery.md`, `mint-operation-inventory.md`
 
 ### Validate
 

@@ -1,0 +1,17 @@
+packages:
+  - apps/web
+  - apps/worker
+  - apps/realtime
+  - apps/agent
+  - apps/api
+  - packages/*
+linkWorkspacePackages: true
+allowBuilds:
+  nx: true
+  esbuild: true
+  msgpackr-extract: false
+overrides:
+  react: 19.3.0
+  react-dom: 19.3.0
+  react-native-gesture-handler: 3.3.0
+  react-native-worklets: 0.13.0

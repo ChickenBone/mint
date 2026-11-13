@@ -49,10 +49,10 @@ Details: [sleeves and shelves](../sleeves-and-shelves.md) and [playback and libr
 Owned tests: 2.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/music-gestures.test.ts tests/music-platform.test.ts
-npm run typecheck -w @mint/core
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/music-gestures.test.ts tests/music-platform.test.ts
+corepack pnpm --filter @mint/core run typecheck
 ```
 
 > Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).

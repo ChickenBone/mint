@@ -35,9 +35,9 @@ Use generated focused checks; schema/mutation changes coordinate with collection
 Owned tests: 2.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/collection/[id].tsx' src/features/playlists/LikedImports.tsx src/features/playlists/PlaylistScreen.tsx src/features/playlists/SourcePicker.tsx src/features/playlists/collection-model.ts src/features/playlists/playlist-model.ts src/features/playlists/usePlaylistActions.ts tests/playlists-detail.test.ts tests/playlists-model.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/playlists-detail.test.ts tests/playlists-model.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint 'app/collection/[id].tsx' src/features/playlists/LikedImports.tsx src/features/playlists/PlaylistScreen.tsx src/features/playlists/SourcePicker.tsx src/features/playlists/collection-model.ts src/features/playlists/playlist-model.ts src/features/playlists/usePlaylistActions.ts tests/playlists-detail.test.ts tests/playlists-model.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/playlists-detail.test.ts tests/playlists-model.test.ts
 ```
 
 <!-- agents:generated:end -->

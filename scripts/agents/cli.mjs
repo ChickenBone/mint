@@ -15,6 +15,7 @@ import {
   exportedNames,
   importSpecifiers,
   isLocalMemoryPath,
+  loadLocalPackages,
   loadWorkspaces,
   memoryScope,
   replaceBlock,
@@ -45,7 +46,8 @@ function loadContext() {
   const files = [...new Set(gitLines("ls-files", "-co", "--exclude-standard"))].filter((f) => !isLocalMemoryPath(f) && existsSync(abs(f))).sort();
   const ownership = resolveOwnership(compiled, files);
   const workspaces = loadWorkspaces(ROOT);
-  return { manifest, compiled, files, fileSet: new Set(files), ...ownership, workspaces, cache: new Map() };
+  const localPackages = loadLocalPackages(ROOT, workspaces);
+  return { manifest, compiled, files, fileSet: new Set(files), ...ownership, workspaces, localPackages, cache: new Map() };
 }
 
 function source(ctx, file) {
@@ -123,7 +125,7 @@ function validationFor(ctx, files, extra = [], changed = null) {
   const rootTests = [];
   const schemaFile = (f) => f.startsWith("packages/core/migrations/") || /^packages\/core\/src\/db\/[^/]+\.ts$/.test(f);
   for (const f of files) {
-    const ws = workspaceFor(ctx.workspaces, f);
+    const ws = workspaceFor(ctx.workspaces, f) ?? workspaceFor(ctx.localPackages, f);
     if (ws) {
       if (!wsHit.has(ws.dir)) wsHit.set(ws.dir, { ws, tests: [], files: [] });
       wsHit.get(ws.dir).files.push(f);
@@ -135,21 +137,33 @@ function validationFor(ctx, files, extra = [], changed = null) {
   }
   const shared = (f) => ctx.workspaces.some((w) => w.dir.startsWith("packages/") && f.startsWith(`${w.dir}/`));
   const sharedChanged = changed ? changed.some(shared) : false;
+  const runScript = (ws, script) => ws.local
+    ? `npm --prefix ${ws.dir} run ${script}`
+    : ws.manager === "pnpm"
+      ? `corepack pnpm --filter ${ws.name} run ${script}`
+      : `npm run ${script} -w ${ws.name}`;
+  const runExec = (ws, command) => ws.local
+    ? `npm --prefix ${ws.dir} exec -- ${command}`
+    : ws.manager === "pnpm"
+      ? `corepack pnpm --filter ${ws.name} exec ${command}`
+      : `npm exec -w ${ws.name} -- ${command}`;
   if (sharedChanged) cmds.push("npm run typecheck  # shared package changed: every consumer must typecheck");
   else if (!changed && files.some(shared)) notes.add("Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).");
   if ((changed ?? files).some(schemaFile)) {
     notes.add(changed ? "Schema changed: add a new migration via `npm run db:generate`; never rewrite applied migrations." : "If you change the schema, add a new migration via `npm run db:generate`; never rewrite applied migrations.");
   }
   for (const { ws, tests, files: workspaceFiles } of [...wsHit.values()].sort((a, b) => a.ws.dir.localeCompare(b.ws.dir))) {
-    if (!sharedChanged && ws.scripts.typecheck) cmds.push(`npm run typecheck -w ${ws.name}`);
+    if (!sharedChanged && ws.scripts.typecheck) cmds.push(runScript(ws, "typecheck"));
     if (ws.scripts.lint) {
       const focused = ws.dir === "apps/mobile" && ws.scripts.lint.trim() === "eslint ."
         && workspaceFiles.every((file) => ctx.compiled.domains.find((domain) => domain.id === ctx.owners.get(file))?.consumer);
       const lintFiles = workspaceFiles.filter((file) => SOURCE_EXT.test(file)).map((file) => file.slice(ws.dir.length + 1)).sort();
       const quote = (file) => /^[\w./-]+$/.test(file) ? file : `'${file.replaceAll("'", "'\\''")}'`;
-      cmds.push(focused && lintFiles.length ? `npm exec -w ${ws.name} -- eslint ${lintFiles.map(quote).join(" ")}` : `npm run lint -w ${ws.name}`);
+      cmds.push(focused && lintFiles.length
+        ? runExec(ws, `eslint ${lintFiles.map(quote).join(" ")}`)
+        : runScript(ws, "lint"));
     }
-    if (tests.length) cmds.push(`npm exec -w ${ws.name} -- ${testRunner(ws)} ${tests.sort().join(" ")}`);
+    if (tests.length) cmds.push(runExec(ws, `${testRunner(ws)} ${tests.sort().join(" ")}`));
   }
   if (rootTests.length) cmds.push(`node --test ${rootTests.sort().join(" ")}`);
   for (const c of extra) if (!cmds.includes(c)) cmds.push(c);

@@ -32,14 +32,20 @@
       "id": "mobile-contracts",
       "surface": "server",
       "title": "Native client and server contracts",
-      "summary": "Server-free client DTOs/transport and allowlisted native bearer API, browse and account sessions",
-      "keywords": ["native api", "native bearer", "native session", "native transport", "client dto", "client schema", "native browse endpoint", "mint/client"],
+      "summary": "Shared contracts, native @mint/client transport, a separate runtime-validated @mint/sdk wrapper, and allowlisted native API",
+      "keywords": ["native api", "native bearer", "native session", "native transport", "client dto", "client schema", "native browse endpoint", "mint/client", "mint/contracts", "mint/sdk", "tRPC SDK"],
       "guides": ["agents/architecture.md", "docs/mobile.md"],
       "paths": [
         "packages/client/**",
+        "packages/contracts/**",
+        "packages/sdk/**",
         "apps/web/src/app/api/native/**",
         "apps/web/src/lib/native-*.ts",
         "apps/web/tests/native-*.test.ts"
+      ],
+      "validate": [
+        "corepack pnpm --filter @mint/sdk run typecheck",
+        "corepack pnpm --filter @mint/sdk exec tsx --test tests/session.test.ts"
       ]
     },
     {
@@ -147,9 +153,19 @@
       "paths": [".github/skills/**"]
     },
     {
+      "id": "accounts",
+      "surface": "server",
+      "title": "Accounts domain",
+      "summary": "Target account policy, browser sessions, authentication ports and fresh account schema",
+      "keywords": ["domain accounts", "account policy", "browser session lookup", "account authentication", "account schema", "mint/domain-accounts"],
+      "guides": ["agents/architecture.md"],
+      "paths": ["packages/domain-accounts/**"],
+      "validate": ["corepack pnpm --filter @mint/domain-accounts run typecheck", "corepack pnpm --filter @mint/domain-accounts test"]
+    },
+    {
       "id": "platform",
       "title": "Platform core",
-      "summary": "Shared schemas, database, migrations, public read-cache plumbing, queues, crypto, env and worker runtime",
+      "summary": "Shared schemas, database and platform primitives, workspace plumbing, and target API composition/transport",
       "keywords": [
         "schema",
         "migration",
@@ -167,6 +183,9 @@
         "typescript",
         "workspace",
         "worker startup",
+        "api server",
+        "Fastify",
+        "tRPC",
         "read cache",
         "public read cache",
         "public-cache"
@@ -175,9 +194,15 @@
         "agents/architecture.md"
       ],
       "paths": [
+        "nx.json",
         "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "scripts/workspace/**",
         "tsconfig.base.json",
         "packages/core/**",
+        "packages/platform/**",
+        "apps/api/**",
         "apps/worker/package.json",
         "apps/worker/tsconfig.json",
         "apps/worker/src/index.ts",
@@ -196,6 +221,12 @@
         "apps/web/src/lib/queues.ts",
         "apps/web/src/lib/rate-limit.ts",
         "apps/web/src/lib/request.ts"
+      ],
+      "validate": [
+        "corepack pnpm --filter @mint/platform run typecheck",
+        "corepack pnpm --filter @mint/platform exec tsx --test tests/migrations.test.ts tests/rate-limit.test.ts tests/startup-migrations.test.ts",
+        "corepack pnpm --filter @mint/api run typecheck",
+        "corepack pnpm --filter @mint/api exec tsx --test tests/session.test.ts"
       ]
     },
     {
@@ -270,7 +301,7 @@
       "id": "library",
       "surface": "server",
       "title": "Library catalog and metadata",
-      "summary": "Bounded catalog browsing and search, album/artist views, artwork proxy and cache, artist metadata and Plex indexing",
+      "summary": "Target read-only root/media identity, plus existing bounded browsing/search, artwork, artist metadata and Plex indexing",
       "keywords": [
         "library",
         "catalog",
@@ -295,6 +326,7 @@
       ],
       "ui": true,
       "paths": [
+        "packages/domain-library/**",
         "apps/web/src/lib/catalog-connection*.ts",
         "apps/web/src/lib/catalog-search.ts",
         "apps/web/src/lib/browser-catalog.ts",
@@ -310,7 +342,6 @@
         "apps/web/src/components/art-wall.tsx",
         "apps/web/src/components/artwork.tsx",
         "apps/web/src/components/fresh-shelf.tsx",
-        "apps/web/src/app/(public)/browse/**",
         "apps/web/src/app/app/library/**",
         "apps/web/src/app/app/music/**",
         "apps/web/src/app/app/search/**",
@@ -336,6 +367,10 @@
         "packages/core/migrations/0004_existing_library.sql",
         "packages/core/migrations/0014_artist_metadata.sql",
         "docs/catalog-connection.md"
+      ],
+      "validate": [
+        "corepack pnpm --filter @mint/domain-library run typecheck",
+        "corepack pnpm --filter @mint/domain-library exec tsx --test tests/schema.test.ts"
       ]
     },
     {
@@ -757,13 +792,15 @@
     {
       "id": "catalog",
       "surface": "server",
-      "title": "Standalone metadata catalog",
-      "summary": "Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge",
-      "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "embedding atlas"],
+      "title": "Catalog metadata and schemas",
+      "summary": "Standalone metadata aggregation and reconciliation, plus the target recording schema and migration",
+      "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "embedding atlas", "domain catalog", "mint/domain-catalog"],
       "ui": true,
       "guides": ["services/catalog/README.md"],
-      "paths": ["services/catalog/**"],
+      "paths": ["services/catalog/**", "packages/domain-catalog/**"],
       "validate": [
+        "corepack pnpm --filter @mint/domain-catalog run typecheck",
+        "corepack pnpm --filter @mint/domain-catalog exec tsx --test tests/schema.test.ts",
         "python -m pytest services/catalog/tests",
         "python -m ruff check services/catalog",
         "node --test services/catalog/tests/*.test.cjs",
@@ -808,7 +845,7 @@
     {
       "id": "handbook",
       "title": "Handbook and public docs",
-      "summary": "README, product/design decisions, curated engineering/topic guides, UX docs and screenshots",
+      "summary": "README, product/design decisions, curated guides, rewrite planning, UX docs and screenshots",
       "keywords": [
         "readme",
         "docs",
@@ -817,7 +854,9 @@
         "agents",
         "screenshot",
         "product",
-        "public guidance"
+        "public guidance",
+        "rewrite plan",
+        "migration knowledge"
       ],
       "guides": [
         "agents/README.md",
@@ -830,7 +869,8 @@
         "AGENTS.md",
         ".gitignore",
         "agents/**",
-        "docs/**"
+        "docs/**",
+        "plan/**"
       ],
       "validate": [
         "npm run agents:check"

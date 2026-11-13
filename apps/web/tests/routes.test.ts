@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import {
   isAppDestinationActive,
@@ -21,6 +22,44 @@ import {
   resolvePlaylistSource,
   resolveSettingsSection,
 } from "../src/lib/app-routes";
+
+const webFile = (path: string) => new URL(`../${path}`, import.meta.url);
+const source = (path: string) => readFileSync(webFile(path), "utf8");
+
+test("public browse is removed without replacing member library or other public destinations", () => {
+  for (const extension of ["js", "jsx", "ts", "tsx"]) {
+    for (const entry of ["page", "route"]) {
+      assert.equal(existsSync(webFile(`src/app/(public)/browse/${entry}.${extension}`)), false);
+      assert.equal(existsSync(webFile(`src/app/browse/${entry}.${extension}`)), false);
+    }
+  }
+  assert.doesNotMatch(source("next.config.ts"), /["'`]\/browse(?:[/"'`?]|$)/);
+  for (const path of [
+    "src/components/site-header.tsx",
+    "src/app/(public)/page.tsx",
+    "src/app/(public)/request-access/request-form.tsx",
+  ]) {
+    assert.doesNotMatch(source(path), /href\s*=\s*["'`]\/browse(?:[/"'`?]|$)/);
+  }
+  for (const path of [
+    "src/app/(public)/page.tsx",
+    "src/app/(public)/activity/page.tsx",
+    "src/app/(public)/charts/page.tsx",
+    "src/app/(public)/login/page.tsx",
+    "src/app/(public)/request-access/page.tsx",
+    "src/app/api/library/route.ts",
+  ]) assert.equal(existsSync(webFile(path)), true, path);
+  assert.match(source("src/components/site-header.tsx"), /href="\/activity"/);
+  assert.match(source("src/components/site-header.tsx"), /href="\/login"/);
+  assert.match(source("src/app/(public)/page.tsx"), /"\/request-access"/);
+  assert.match(source("src/app/(public)/request-access/request-form.tsx"), /href="\/login"/);
+  assert.match(source("src/app/app/layout.tsx"), /await requireUser\(\)/);
+  assert.match(source("src/app/app/library/page.tsx"), /<MusicBrowser\s*\/>/);
+  const browser = source("src/components/app/music-browser.tsx");
+  assert.match(browser, /action: "collection", collection, shuffle: false/);
+  assert.match(browser, /action: "collection", collection, shuffle: true/);
+  assert.match(browser, /<CollectionActions\b/);
+});
 
 test("legacy music views redirect to canonical destinations and preserve search state", () => {
   assert.equal(legacyMusicHref(new URLSearchParams("view=now-playing")), "/app/now-playing");

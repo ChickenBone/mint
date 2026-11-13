@@ -37,9 +37,9 @@ Use generated focused tests; new endpoints require native-contract and backend o
 Owned tests: 4.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/CatalogResults.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint 'app/browse/[facet].tsx' app/search.tsx src/features/search/BrowseAll.tsx src/features/search/BrowseCard.tsx src/features/search/BrowseCategoryScreen.tsx src/features/search/CatalogResults.tsx src/features/search/SearchScreen.tsx src/features/search/browse-model.ts src/features/search/search-model.ts src/features/search/useBrowseCatalog.ts tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/search-browse-hooks.test.ts tests/search-browse.test.ts tests/search-catalog.test.ts tests/search-model.test.ts
 ```
 
 <!-- agents:generated:end -->

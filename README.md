@@ -27,7 +27,7 @@ Deploy with **Docker Compose** on a NAS or Linux server. Prebuilt images are pub
 | **Take music offline** | Install the HTTPS web app from Android Chrome and explicitly download music for offline listening. Browser storage and background limits still apply. |
 | **Manage your instance** | Approve member accounts, monitor jobs and services, and optionally add Docker download workers or a separate private-network analysis machine. |
 
-Public visitors can explore artwork, library metadata and charts or request an account; **only approved members can stream music or request acquisition**. Public statistics and job progress remain available under Library activity. Plex, Cobalt and acquisition credentials stay behind the private worker.
+Public visitors can view homepage artwork, charts and library activity or request an account; anonymous library browsing is retired. **Only approved members can stream music or request acquisition.** Plex, Cobalt and acquisition credentials stay behind the private worker.
 
 ## Get started
 
@@ -150,11 +150,11 @@ activity are fictional; no private library or credentials are shown.
 <details>
 <summary>Public pages, likes, account management and workers</summary>
 
-| Public browsing | Member and admin tools |
+| Public pages | Member and admin tools |
 | --- | --- |
 | ![Mint public landing page with an album-art wall and access request button](docs/screenshots/landing.png) | ![Personal liked songs in Mint](docs/screenshots/liked.png) |
 | ![Public library statistics and recently added music](docs/screenshots/landing-stats.png) | ![Admin dashboard for approving accounts and monitoring service health](docs/screenshots/admin.png) |
-| ![Public searchable library without audio streaming controls](docs/screenshots/browse.png) | ![Built-in pipeline worker and optional volunteer download workers](docs/screenshots/workers.png) |
+| **Historical screenshot only:** retired anonymous public library page (`/browse` is removed) ![Historical screenshot of the retired public library browse page](docs/screenshots/browse.png) | ![Built-in pipeline worker and optional volunteer download workers](docs/screenshots/workers.png) |
 
 <p align="center">
   <img src="docs/screenshots/mobile-landing.png" alt="Mint's public landing page on a phone" width="260">

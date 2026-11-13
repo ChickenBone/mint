@@ -1,0 +1,31 @@
+{
+  "name": "@mint/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "start": "node --import tsx src/main.ts",
+    "dev": "node --import tsx src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@mint/contracts": "workspace:*",
+    "@mint/domain-accounts": "workspace:*",
+    "@mint/domain-catalog": "workspace:*",
+    "@mint/domain-library": "workspace:*",
+    "@mint/platform": "workspace:*",
+    "@trpc/server": "11.28.0",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "5.12.8",
+    "pg": "^8.16.0"
+  },
+  "devDependencies": {
+    "@mint/sdk": "workspace:*",
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    "typescript": "^5.9.3",
+    "tsx": "^4.23.15"
+  }
+}

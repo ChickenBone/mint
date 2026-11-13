@@ -63,13 +63,13 @@ Details: [integrations and charts](../integrations-and-charts.md).
 Owned tests: 12.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/admin-failed-jobs.test.ts tests/backlog.test.ts tests/failed-pipeline-jobs.test.ts tests/music-requests.test.ts
-npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test --test-force-exit src/audio-regression.test.ts src/jobs/media.integration.test.ts src/jobs/torbox-bridge.integration.test.ts src/music-requests.test.ts src/parse.test.ts src/services/prowlarr.test.ts src/services/torbox.test.ts
-npm run typecheck -w @mint/core
-npm exec -w @mint/core -- tsx --test src/youtube-scrape.test.ts
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/admin-failed-jobs.test.ts tests/backlog.test.ts tests/failed-pipeline-jobs.test.ts tests/music-requests.test.ts
+corepack pnpm --filter @mint/worker run typecheck
+corepack pnpm --filter @mint/worker exec tsx --test --test-force-exit src/audio-regression.test.ts src/jobs/media.integration.test.ts src/jobs/torbox-bridge.integration.test.ts src/music-requests.test.ts src/parse.test.ts src/services/prowlarr.test.ts src/services/torbox.test.ts
+corepack pnpm --filter @mint/core run typecheck
+corepack pnpm --filter @mint/core exec tsx --test src/youtube-scrape.test.ts
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.

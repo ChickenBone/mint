@@ -34,9 +34,9 @@ Use generated focused checks; shared detail changes coordinate with foundation a
 Owned tests: 1.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint 'app/album/[id].tsx' src/features/albums/AlbumScreen.tsx src/features/albums/CatalogAlbumScreen.tsx src/features/albums/album-model.ts tests/albums-detail.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/albums-detail.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint 'app/album/[id].tsx' src/features/albums/AlbumScreen.tsx src/features/albums/CatalogAlbumScreen.tsx src/features/albums/album-model.ts tests/albums-detail.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/albums-detail.test.ts
 ```
 
 <!-- agents:generated:end -->

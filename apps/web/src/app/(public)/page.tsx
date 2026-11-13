@@ -9,7 +9,7 @@ import { getUser } from "@/lib/auth";
 export const metadata: Metadata = {
   title: "Your music, with room to wander",
   description:
-    "Explore a shared music library, build personal playlists, and listen in Mint’s own player. Browse the public catalog or request access.",
+    "Explore a shared music library, build personal playlists, and listen in Mint’s own player. Request access to join.",
 };
 
 export const dynamic = "force-dynamic";
@@ -32,7 +32,7 @@ export default async function Home() {
 THESIS: An intimate listening room for a shared library and personal collections, not a feature-grid pitch.
 OWN-WORLD: Charcoal, Figtree, mint action, square real-library sleeves, and a restrained teal-blue atmosphere.
 STORY: Find music in the shared library, make it yours with playlists, then request access or sign in.
-FIRST VIEWPORT: Browse navigation above a left-aligned promise and actions; a responsive public-artwork gallery balances the right.
+FIRST VIEWPORT: Sign-in navigation above a left-aligned promise and actions; a responsive public-artwork gallery balances the right.
 FORM: Third of seven grounded structures: an artwork-led editorial page, compact recent arrivals, and a shared-library/personal-collection split that comes together in Mint. Seed bfe43ff0; parallel-streams staging.
 -->`;
 
@@ -128,11 +128,8 @@ FORM: Third of seven grounded structures: an artwork-led editorial page, compact
           <div className="marketing-recent-unavailable" role="status">
             <div>
               <h2 id="marketing-recent-title">Recent additions</h2>
-              <p>They aren’t available right now. You can still browse the shared library.</p>
+              <p>They aren’t available right now.</p>
             </div>
-            <Link href="/browse" className="marketing-text-link">
-              Browse library <ArrowRight aria-hidden="true" className="size-4" />
-            </Link>
           </div>
         ) : recent.length > 0 ? (
           <>

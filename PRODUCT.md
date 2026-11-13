@@ -9,14 +9,14 @@ mobile
 The Expo iOS/Android app (Android first) is the consumer UX/UI design authority.
 The Next.js web service remains the backend/API and admin surface; its existing
 browser listener is frozen, maintenance-only, with security and compatibility
-fixes retained. Do not remove browser routes, listening features or administration,
+fixes retained. Preserve browser routes except the explicitly retired public `/browse`, listening features and administration,
 or develop a parallel browser redesign. The Expo responsive web export is a
 secondary development target, not a native-device certification.
 
 ## Users
 - **Members**: approved people who listen to the shared library in Mint, discover music and manage their own likes and playlists, and can report problems to the admins. Linking another service is not required for listening.
 - **Admin (operator)**: runs the host server. Approves access requests, reviews and resolves member issue reports, watches service health, and retries or cancels jobs.
-- **Public visitors**: browse library metadata, artwork and chart availability, and request access. They cannot play audio or request acquisition. Library activity remains available separately from everyday browsing.
+- **Public visitors**: view artwork and chart availability, and request access. They cannot browse the library at the retired `/browse` route, play audio or request acquisition. Library activity remains available.
 
 ## Product Purpose
 Mint is a self-hosted listening service for a shared music library. Members can find and play music, build personal collections and discover something new without having to understand how the server works. Mint owns the listening experience; Plex remains a private library server. Acquisition and library maintenance support listening rather than defining it.
@@ -27,7 +27,7 @@ Mint is a self-hosted listening service: private files, personal collections and
 ## Operating Context
 - Self-hosted with Docker Compose. Images are published to GHCR from GitHub Actions.
 - Lidarr, TorBox (debrid), Cobalt, and Plex live on an internal network. The public app never talks to them directly; it uses Postgres and Redis queues.
-- Approved members listen inside Mint's persistent, independently implemented native app or existing browser player, or optionally use an external Plex client with a separate Plex invitation. Public pages remain browse-only.
+- Approved members listen inside Mint's persistent, independently implemented native app or existing browser player, or optionally use an external Plex client with a separate Plex invitation. Public charts and activity remain available without public playback.
 - The Expo app uses the same approved accounts through an allowlisted native bearer-session facade. Home, Search and Your Library lead; backend administration stays on Next.js, not in native consumer navigation.
 - EAS Build produces Android APKs and EAS Update delivers compatible JavaScript/assets. Native runtime changes require a new signer-verified APK; a finished matching build is the compatibility baseline. The NAS does not host application updates. Quotas and physical-device verification remain separate constraints.
 

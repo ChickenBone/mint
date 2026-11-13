@@ -58,12 +58,12 @@ Details: [integrations and charts](../integrations-and-charts.md).
 Owned tests: 6.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/charts-db.test.ts tests/charts-source.test.ts tests/charts.test.ts
-npm run typecheck -w @mint/worker
-npm exec -w @mint/worker -- tsx --test --test-force-exit src/chart-acquisition.test.ts src/spotify.integration.test.ts src/spotify.test.ts
-npm run typecheck -w @mint/core
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/charts-db.test.ts tests/charts-source.test.ts tests/charts.test.ts
+corepack pnpm --filter @mint/worker run typecheck
+corepack pnpm --filter @mint/worker exec tsx --test --test-force-exit src/chart-acquisition.test.ts src/spotify.integration.test.ts src/spotify.test.ts
+corepack pnpm --filter @mint/core run typecheck
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.

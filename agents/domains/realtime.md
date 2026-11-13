@@ -43,10 +43,10 @@ Details: [architecture](../architecture.md#data-and-synchronization).
 No owned automated tests; add focused tests with behavior changes.
 
 ```bash
-npm run typecheck -w @mint/realtime
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm run typecheck -w @mint/core
+corepack pnpm --filter @mint/realtime run typecheck
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/core run typecheck
 ```
 
 > Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).

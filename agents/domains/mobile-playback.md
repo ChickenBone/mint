@@ -43,9 +43,9 @@ Use the focused generated engine/offline checks below; presentation-only tests a
 Owned tests: 5.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm run lint -w @mint/mobile
-npm exec -w @mint/mobile -- tsx --test tests/offline-native.test.ts tests/playback-diagnostics.test.ts tests/playback-engine.test.ts tests/playback-native-patch.test.ts tests/playback.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile run lint
+npm --prefix apps/mobile exec -- tsx --test tests/offline-native.test.ts tests/playback-diagnostics.test.ts tests/playback-engine.test.ts tests/playback-native-patch.test.ts tests/playback.test.ts
 ```
 
 <!-- agents:generated:end -->

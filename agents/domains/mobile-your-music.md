@@ -35,9 +35,9 @@ Use generated focused checks; coordinate shared playlist action changes with the
 Owned tests: 1.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint app/library.tsx src/features/your-music/LibraryScreen.tsx src/features/your-music/library-model.ts tests/your-music-model.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/your-music-model.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint app/library.tsx src/features/your-music/LibraryScreen.tsx src/features/your-music/library-model.ts tests/your-music-model.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/your-music-model.test.ts
 ```
 
 <!-- agents:generated:end -->

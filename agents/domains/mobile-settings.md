@@ -37,9 +37,9 @@ Use generated focused checks; changing audio/storage/session behavior requires t
 Owned tests: 3.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint app/settings.tsx src/features/settings/SettingsScreen.tsx src/features/settings/ota-model.ts tests/settings-diagnostics.test.ts tests/settings-ota-model.test.ts tests/settings-screen.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/settings-diagnostics.test.ts tests/settings-ota-model.test.ts tests/settings-screen.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint app/settings.tsx src/features/settings/SettingsScreen.tsx src/features/settings/ota-model.ts tests/settings-diagnostics.test.ts tests/settings-ota-model.test.ts tests/settings-screen.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/settings-diagnostics.test.ts tests/settings-ota-model.test.ts tests/settings-screen.test.ts
 ```
 
 <!-- agents:generated:end -->

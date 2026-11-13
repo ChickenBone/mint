@@ -48,10 +48,10 @@ Details: [devices](../../docs/devices.md) and [playback and library](../playback
 Owned tests: 2.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/devices-db.test.ts tests/devices.test.ts
-npm run typecheck -w @mint/core
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/devices-db.test.ts tests/devices.test.ts
+corepack pnpm --filter @mint/core run typecheck
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.

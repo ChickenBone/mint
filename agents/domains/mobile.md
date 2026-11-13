@@ -56,9 +56,9 @@
 Owned tests: 5.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm run lint -w @mint/mobile
-npm exec -w @mint/mobile -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/catalog-likes.test.ts tests/screens.test.ts tests/song-likes.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile run lint
+npm --prefix apps/mobile exec -- tsx --test tests/app-config.test.ts tests/auth-storage.test.ts tests/catalog-likes.test.ts tests/screens.test.ts tests/song-likes.test.ts
 ```
 
 <!-- agents:generated:end -->

@@ -1,0 +1,21 @@
+{
+  "name": "@mint/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@mint/contracts": "workspace:*",
+    "@trpc/client": "11.28.0"
+  },
+  "devDependencies": {
+    "@mint/api": "workspace:*",
+    "@types/node": "^22.15.0",
+    "typescript": "^5.9.3",
+    "tsx": "^4.23.15"
+  }
+}

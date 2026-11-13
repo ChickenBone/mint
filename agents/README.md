@@ -23,6 +23,7 @@ Agents route each task to one or more **domains** first. See the [domain index](
 | [Ignored local memory](local-memory.md) | Explicitly initializing/reusing private domain/task evidence and handoffs; never automatic context |
 | [Portable task tracking](../.github/skills/mint-task-tracking/SKILL.md) | Only when needed: existing harness todo/session SQL first, one tracker, optional ignored fallback; not Mint's music database |
 | [Starter prompt](starter-prompt.md) | Starting a new chat without relying on private conversation history or frozen implementation assumptions |
+| [Full rewrite knowledge base](../plan/README.md) | Planning the Audio-copy-style target, preservation constraints, evidence and phased migration gates; not implementation authorization |
 
 ## Portable skills
 

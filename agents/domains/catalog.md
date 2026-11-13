@@ -1,10 +1,12 @@
-# Standalone metadata catalog (`catalog`)
+# Catalog metadata and schemas (`catalog`)
 
 ## Boundaries
 
 - Owns `services/catalog/**`: standalone Python/Compose, PostgreSQL, Qdrant,
   volumes and dependencies.
-- No Mint imports or database access, playback, acquisition or accounts.
+- Also owns `@mint/domain-catalog` (six-column Drizzle schema and SQL FTS/GIN
+  migration; not a full catalog engine).
+- The standalone Python service remains independent of Mint.
   The optional authenticated bridge accepts explicit artist IDs with provenance
   and serves bounded metadata; Mint owns its producer, consumers and networking.
   Default standalone operation must not require Mint.
@@ -90,14 +92,18 @@ quantization or multi-million-item latency; verify those separately.
 
 ## Generated map
 
-- **Scope:** Standalone metadata aggregation, recording reconciliation, popularity graph, search and optional authenticated metadata bridge.
+- **Scope:** Standalone metadata aggregation and reconciliation, plus the target recording schema and migration.
 - **Read before editing:** [services/catalog/README.md](../../services/catalog/README.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** none
-- **Imported by:** none
+- **Imports from:** [`platform`](platform.md)
+- **Imported by:** [`library`](library.md), [`platform`](platform.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map catalog` (exports, line counts, cross-domain import edges).
 
-### Owned files (99)
+### Owned files (105)
 
+- `packages/domain-catalog/` `package.json`, `tsconfig.json`
+- `packages/domain-catalog/migrations/` `0000_recordings.sql`
+- `packages/domain-catalog/src/` `index.ts`, `schema.ts`
+- `packages/domain-catalog/tests/` `schema.test.ts`
 - `services/catalog/` `.dockerignore`, `.env.example`, `.gitignore`, `Dockerfile`, `OPERATIONS.md`, `README.md`, `SOURCES.md`, `compose.bridge.yml`, `compose.consumer.yml`, `compose.yml`, `package-lock.json`, `package.json`, `pyproject.toml`
 - `services/catalog/catalog/` `__init__.py`, `api.py`, `atlas.py`, `bridge.py`, `browser.py`, `bulk_import.py`, `catalog_network.py`, `config.py`, `console.py`, `crawler.py`, `demand.py`, `discogs.py`, `discogs_import.py`, `embedding_map.py`, `graph.py`, `identity.py`, `importer.py`, `indexer.py`, `ingestion.py`, `main.py`, `model.py`, `musicbrainz_import.py`, `omdb_import.py`, `openwhyd.py`, `providers.py`, `public_sources.py`, `ranker.py`, `reconcile.py`, `schema-v10.sql`, `schema-v2.sql`, `schema-v3.sql`, `schema-v4.sql`, `schema-v5.sql`, `schema-v6.sql`, `schema-v7.sql`, `schema-v8.sql`, `schema-v9.sql`, `schema.sql`, `snapshot.py`, `sources.py`, `store.py`, `telemetry.py`, `vectors.py`, `workers.py`, `youtube.py`
 - `services/catalog/catalog/static/` `api.html`, `clustering.worker.js`, `console.css`, `console.js`, `cytoscape.LICENSE.txt`, `cytoscape.min.js`, `data.css`, `data.html`, `data.js`, `embedding-atlas.LICENSE.txt`, `embedding-atlas.js`, `embedding-map.js`, `graph-layout.js`, `graph-view.js`, `index.html`
@@ -106,14 +112,18 @@ quantization or multi-million-item latency; verify those separately.
 
 ### Validate
 
-Owned tests: 2.
+Owned tests: 3.
 
 ```bash
+corepack pnpm --filter @mint/domain-catalog run typecheck
+corepack pnpm --filter @mint/domain-catalog exec tsx --test tests/schema.test.ts
 node --test services/catalog/tests/embedding-map.test.cjs services/catalog/tests/graph-layout.test.cjs
 python -m pytest services/catalog/tests
 python -m ruff check services/catalog
 node --test services/catalog/tests/*.test.cjs
 docker compose --env-file services/catalog/.env.example -f services/catalog/compose.yml config --quiet
 ```
+
+> Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).
 
 <!-- agents:generated:end -->

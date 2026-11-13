@@ -6,6 +6,7 @@
 
 - Browser consumer UX is frozen, maintenance-only. Preserve existing routes/listening and security/backend compatibility fixes; Next.js backend/API and admin tools continue. Native mobile governs future consumer design, not a parallel browser redesign.
 - Owns root and app layouts, sidebar and mobile navigation, `components/ui/**`, `globals.css` tokens, auth/session and account actions, public landing/login/request-access/activity pages, Settings, Manage and Admin views, and shared view helpers (`core/src/views.ts`, `stats.ts`).
+- A server-only target SDK binding and same-origin session, approval, Library and member-status routes are implemented and accepted as bounded gateway slices. Existing layouts, auth, actions and listener/admin UI still use the legacy backend: these routes do not establish a migrated UI.
 - Feature panels hosted in Settings or Manage (devices, workers, analysis, sync) belong to their feature domains. This domain owns the frame, not the panel internals.
 - Owns member issue reports: `lib/issue-report-model.ts` (client-safe input contract), `lib/issue-reports.ts`, `POST /api/issue-reports`, the reusable `components/app/report-issue.tsx` entry point (`ReportIssueButton`, `ReportIssueDialog`) and the admin portal **Reports** tab. Feature domains may embed the entry point; the `issue_reports` table and migration belong to `platform`.
 
@@ -33,37 +34,38 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 
 - **Scope:** App layout and navigation, design system/UI kit, auth and accounts, public pages, settings, admin and management views.
 - **Read before editing:** [agents/design.md](../design.md), [DESIGN.md](../../DESIGN.md), [docs/ui-library.md](../../docs/ui-library.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
+- **Imports from:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`catalog`](catalog.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map web-shell` (exports, line counts, cross-domain import edges).
 
-### Owned files (75)
+### Owned files (80)
 
 - `apps/web/` `AGENTS.md`
 - `apps/web/src/app/` `error.tsx`, `globals.css`, `layout.tsx`, `manifest.ts`, `not-found.tsx`
 - `apps/web/src/app/(public)/` `activity/page.tsx`, `layout.tsx`, `login/login-form.tsx`, `login/page.tsx`, `page.tsx`, `request-access/page.tsx`, `request-access/request-form.tsx`
 - `apps/web/src/app/actions/` `admin.ts`, `auth.ts`, `member.ts`
-- `apps/web/src/app/api/` `admin/matching/route.ts`, `app-icon/[size]/route.ts`, `healthz/route.ts`, `issue-reports/route.ts`
+- `apps/web/src/app/api/` `accounts/session/route.ts`, `admin/access-requests/decision/route.ts`, `admin/matching/route.ts`, `admin/members/status/route.ts`, `app-icon/[size]/route.ts`, `healthz/route.ts`, `issue-reports/route.ts`
 - `apps/web/src/app/app/` `admin/matching/page.tsx`, `admin/page.tsx`, `error.tsx`, `layout.tsx`, `loading.tsx`, `manage/page.tsx`, `page.tsx`, `settings/page.tsx`
 - `apps/web/src/components/` `form.tsx`, `install-app.tsx`, `logo.tsx`, `site-header.tsx`
 - `apps/web/src/components/app/` `account-playback.tsx`, `acquisition-alerts.tsx`, `admin-controls.tsx`, `copy-button.tsx`, `manage-view.tsx`, `matching-panel.tsx`, `page-header.tsx`, `report-issue.tsx`, `settings-view.tsx`, `setup-nudge.tsx`, `sidebar-nav.tsx`, `sign-out.tsx`
 - `apps/web/src/components/ui/` `confirm-dialog.tsx`, `index.ts`, `interactive.tsx`, `layout.tsx`, `primitives.tsx`, `shelf.tsx`, `toast.tsx`
-- `apps/web/src/lib/` `account-login.ts`, `account-playback.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `id.ts`, `issue-report-model.ts`, `issue-reports.ts`, `page-endpoint.ts`, `request-match.ts`, `resolve-request.ts`, `unified-search.ts`, `youtube-search.ts`
-- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `ui.test.ts`, `unified-search.test.ts`
+- `apps/web/src/lib/` `account-login.ts`, `account-playback.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `id.ts`, `issue-report-model.ts`, `issue-reports.ts`, `page-endpoint.ts`, `request-match.ts`, `resolve-request.ts`, `target-api.ts`, `unified-search.ts`, `youtube-search.ts`
+- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `target-accounts-http.integration.test.ts`, `ui.test.ts`, `unified-search.test.ts`
 - `apps/web/tests/fixtures/` `redesign-network.mjs`, `redesign-preview.mjs`
 - `packages/core/src/` `stats.ts`, `views.ts`
 
 ### Validate
 
-Owned tests: 7.
+Owned tests: 8.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
-npm exec -w @mint/web -- tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/ui.test.ts tests/unified-search.test.ts
-npm run typecheck -w @mint/core
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/target-accounts-http.integration.test.ts tests/ui.test.ts tests/unified-search.test.ts
+corepack pnpm --filter @mint/core run typecheck
 ```
 
+> Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.
 > Changing owned `packages/*` files affects every consumer: run root `npm run typecheck` (`npm run agents -- affected` does this automatically).
 
 <!-- agents:generated:end -->

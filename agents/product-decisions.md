@@ -6,7 +6,7 @@ Mint is a self-hosted music service: local files, a Plex-backed shared library, 
 
 There are three audiences:
 
-- **Public visitors:** browse library metadata, artwork, chart availability and public activity; request an account.
+- **Public visitors:** view artwork, chart availability and public activity; request an account. Anonymous library browsing at `/browse` is retired.
 - **Approved members:** listen, manage personal collections, optionally import playlists and explicitly request missing music.
 - **Operators/admins:** approve access, manage jobs/workers, inspect integration health and control analysis.
 

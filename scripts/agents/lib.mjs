@@ -103,19 +103,59 @@ export function resolveOwnership(compiled, files) {
 
 export function loadWorkspaces(root) {
   const rootPkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  const pnpmWorkspaceFile = path.join(root, "pnpm-workspace.yaml");
+  const hasPnpmWorkspace = existsSync(pnpmWorkspaceFile);
+  const manager = hasPnpmWorkspace || rootPkg.packageManager?.startsWith("pnpm@") ? "pnpm" : "npm";
+  let patterns = rootPkg.workspaces ?? [];
+  if (hasPnpmWorkspace) {
+    const lines = readFileSync(pnpmWorkspaceFile, "utf8").split(/\r?\n/);
+    const packagesIndex = lines.findIndex((line) => /^packages:\s*$/.test(line));
+    if (packagesIndex === -1) throw new Error("pnpm-workspace.yaml must define packages");
+    patterns = [];
+    for (const line of lines.slice(packagesIndex + 1)) {
+      if (line && !/^\s/.test(line)) break;
+      if (!line.trim() || line.trimStart().startsWith("#")) continue;
+      const entry = line.match(/^\s+-\s+(.+?)\s*$/);
+      if (!entry) throw new Error(`Unsupported pnpm workspace entry: ${line}`);
+      patterns.push(entry[1].replace(/^(['"])(.*)\1$/, "$2"));
+    }
+  }
+
   const out = [];
-  for (const pattern of rootPkg.workspaces ?? []) {
-    const base = pattern.replace(/\/\*$/, "");
-    const abs = path.join(root, base);
-    if (!existsSync(abs)) continue;
-    for (const name of readdirSync(abs).sort()) {
-      const pkgPath = path.join(abs, name, "package.json");
+  const seen = new Set();
+  for (const pattern of patterns) {
+    const glob = pattern.match(/^(.*)\/\*$/);
+    if (pattern.includes("*") && !glob) throw new Error(`Unsupported workspace pattern: ${pattern}`);
+    if (glob && !existsSync(path.join(root, glob[1]))) continue;
+    const dirs = glob
+      ? readdirSync(path.join(root, glob[1])).sort().map((name) => `${glob[1]}/${name}`)
+      : [pattern];
+    for (const dir of dirs) {
+      if (seen.has(dir)) continue;
+      seen.add(dir);
+      const pkgPath = path.join(root, dir, "package.json");
       if (!existsSync(pkgPath)) continue;
       const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-      out.push({ dir: `${base}/${name}`, name: pkg.name, scripts: pkg.scripts ?? {}, exports: pkg.exports ?? {} });
+      out.push({ dir, name: pkg.name, scripts: pkg.scripts ?? {}, exports: pkg.exports ?? {}, manager });
     }
   }
   return out.sort((a, b) => a.dir.localeCompare(b.dir));
+}
+
+export function loadLocalPackages(root, workspaces) {
+  const appsDir = path.join(root, "apps");
+  if (!existsSync(appsDir)) return [];
+  const workspaceDirs = new Set(workspaces.map((workspace) => workspace.dir));
+  const out = [];
+  for (const name of readdirSync(appsDir).sort()) {
+    const dir = `apps/${name}`;
+    if (workspaceDirs.has(dir)) continue;
+    const pkgPath = path.join(root, dir, "package.json");
+    if (!existsSync(pkgPath)) continue;
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
+    out.push({ dir, name: pkg.name, scripts: pkg.scripts ?? {}, exports: pkg.exports ?? {}, local: true });
+  }
+  return out;
 }
 
 export const workspaceFor = (workspaces, file) => workspaces.find((w) => file.startsWith(`${w.dir}/`));

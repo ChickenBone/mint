@@ -34,9 +34,9 @@ Use the focused generated checks below; backend recommendation changes require t
 Owned tests: 1.
 
 ```bash
-npm run typecheck -w @mint/mobile
-npm exec -w @mint/mobile -- eslint app/index.tsx src/features/home/HomeScreen.tsx src/features/home/home-model.ts tests/home-model.test.ts
-npm exec -w @mint/mobile -- tsx --test tests/home-model.test.ts
+npm --prefix apps/mobile run typecheck
+npm --prefix apps/mobile exec -- eslint app/index.tsx src/features/home/HomeScreen.tsx src/features/home/home-model.ts tests/home-model.test.ts
+npm --prefix apps/mobile exec -- tsx --test tests/home-model.test.ts
 ```
 
 <!-- agents:generated:end -->

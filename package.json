@@ -3,35 +3,29 @@
   "private": true,
   "version": "3.5.0",
   "license": "MIT",
-  "workspaces": [
-    "packages/*",
-    "apps/*"
-  ],
+  "packageManager": "pnpm@12.18.0",
   "engines": {
     "node": ">=22"
   },
-  "overrides": {
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
-    "react-native-gesture-handler": "3.3.0",
-    "react-native-worklets": "0.13.0"
+  "devDependencies": {
+    "nx": "24.0.6"
   },
   "scripts": {
-    "dev:web": "npm run dev -w @mint/web",
-    "dev:mobile": "npm run start -w @mint/mobile",
-    "dev:worker": "npm run dev -w @mint/worker",
-    "dev:realtime": "npm run dev -w @mint/realtime",
-    "dev:hub": "npm run dev:hub -w @mint/worker",
-    "dev:agent": "npm run dev -w @mint/agent",
-    "build": "npm run build -w @mint/worker -w @mint/realtime -w @mint/agent -w @mint/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
-    "db:generate": "npm run db:generate -w @mint/core",
-    "db:migrate": "npm run db:migrate -w @mint/core",
+    "dev:web": "nx run @mint/web:dev",
+    "dev:worker": "nx run @mint/worker:dev",
+    "dev:realtime": "nx run @mint/realtime:dev",
+    "dev:hub": "nx dev:hub @mint/worker",
+    "dev:agent": "nx run @mint/agent:dev",
+    "build": "nx run-many --target=build --projects=@mint/worker,@mint/realtime,@mint/agent,@mint/web",
+    "typecheck": "nx run-many --target=typecheck --all",
+    "lint": "nx run-many --target=lint --all",
+    "test": "nx run-many --target=test --all",
+    "db:generate": "nx db:generate @mint/core",
+    "db:migrate": "nx db:migrate @mint/core",
     "agents": "node scripts/agents/cli.mjs",
     "agents:sync": "node scripts/agents/cli.mjs sync",
     "agents:check": "node scripts/agents/cli.mjs check",
-    "test:agents": "node --test scripts/agents/lib.test.mjs"
+    "test:agents": "node --test scripts/agents/lib.test.mjs",
+    "test:workspace": "node --test scripts/workspace/workspace.test.mjs"
   }
 }

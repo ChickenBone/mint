@@ -15,6 +15,8 @@ import {
   exportedNames,
   importSpecifiers,
   memoryScope,
+  loadLocalPackages,
+  loadWorkspaces,
   replaceBlock,
   resolveImport,
   resolveOwnership,
@@ -217,6 +219,27 @@ test("memoryScope accepts known domains and bounded safe task labels only", () =
   for (const task of ["", "..", "../outside", "/outside", "a/b", "a\\b", "a\nb", "a\0b", "-a", "a-", "Upper", "a".repeat(65), "$(touch unsafe)", undefined]) {
     assert.throws(() => memoryScope(m, "library", task), /task-id/);
   }
+});
+
+test("pnpm workspace discovery excludes detached apps but preserves local package metadata", (t) => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  const directory = path.join(root, ".agent-memory", `.test-${randomUUID()}`);
+  mkdirSync(path.join(directory, "apps/web"), { recursive: true });
+  mkdirSync(path.join(directory, "apps/mobile"), { recursive: true });
+  mkdirSync(path.join(directory, "packages/client"), { recursive: true });
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, "package.json"), "{}");
+  writeFileSync(path.join(directory, "pnpm-workspace.yaml"), "packages:\n  - apps/web\n  - packages/*\n");
+  writeFileSync(path.join(directory, "apps/web/package.json"), JSON.stringify({ name: "@mint/web" }));
+  writeFileSync(path.join(directory, "apps/mobile/package.json"), JSON.stringify({ name: "@mint/mobile" }));
+  writeFileSync(path.join(directory, "packages/client/package.json"), JSON.stringify({ name: "@mint/client" }));
+
+  const workspaces = loadWorkspaces(directory);
+  assert.deepEqual(workspaces.map(({ dir }) => dir), ["apps/web", "packages/client"]);
+  assert.ok(workspaces.every(({ manager }) => manager === "pnpm"));
+  assert.deepEqual(loadLocalPackages(directory, workspaces).map(({ dir, name }) => [dir, name]), [
+    ["apps/mobile", "@mint/mobile"],
+  ]);
 });
 
 function fixtureCheckout(t) {
@@ -445,8 +468,8 @@ test("live feature routing and ownership keep consumer context separate from set
     assert.ok(!packet.read.includes("agents/architecture.md"), query);
     assert.ok(!packet.read.some((file) => file.startsWith(".github/skills/")), query);
     assert.ok(!packet.read.includes("agents/domains/mobile-design.md"), query);
-    assert.ok(packet.domains[0].validation.cmds.some((command) => command.startsWith("npm exec -w @mint/mobile -- eslint ")), query);
-    assert.ok(!packet.domains[0].validation.cmds.includes("npm run lint -w @mint/mobile"), query);
+    assert.ok(packet.domains[0].validation.cmds.some((command) => command.startsWith("npm --prefix apps/mobile exec -- eslint ")), query);
+    assert.ok(!packet.domains[0].validation.cmds.some((command) => command.includes("@mint/mobile")), query);
   }
   for (const [query, expected] of [
     ["improve mobile library", "mobile-your-music"],
@@ -467,7 +490,7 @@ test("live feature routing and ownership keep consumer context separate from set
   for (const future of ["Jams", "Events", "Profiles"]) {
     assert.deepEqual(run("route", `native ${future} extension seam`).domains.map((d) => d.id), ["agent-tooling"]);
   }
-  assert.ok(run("context", "fix mobile auth").domains[0].validation.cmds.includes("npm run lint -w @mint/mobile"));
+  assert.ok(run("context", "fix mobile auth").domains[0].validation.cmds.includes("npm --prefix apps/mobile run lint"));
 });
 
 test("portable mobile skill ownership and design packets stay precise and reference-only", () => {

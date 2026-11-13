@@ -1,0 +1,20 @@
+{
+  "name": "@mint/domain-accounts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": { "@mint/contracts": "workspace:*", "drizzle-orm": "^0.45.4" },
+  "devDependencies": {
+    "@mint/platform": "workspace:*",
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    "pg": "^8.16.0",
+    "typescript": "^5.9.3",
+    "tsx": "^4.23.15"
+  }
+}

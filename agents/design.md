@@ -33,7 +33,7 @@ release-device profiling, not a successful export, substantiates FPS claims.
 | Your Library | Personal playlists and liked songs, with optional imports retaining their distinct ownership |
 | Player / Now Playing | Transport, queue and lyrics; never a separate embedded application |
 | Settings & management | Provider linking, devices/parties, activity/requests, workers and administration |
-| Public pages | Browse-only discovery and requests for access; public activity remains separately reachable |
+| Public pages | Account requests and public activity; anonymous library browsing at `/browse` is retired |
 
 Desktop and mobile lead with Home, Search and Your Library. Search is the single discovery entry; chart and mix detail routes remain reachable from its shelves. The legacy Discover landing redirects to Search, preserving legacy chart/mix query routes. Settings is available from the account control.
 

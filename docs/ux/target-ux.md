@@ -7,8 +7,9 @@
 > [mobile design](../mobile-design.md) and [native playback](../mobile-playback.md).
 > Native mobile now governs future consumer UX/UI. Browser UX is frozen,
 > maintenance-only; existing Next.js routes/listening, security/backend
-> compatibility and admin capabilities remain supported. This plan is not a
-> mandate for more browser redesign work.
+> compatibility and admin capabilities remain supported, except the explicitly
+> retired anonymous `/browse` page (D36): it has no redirect or compatibility
+> handler. This plan is not a mandate for more browser redesign work.
 
 ## 1. Information architecture
 
@@ -69,7 +70,7 @@ Baseline and post-rebuild counts use the same seeded tasks and count explicit cl
 - **Onboarding & public pages**:
   - `/request-access` explains the three-step approval flow and shows a confirmation card detailing expected wait and next steps.
   - First-run welcome on `/app` guides members to connect a source, explore the library, or start listening, and transitions to live playable progress (`"X of Y playable"`) once linked.
-  - Public pages (`/`, `/browse`, `/charts`, `/activity`, `/login`, `/request-access`) share the Listening room visual language, skip link, 44px targets, and clear paths to Request access or Sign in without exposing visitor playback or acquisition.
+  - Current public pages (`/`, `/charts`, `/activity`, `/login`, `/request-access`) share the Listening room visual language, skip link, 44px targets, and clear paths to Request access or Sign in without exposing visitor playback or acquisition. Anonymous library browsing at `/browse` is retired under D36; ordinary missing-route behavior applies.
 
 ## 4. Screen-state coverage
 

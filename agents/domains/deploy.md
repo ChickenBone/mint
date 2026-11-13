@@ -51,8 +51,8 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 Owned tests: 5.
 
 ```bash
-npm run typecheck -w @mint/web
-npm run lint -w @mint/web
+corepack pnpm --filter @mint/web run typecheck
+corepack pnpm --filter @mint/web run lint
 node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
 docker compose config --quiet
 node --import tsx --test deploy/mobile/*.test.mjs

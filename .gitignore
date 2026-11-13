@@ -10,6 +10,7 @@ dist
 .DS_Store
 coverage
 .turbo
+.nx/
 data/
 existing-library/
 .impeccable/
