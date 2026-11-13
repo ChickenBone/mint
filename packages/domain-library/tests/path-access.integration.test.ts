@@ -42,7 +42,8 @@ test("confines read-only file access to the persisted Library root", async (t) =
   const buffer = Buffer.alloc(64);
   const { bytesRead } = await opened.read(buffer, 0, buffer.length, 0);
   assert.equal(buffer.subarray(0, bytesRead).toString(), contents);
-  assert.deepEqual(Object.keys(opened).sort(), ["close", "read"]);
+  assert.deepEqual(Object.keys(opened).sort(), ["close", "metadata", "read"]);
+  assert.deepEqual(await opened.metadata(), { sizeBytes: Buffer.byteLength(contents), isRegularFile: true });
   assert.equal("write" in opened, false);
   assert.equal("writeFile" in opened, false);
   await opened.close();

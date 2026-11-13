@@ -11,6 +11,7 @@ Start with **one** deployment below. Both run the complete application; Vercel a
 - [NAS or Portainer installation](#nas-setup-copy-paste-deploy)
 - [Connect an existing Plex library](#use-an-existing-plex-music-library-read-only)
 - [Linux server and command-line installation](#command-line-setup)
+- [Experimental target API composition](#experimental-target-api-composition)
 - [Vercel limitations and setup](#optional-the-website-on-vercel)
 - [Expo app and native updates](#expo-consumer-app-and-browser-sign-in)
 - [Listening features](#native-browser-listening)
@@ -157,6 +158,80 @@ The worker wires the rest itself on every start: it reads Plex's token once Plex
 **Updating:** back up first, then [update the worker before web](#updating-an-existing-installation). Optional automation is described under [CI/CD](#cicd).
 
 The upstream repository is public. If you deploy a private fork or private GHCR packages, authenticate Docker with `read:packages`; changing repository visibility alone does not change package visibility. See [Publishing safely](#publishing-safely).
+
+### Experimental target API composition
+
+This is an opt-in integration path for the in-development fresh-target runtime,
+not a replacement for the existing installation or a published image. It uses a
+separate PostgreSQL database and volume; it does **not** migrate legacy accounts
+or library data, and does not provide missing target features or a media worker.
+The target API is private, has no music mount or published port, and shares its
+internal network only with the target database and the Next.js gateway. The
+legacy stack and its database remain in place. Use a Next.js web image built
+from the same revision with the target-auth gateway changes; existing published
+images are not guaranteed to contain them.
+
+From a checkout with Docker Compose 2.24.4 or newer, set `MINT_DOMAIN` to the
+canonical HTTPS hostname in `.env`, as for the normal command-line setup.
+Generate three independent secrets **outside the checkout**, and restrict access
+to the directory and files. The gateway and ingress tokens must each be a
+canonical 32-byte base64url value, with no padding; keep them distinct. The
+container's UID 1000 must be able to read the files. For example, on a host
+where the invoking user is UID 1000:
+
+```bash
+umask 077
+mkdir -p "$HOME/mint-target-secrets"
+openssl rand -hex 32 > "$HOME/mint-target-secrets/db-password"
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > "$HOME/mint-target-secrets/gateway-token"
+openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n' > "$HOME/mint-target-secrets/ingress-token"
+export MINT_TARGET_DB_PASSWORD_FILE="$HOME/mint-target-secrets/db-password"
+export MINT_TARGET_GATEWAY_TOKEN_FILE="$HOME/mint-target-secrets/gateway-token"
+export MINT_TARGET_INGRESS_TOKEN_FILE="$HOME/mint-target-secrets/ingress-token"
+docker compose -f docker-compose.yml -f deploy/docker/target-api.compose.yml config --quiet
+docker compose -f docker-compose.yml -f deploy/docker/target-api.compose.yml up -d --build
+```
+
+Keep these files and the target PostgreSQL volume together across restarts and
+backups. The overlay supplies `MINT_TARGET_API_URL`, `MINT_TARGET_WEB_ORIGIN`,
+`MINT_TARGET_TRUSTED_PROXY=authenticated-ingress` and file-backed
+`MINT_TARGET_GATEWAY_TOKEN`/`MINT_TARGET_INGRESS_TOKEN` to Next, and enables
+`MINT_API_PUBLIC_AUTH_PROXY=gateway` on the API. Caddy replaces both
+`x-mint-ingress-token` and `x-mint-client-ip` with its secret and observed
+peer IP; browser-provided values are not trusted. This configuration is for
+**direct Caddy ingress**: behind a tunnel or another proxy the observed peer is
+that proxy, not the visitor, so per-IP limits will not identify visitors
+correctly. Do not use this overlay with the NAS tunnel or Vercel stacks.
+
+To optionally create the first target administrator, provide a private
+password file readable by UID 1000, and use the bootstrap overlay on the
+initial startup:
+
+```bash
+export MINT_TARGET_ADMIN_EMAIL="admin@example.com"
+export MINT_TARGET_ADMIN_NAME="Administrator"
+export MINT_TARGET_ADMIN_PASSWORD_FILE="$HOME/mint-target-secrets/admin-password"
+docker compose -f docker-compose.yml -f deploy/docker/target-api.compose.yml -f deploy/docker/target-bootstrap.compose.yml up -d --build
+```
+
+The password file must already contain the chosen password; do not put it in
+the Compose file or shell history. After startup, inspect the target API logs
+for `api-listening`, then recreate with the two-file command above to remove
+the bootstrap secret from the API container. Existing accounts are not
+replaced by bootstrap. Keep the bootstrap password private and store or retire
+it according to your credential policy. An `api-startup-failed` log is not
+successful setup; inspect the matching source/configuration without deleting
+the database.
+
+At image build, the target packaging check requires the central
+`packages/platform/migrations/meta/_journal.json` to match the runtime's mapped
+SQL files in order; the image retains the journal and the package-relative SQL
+tree. API startup executes those migrations under the runtime's PostgreSQL
+advisory lock before listening. An unresolved journal tag or missing SQL fails
+the build or startup rather than silently skipping a migration. This experimental
+configuration has not been validated as a production deployment. Docker Desktop
+was unavailable in the validation environment, so the image build, container
+startup and app-level flow remain unverified.
 
 #### Existing Plex with the command-line stack
 

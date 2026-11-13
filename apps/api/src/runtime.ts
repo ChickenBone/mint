@@ -1,11 +1,13 @@
 import type { ConnectionOptions } from "node:tls";
-import { createAccountsRepository, sessions, users } from "@mint/domain-accounts";
+import { argon2Passwords, bootstrapAdmin, createAccountsRepository, sessions, users } from "@mint/domain-accounts";
 import { recordings } from "@mint/domain-catalog";
 import { createLibraryRepository, mediaFiles, roots } from "@mint/domain-library";
-import { runStartupMigrations, type StartupMigrationOptions } from "@mint/platform";
+import { createListeningHistoryRepository, historyPreferences, listeningHistory } from "@mint/domain-playback";
+import { PostgresRateLimiter, runStartupMigrations, type StartupMigrationOptions } from "@mint/platform";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import { createApiServer, type ApiErrorLogger } from "./server";
+import { validateAdminBootstrapConfiguration } from "./runtime-config";
 
 export interface ApiRuntimeOptions {
   database: {
@@ -21,6 +23,8 @@ export interface ApiRuntimeOptions {
   migrations: StartupMigrationOptions;
   listen: { host: string; port: number };
   gatewayToken: string;
+  publicAuthProxy?: "gateway";
+  adminBootstrap?: { email: string; name: string; password: string };
   notifyAccessRequests(notification: { pending: number }): Promise<void>;
   errors: ApiErrorLogger;
 }
@@ -49,6 +53,10 @@ export async function startApiRuntime(options: ApiRuntimeOptions): Promise<ApiRu
     || typeof options.notifyAccessRequests !== "function") {
     throw new Error("Invalid API runtime configuration.");
   }
+  if (options.adminBootstrap !== undefined) validateAdminBootstrapConfiguration(options.adminBootstrap);
+  if (options.publicAuthProxy !== undefined && options.publicAuthProxy !== "gateway") {
+    throw new Error("Invalid API public authentication configuration.");
+  }
   const pool = new pg.Pool({ ...db, application_name: "mint-api-runtime" });
   pool.on("error", () => options.errors.error({ name: "PostgresPoolError" }));
   let app: ReturnType<typeof createApiServer> | undefined;
@@ -57,16 +65,31 @@ export async function startApiRuntime(options: ApiRuntimeOptions): Promise<ApiRu
     const repository = createAccountsRepository(drizzle(pool, { schema: { users, sessions } }));
     app = createApiServer({
       gatewayToken: options.gatewayToken,
+      ...(options.publicAuthProxy ? { publicAuth: {
+        trustedProxy: options.publicAuthProxy,
+        repository, passwords: argon2Passwords, admission: new PostgresRateLimiter(pool),
+      } } : {}),
       sessions: repository,
       decisions: repository,
       memberStatuses: repository,
       adminAccounts: repository,
       library: createLibraryRepository(drizzle(pool, { schema: { roots, mediaFiles, recordings } })),
+      playbackHistory: createListeningHistoryRepository(drizzle(pool, {
+        schema: { historyPreferences, listeningHistory, mediaFiles, recordings, users },
+      })),
       notifyAccessRequests: options.notifyAccessRequests,
       errors: options.errors,
     });
     phase = "migrations";
     await runStartupMigrations(pool, options.migrations);
+    if (options.adminBootstrap !== undefined) {
+      phase = "admin bootstrap";
+      const result = await bootstrapAdmin(options.adminBootstrap, repository, {
+        hash: argon2Passwords.hash,
+        now: () => new Date(),
+      });
+      if (result.status === "missing-password") throw new Error("Missing admin bootstrap password.");
+    }
     phase = "listen";
     const address = await app.listen(options.listen);
     let stopping: Promise<void> | undefined;

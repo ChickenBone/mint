@@ -37,6 +37,18 @@ export interface LibraryFilePage {
   nextCursor: string | null;
 }
 
+export interface LibraryRecheckCandidatesInput {
+  rootId: string;
+  limit: number;
+  after?: string;
+}
+
+export interface LibraryRecheckCandidates {
+  root: PersistedLibraryRoot;
+  ids: string[];
+  nextAfter: string | null;
+}
+
 // Trusted worker input only: these paths must never be projected into listing DTOs.
 export interface LibraryVerificationTarget {
   root: PersistedLibraryRoot;
@@ -72,6 +84,7 @@ export interface LibraryRepository {
   }): Promise<{ id: string }>;
   replaceImportedTags(id: string, tags: ImportedMediaTags): Promise<void>;
   getVerificationTarget(id: string): Promise<LibraryVerificationTarget | null>;
+  getRecheckCandidates(input: LibraryRecheckCandidatesInput): Promise<LibraryRecheckCandidates>;
   getPlaybackTarget(id: string): Promise<LibraryPlaybackTarget | null>;
   importVerifiedAudioTags(
     id: string,
@@ -100,6 +113,14 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 function requireUuid(value: string): void {
   if (typeof value !== "string" || !uuidPattern.test(value)) {
     throw new LibraryRepositoryInputError("Expected a media, root or recording UUID");
+  }
+}
+
+export function validateRecheckCandidatesInput(input: LibraryRecheckCandidatesInput): void {
+  requireUuid(input.rootId);
+  if (input.after !== undefined) requireUuid(input.after);
+  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > LIBRARY_MAX_PAGE_SIZE) {
+    throw new LibraryRepositoryInputError(`Library recheck limit must be an integer from 1 to ${LIBRARY_MAX_PAGE_SIZE}`);
   }
 }
 
@@ -205,6 +226,17 @@ export function createLibraryRepository(
       }).from(mediaFiles).innerJoin(roots, eq(mediaFiles.rootId, roots.id))
         .where(eq(mediaFiles.id, id)).limit(1);
       return target ?? null;
+    },
+    async getRecheckCandidates(input) {
+      validateRecheckCandidatesInput(input);
+      const [root] = await db.select({ id: roots.id, path: roots.path }).from(roots)
+        .where(eq(roots.id, input.rootId)).limit(1);
+      if (!root) throw new LibraryRepositoryInputError("Library recheck root does not exist");
+      const rows = await db.select({ id: mediaFiles.id }).from(mediaFiles)
+        .where(and(eq(mediaFiles.rootId, root.id), input.after ? gt(mediaFiles.id, input.after) : undefined))
+        .orderBy(asc(mediaFiles.id)).limit(input.limit + 1);
+      const ids = rows.slice(0, input.limit).map((row) => row.id);
+      return { root, ids, nextAfter: rows.length > input.limit ? ids[ids.length - 1]! : null };
     },
     async getPlaybackTarget(id) {
       requireUuid(id);

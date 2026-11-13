@@ -37,23 +37,23 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (32)
+### Owned files (39)
 
 - `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.catalog.yml`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `android-apk.yml`, `ci.yml`, `ios-eas.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
-- `deploy/docker/` `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`
+- `deploy/docker/` `Dockerfile.target-api`, `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`, `target-api-entrypoint.sh`, `target-api.compose.yml`, `target-api.test.mjs`, `target-bootstrap.compose.yml`, `target-migrations.mjs`, `target-web-entrypoint.sh`
 - `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`, `ios-distribution.mjs`, `ios-distribution.test.mjs`
 - `docs/` `android-builds.md`, `ios-builds.md`, `self-hosting.md`
 
 ### Validate
 
-Owned tests: 5.
+Owned tests: 6.
 
 ```bash
 corepack pnpm --filter @mint/web run typecheck
 corepack pnpm --filter @mint/web run lint
-node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
+node --test deploy/docker/caddy.test.mjs deploy/docker/compose.test.mjs deploy/docker/musicbrainz.test.mjs deploy/docker/target-api.test.mjs deploy/mobile/eas-distribution.test.mjs deploy/mobile/ios-distribution.test.mjs
 docker compose config --quiet
 node --import tsx --test deploy/mobile/*.test.mjs
 ```

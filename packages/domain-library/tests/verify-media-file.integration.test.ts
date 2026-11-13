@@ -21,6 +21,7 @@ import {
   LibraryMediaWriteError,
   LibraryRepositoryInputError,
   mediaFiles,
+  recheckLibraryMediaFiles,
   roots,
   verifyLibraryMediaFile,
   type AudioProbeOptions,
@@ -302,6 +303,130 @@ test("persisted file identity -> confined real decode -> PostgreSQL verified lis
     });
     assert.equal(afterMissing.recordingId, recording.id);
     assert.deepEqual((await repository.listFiles()).items.map((item) => item.id), [file.id]);
+
+    const recheckDir = path.join(music, "recheck");
+    await mkdir(recheckDir);
+    await writeFile(path.join(recheckDir, "first.wav"), original);
+    await writeFile(path.join(recheckDir, "second.wav"), original);
+    const recheckRoot = await repository.createRoot({ path: recheckDir });
+    const configuredRoot = { id: recheckRoot.id, path: recheckDir };
+    const recheckFiles = await Promise.all(["first.wav", "second.wav"].map((relativePath) =>
+      repository.createMediaFile({
+        rootId: recheckRoot.id, relativePath, recordingId: recording.id,
+        importedTags: { title: "Keep title", version: "Keep version" },
+      })));
+    for (const candidate of recheckFiles) {
+      assert.equal((await verifyLibraryMediaFile(repository, candidate.id, probeOptions)).status, "verified");
+    }
+    const [firstId, secondId] = recheckFiles.map((candidate) => candidate.id).sort();
+    assert.ok(firstId && secondId);
+    const missingIdentity = await row(firstId);
+    await rm(path.join(recheckDir, missingIdentity.relativePath));
+    const missingPage = await recheckLibraryMediaFiles(repository, configuredRoot, { limit: 1, audio: probeOptions });
+    assert.equal(missingPage.status, "completed");
+    assert.equal(missingPage.nextAfter, firstId);
+    assert.equal(missingPage.results[0]?.id, firstId);
+    assert.equal(missingPage.results[0]?.result.status, "unavailable");
+    const missingStored = await row(firstId);
+    assert.deepEqual(missingStored, {
+      ...missingIdentity, availability: "unavailable", unavailableReason: "missing", checkedAt: missingStored.checkedAt,
+    });
+    const priorPositive = await row(secondId);
+    const inconclusivePage = await recheckLibraryMediaFiles(repository, configuredRoot, {
+      limit: 1, after: firstId, audio: { ...probeOptions, ffmpegPath: path.join(fixture, "absent-ffmpeg") },
+    });
+    assert.equal(inconclusivePage.status, "completed");
+    assert.equal(inconclusivePage.nextAfter, null);
+    assert.equal(inconclusivePage.results[0]?.result.status, "inconclusive");
+    assert.deepEqual(await row(secondId), priorPositive);
+    assert.equal((await repository.getRecheckCandidates({ rootId: recheckRoot.id, limit: 2 })).ids.length, 2);
+    await assert.rejects(recheckLibraryMediaFiles(repository, { ...configuredRoot, path: music }, {
+      limit: 2, audio: probeOptions,
+    }), (error: unknown) => error instanceof LibraryFileAccessError && error.code === "ROOT_MISMATCH");
+    await assert.rejects(recheckLibraryMediaFiles({
+      ...repository,
+      async getVerificationTarget(id) {
+        const target = await repository.getVerificationTarget(id);
+        assert.ok(target);
+        return { ...target, root: { ...target.root, path: music } };
+      },
+    }, configuredRoot, { limit: 1, audio: probeOptions }),
+    (error: unknown) => error instanceof LibraryFileAccessError && error.code === "ROOT_MISMATCH");
+    const changedRootTarget = await row(firstId);
+    await assert.rejects(recheckLibraryMediaFiles({
+      ...repository,
+      async getVerificationTarget() {
+        return {
+          root: { id: root.id, path: music },
+          mediaFile: { rootId: root.id, relativePath: changedRootTarget.relativePath },
+        };
+      },
+    }, configuredRoot, { limit: 1, audio: probeOptions }),
+    (error: unknown) => error instanceof LibraryFileAccessError && error.code === "ROOT_MISMATCH");
+    for (const invalid of [
+      { root: { ...configuredRoot, id: "invalid" }, limit: 1, after: undefined },
+      { root: configuredRoot, limit: 0, after: undefined },
+      { root: configuredRoot, limit: 101, after: undefined },
+      { root: configuredRoot, limit: 1, after: "invalid" },
+      { root: { ...configuredRoot, path: "relative" }, limit: 1, after: undefined },
+    ]) {
+      let queried = false;
+      await assert.rejects(recheckLibraryMediaFiles({
+        ...repository,
+        async getRecheckCandidates(input) {
+          queried = true;
+          return repository.getRecheckCandidates(input);
+        },
+      }, invalid.root, { limit: invalid.limit, after: invalid.after, audio: probeOptions }), LibraryRepositoryInputError);
+      assert.equal(queried, false);
+    }
+    const alreadyAborted = new AbortController();
+    alreadyAborted.abort();
+    assert.deepEqual(await recheckLibraryMediaFiles(repository, configuredRoot, {
+      limit: 1, audio: probeOptions, signal: alreadyAborted.signal,
+    }), { status: "cancelled", results: [], nextAfter: null });
+    const abortOnWrite = new AbortController();
+    const cancelledPage = await recheckLibraryMediaFiles({
+      ...repository,
+      async recordVerification(id, outcome) {
+        await repository.recordVerification(id, outcome);
+        abortOnWrite.abort();
+      },
+    }, configuredRoot, { limit: 1, after: firstId, audio: probeOptions, signal: abortOnWrite.signal });
+    assert.equal(cancelledPage.status, "cancelled");
+    assert.equal(cancelledPage.nextAfter, firstId);
+    assert.deepEqual(cancelledPage.results[0], {
+      id: secondId, result: { status: "inconclusive", reason: "cancelled", verificationPersisted: true },
+    });
+    const retry = await recheckLibraryMediaFiles(repository, configuredRoot, {
+      limit: 1, after: cancelledPage.nextAfter!, audio: probeOptions,
+    });
+    assert.equal(retry.results[0]?.id, secondId);
+    assert.equal(retry.results[0]?.result.status, "verified");
+    await writeFile(path.join(recheckDir, missingIdentity.relativePath), original);
+    const restored = await recheckLibraryMediaFiles(repository, configuredRoot, { limit: 2, audio: probeOptions });
+    assert.equal(restored.status, "completed");
+    assert.deepEqual(restored.results.map(({ id, result }) => [id, result.status]), [
+      [firstId, "verified"], [secondId, "verified"],
+    ]);
+    assert.equal((await row(firstId)).recordingId, recording.id);
+    assert.equal((await row(firstId)).importedVersion, "Keep version");
+    const escapeRootDir = path.join(music, "escape-root");
+    await mkdir(escapeRootDir);
+    await symlink(outside, path.join(escapeRootDir, "escape.wav"));
+    const escapeRoot = await repository.createRoot({ path: escapeRootDir });
+    const recheckEscape = await repository.createMediaFile({ rootId: escapeRoot.id, relativePath: "escape.wav" });
+    const escapeInitial = await row(recheckEscape.id);
+    await assert.rejects(recheckLibraryMediaFiles(repository, { id: escapeRoot.id, path: escapeRootDir }, {
+      limit: 1, audio: probeOptions,
+    }), (error: unknown) => error instanceof LibraryFileAccessError && error.code === "PATH_ESCAPES_ROOT");
+    assert.deepEqual(await row(recheckEscape.id), escapeInitial);
+    await assert.rejects(recheckLibraryMediaFiles(repository, { id: offline.id, path: path.join(fixture, "offline") }, {
+      limit: 1, audio: probeOptions,
+    }), (error: unknown) => error instanceof LibraryFileAccessError && error.code === "ROOT_UNAVAILABLE");
+    assert.deepEqual(await row(offlineFile.id), offlineBefore);
+    assert.deepEqual(await readFile(path.join(recheckDir, (await row(secondId)).relativePath)), original);
+    await assertClosed();
 
     const newer = new Date(Date.now() + 60_000);
     await assert.rejects(verifyLibraryMediaFile({

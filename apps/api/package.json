@@ -15,6 +15,7 @@
     "@mint/domain-accounts": "workspace:*",
     "@mint/domain-catalog": "workspace:*",
     "@mint/domain-library": "workspace:*",
+    "@mint/domain-playback": "workspace:*",
     "@mint/platform": "workspace:*",
     "@trpc/server": "11.28.0",
     "drizzle-orm": "^0.45.4",

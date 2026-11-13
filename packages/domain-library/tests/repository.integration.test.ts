@@ -144,6 +144,44 @@ test("Library repository persists verified files and performs bounded cursor/sea
     assert.equal(retained.importedTitle, "Keep tags");
     assert.equal(retained.audioCodec, "flac");
     assert.equal(retained.verifiedAt?.getTime(), checkedAt.getTime());
+    const otherRoot = await repository.createRoot({ path: "/fixture/other-read-only-originals" });
+    const otherFile = await repository.createMediaFile({ rootId: otherRoot.id, relativePath: "other.flac" });
+    const candidates = [tagged.id, live.id, unknown.id, unverified.id, unavailable.id].sort();
+    const firstCandidates = await repository.getRecheckCandidates({ rootId: root.id, limit: 2 });
+    assert.match(queries.at(-1)!, /where .*root_id.*order by .*id.*limit/i);
+    assert.deepEqual(firstCandidates, {
+      root: { id: root.id, path: "/fixture/read-only-originals" },
+      ids: candidates.slice(0, 2), nextAfter: candidates[1],
+    });
+    const secondCandidates = await repository.getRecheckCandidates({ rootId: root.id, limit: 2, after: firstCandidates.nextAfter! });
+    assert.deepEqual(secondCandidates.ids, candidates.slice(2, 4));
+    assert.equal(secondCandidates.nextAfter, candidates[3]);
+    const lastCandidates = await repository.getRecheckCandidates({ rootId: root.id, limit: 2, after: secondCandidates.nextAfter! });
+    assert.deepEqual(lastCandidates.ids, candidates.slice(4));
+    assert.equal(lastCandidates.nextAfter, null);
+    assert.deepEqual(await repository.getRecheckCandidates({ rootId: root.id, limit: 5 }), {
+      root: firstCandidates.root, ids: candidates, nextAfter: null,
+    });
+    assert.deepEqual(await repository.getRecheckCandidates({ rootId: root.id, limit: 1, after: candidates[4] }), {
+      root: firstCandidates.root, ids: [], nextAfter: null,
+    });
+    assert.deepEqual((await repository.getRecheckCandidates({ rootId: otherRoot.id, limit: 100 })).ids, [otherFile.id]);
+    const emptyCandidateRoot = await repository.createRoot({ path: "/fixture/empty-read-only-originals" });
+    assert.deepEqual(await repository.getRecheckCandidates({ rootId: emptyCandidateRoot.id, limit: 1 }), {
+      root: { id: emptyCandidateRoot.id, path: "/fixture/empty-read-only-originals" }, ids: [], nextAfter: null,
+    });
+    for (const input of [
+      { rootId: "invalid", limit: 1 },
+      { rootId: root.id, limit: 0 },
+      { rootId: root.id, limit: 101 },
+      { rootId: root.id, limit: 1.5 },
+      { rootId: root.id, limit: 1, after: "../file" },
+    ]) {
+      const beforeQueries = queries.length;
+      await assert.rejects(repository.getRecheckCandidates(input), LibraryRepositoryInputError);
+      assert.equal(queries.length, beforeQueries);
+    }
+    await assert.rejects(repository.getRecheckCandidates({ rootId: randomUUID(), limit: 1 }), LibraryRepositoryInputError);
     await assert.rejects(repository.recordVerification(unavailable.id, verified), LibraryMediaWriteError);
     await assert.rejects(repository.recordVerification(randomUUID(), verified), LibraryMediaWriteError);
     await assert.rejects(repository.recordVerification(unknown.id, {

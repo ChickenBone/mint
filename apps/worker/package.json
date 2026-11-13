@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "build": "esbuild src/index.ts src/hub.ts src/analysis-worker.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:bullmq --external:ioredis --external:pg --external:drizzle-orm --external:pino --external:@node-rs/argon2 --sourcemap",
+    "build:local": "esbuild src/local-job-main.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/local-job-main.js --external:pg --external:pg-boss --external:drizzle-orm --sourcemap",
     "start": "node --enable-source-maps dist/index.js",
+    "start:local": "node --enable-source-maps dist/local-job-main.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "tsx --test --test-force-exit src/*.test.ts src/**/*.test.ts",
     "match-report": "tsx src/match-report.ts",
@@ -15,14 +17,20 @@
   },
   "dependencies": {
     "@mint/core": "*",
+    "@mint/domain-catalog": "workspace:*",
+    "@mint/platform": "workspace:*",
     "@node-rs/argon2": "^2.2.2",
     "bullmq": "^5.81.5",
     "drizzle-orm": "^0.45.4",
     "ioredis": "^5.11.1",
-    "pino": "^10.4.0"
+    "pg": "^8.16.0",
+    "pg-boss": "12.38.2",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3"

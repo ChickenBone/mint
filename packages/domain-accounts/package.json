@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts"
   },
-  "dependencies": { "@mint/contracts": "workspace:*", "drizzle-orm": "^0.45.4" },
+  "dependencies": { "@mint/contracts": "workspace:*", "@node-rs/argon2": "^2.2.2", "drizzle-orm": "^0.45.4" },
   "devDependencies": {
     "@mint/platform": "workspace:*",
     "@types/node": "^22.15.0",

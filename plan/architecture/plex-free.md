@@ -20,6 +20,17 @@ collections remain separate domain authorities. A scanner is only part of that
 replacement: search, paging, art, media delivery, reconciliation and management
 must work without Plex credentials or services.
 
+Mint now has a bounded, explicit read-only root-prefix scanner that reuses file
+identities and verification without following discovered symlinks or sweeping
+unseen files. Opt-in private-worker continuation now exists, but callers must
+persist checkpoints and serialize scans; replay costs O(active-prefix entries)
+and its budget can prevent huge directories finishing. There is no snapshot,
+universal mutation detection, full fairness, schedule or freshness reconciliation.
+See [continuation limits](../migration/compatibility.md#library-scan-continuation).
+The original-media reader was already present at the selected
+baseline; it is not an authorized HTTP streaming endpoint. These slices do not
+complete the Plex-free library lifecycle.
+
 Donor evidence establishes read-only root-relative scanning/checkpoints,
 separate playable media-file identity and private local-file streaming. It does
 not establish scalable incremental traversal, deletion reconciliation, native
@@ -112,7 +123,7 @@ Donor login limiting is process-local, not a fleet-wide rate-limit replacement.
 
 | Role | Current source | Target consideration |
 | --- | --- | --- |
-| Audience-scoped events | [Realtime](../../apps/realtime/src/index.ts), [event publisher](../../packages/core/src/events.ts) | Transactional event sequence/outbox; small notification wakeup and refetch/replay, auth/revocation/backpressure/poll fallbacks |
+| Audience-scoped events | [Realtime](../../apps/realtime/src/index.ts), [event publisher](../../packages/core/src/events.ts) | `@mint/platform` now provides transactional per-audience PostgreSQL sequence/replay storage with bounded retention-floor recovery. It is not yet a domain outbox, wakeup/notification, WebSocket, producer or consumer integration; add authorization, revocation, backpressure and poll fallbacks |
 | Cache/leases/source pacing | [Public cache](../../packages/core/src/public-cache.ts), [chart cache](../../apps/web/src/lib/chart-cache.ts) | TTL/size/cleanup, fenced atomic leases, cooldown/Retry-After/abort and no unthrottled outage fallback |
 | Rate limits/provider reservations | [Rate limiter](../../apps/web/src/lib/rate-limit.ts), [worker YouTube](../../apps/worker/src/services/youtube.ts), [web YouTube](../../apps/web/src/lib/youtube-search.ts) | Database-clock admission/counters/reservations and aggregate upstream limits |
 | Index/health/progress | [Library index](../../apps/worker/src/library-index.ts), [maintenance](../../apps/worker/src/jobs/maintenance.ts) | Bounded schema-owned status/read projections, not queue existence as success |
@@ -124,6 +135,17 @@ retention differences. [Chart matching](../../apps/web/src/lib/chart-match-queue
 also has process-local tail/timer work, not a BullMQ queue, worth durable migration.
 Analysis and device/party commands already have PostgreSQL domain state; pg-boss
 delivery must reconcile that authority, not duplicate it.
+
+The callable `@mint/platform` local pg-boss runtime now invokes the central
+serialized migration helper before pg-boss manages its own schema, verifies
+configured queue policy before starting handlers and supports enqueue on the
+caller's transaction client. Its singleton key deduplicates only queued,
+retrying or active jobs. Catalog's permanent startup intent/completion records
+now back a separate opt-in ListenBrainz worker, not canonical metadata ingestion
+or a replacement for every legacy task. Its explicit settings, build/start
+artifact requirements and recovery limits are in the
+[local worker contract](../migration/compatibility.md#local-worker-runtime).
+Other domain outboxes, schedules and automatic recovery remain gates.
 
 | Concern | Selected PostgreSQL-first responsibility | Acceptance for fresh deployment |
 | --- | --- | --- |

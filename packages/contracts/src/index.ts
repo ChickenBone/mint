@@ -18,8 +18,20 @@ export { GATEWAY_TOKEN_HEADER_NAME, gatewayTokenSchema } from "./gateway-auth";
 export { libraryListInputSchema, libraryFileListItemSchema, libraryFilePageSchema } from "./library";
 export type { LibraryListInput, LibraryFileListItem, LibraryFilePage } from "./library";
 export {
+  listeningHistoryListInputSchema, listeningHistoryRecordInputSchema,
+  listeningHistoryDeleteInputSchema, listeningHistoryPrivateSessionInputSchema,
+  listeningHistoryRecordResultSchema, listeningHistoryPrivateSessionSchema,
+  listeningHistoryEntrySchema, listeningHistoryPageSchema,
+} from "./listening-history";
+export type {
+  ListeningHistoryListInput, ListeningHistoryRecordInput, ListeningHistoryDeleteInput,
+  ListeningHistoryPrivateSessionInput, ListeningHistoryEntry, ListeningHistoryPage,
+  ListeningHistoryRecord,
+} from "./listening-history";
+export {
   adminAccountListInputSchema, adminAccountSchema, adminAccountPageSchema, setMemberRoleInputSchema,
 } from "./admin-accounts";
 export type {
   AdminAccountListInput, AdminAccount, AdminAccountPage, SetMemberRoleInput,
 } from "./admin-accounts";
+export * from "./account-onboarding";

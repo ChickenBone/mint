@@ -70,9 +70,45 @@ are not evidence of active automatic bootstrap.
 
 ## Required rewrite contracts
 
+### Current bounded TypeScript slices
+
+`@mint/domain-catalog` now plans explicit startup scopes for Apple, ListenBrainz,
+YouTube Music, YouTube and five public chart adapters. Plans reject excess
+scopes instead of truncating: at most 128 jobs, 50 countries and 64 explicit
+YouTube channel IDs. No source is implicitly enabled. `createCatalogSeedStore`
+commits permanent receipts with pg-boss queue intent in one caller-database
+transaction; central startup tag `0007` creates the receipt table. Existing
+receipts leave queued/leased/completed work unchanged. Scheduling counts are not
+ingestion/completion evidence. A separate ListenBrainz-only command now fetches
+the fixed weekly-global seed and permanently retains at most 100 attributed
+occurrences plus one run, using central migration `0008` and domain payload
+`{version:1,job}`. It neither writes canonical/Library/authority identities nor
+implements graph expansion, other sources or periodic refresh. Pg-boss dispatches
+retries; cooldown/pause/exhaustion stay incomplete and require explicit recovery.
+See [ingestion bounds](../migration/compatibility.md#listenbrainz-startup-ingestion);
+the opt-in local worker composes only this source, and combined/deployment
+acceptance remains separate.
+
+Read-only reconciliation returns bounded attributed candidates through an
+injected consistent-snapshot reader; metadata ranks are review ordering, not
+probabilities or identity. No production observation/link reader, backing
+provenance schema, API wiring or pgvector parity exists. Library's explicit
+Linux scanner imports/verifies read-only files without sweeping unseen paths.
+Opt-in private-worker continuation requires caller-owned checkpoint persistence
+and serialization; bounded O(active-prefix) replay can prevent huge directories
+finishing. It has no snapshot, full fairness, scheduling or freshness guarantee;
+completed-directory additions require a fresh scan. See
+[continuation limits](../migration/compatibility.md#library-scan-continuation).
+These are bounded foundations,
+not completion of P3's preservation requirements. See
+[current contracts](../migration/compatibility.md) and
+[phase gates](../execution/phases.md).
+
+### Remaining integration
+
 Keep raw source records and provenance distinct from reconciled recording
 identity, local-media links and account state. Different provider IDs and equal
-names are not evidence of identical editions. Store match confidence/reasons;
+names are not evidence of identical editions. Retain match evidence/reasons;
 support ambiguous, unavailable and no-match separately.
 
 Define independent queues/budgets for seed ingestion, demand enrichment, crawler

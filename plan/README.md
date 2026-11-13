@@ -51,20 +51,31 @@ wire compatibility from capability parity.
 
 The P1 pnpm/Nx workspace foundation has been accepted. Additional runtime
 foundations and bounded slices are implemented: Accounts services and PostgreSQL
-storage, platform admission and serialized startup migrations, a callable
-authenticated API runtime, the separate runtime-validating `@mint/sdk`, a
-six-field Catalog recording schema, and Library identity, verified availability,
-bounded listing/search and trusted local media verification. The API exposes
+storage, an explicit Argon2-backed optional initial-admin bootstrap, platform
+admission and serialized startup migrations, callable pg-boss and durable
+PostgreSQL event/cache primitives, a callable authenticated API runtime, the
+separate runtime-validating `@mint/sdk`, a six-field Catalog recording schema,
+and Library identity, verified availability, bounded listing/search and trusted
+local media verification. The API exposes
 fresh-session-authorized listing and account operations. A server-only Next.js
 binding and same-origin session and approval routes are implemented and exercised
 through the API and PostgreSQL; Library GET and member-status POST routes are
 also accepted following an actual media-to-Next.js integration journey. Admin
 account listing and role changes are accepted through the SDK, HTTP API and
 PostgreSQL, with fresh active-admin authorization; their existing UI remains
-legacy. These do not complete P1:
+legacy. Bootstrap is disabled when all `MINT_API_BOOTSTRAP_ADMIN_EMAIL`,
+`MINT_API_BOOTSTRAP_ADMIN_NAME` and `MINT_API_BOOTSTRAP_ADMIN_PASSWORD`
+variables are absent; supplying any requires all three. It runs after
+migrations and before listen, inserts an active admin only when the
+case-insensitive email is absent, and never modifies an existing account.
+Login/access-request HTTP routes remain unwired under D49. These do not complete P1:
 the existing Next.js UI, layout, global auth and actions still use the legacy
 backend, preserved playback/collection dependencies are not migrated, and
-there is no standalone executable.
+the accepted bounded slices are not integrated into a working existing UI.
+The standalone API entry point and base validated runtime configuration
+(`apps/api/src/main.ts` and `runtime-config.ts`) already existed at the selected
+baseline; optional admin-bootstrap configuration/wiring is new. The Library original-media reader (`playback-media.ts`) also existed:
+it reopens and reads original media but is not authorized HTTP streaming.
 Admin listing defaults to 50, caps at 100 and binds its UUID cursor to strict
 status/members and search filters; it returns only safe account fields. Role
 changes reject either self-role value with the preserved error copy, allow
@@ -88,8 +99,10 @@ Next.js binding.
 The listing returns one result per playable file. D38-D39 make the normalized
 recording foreign key nullable for unknown or ambiguous identity, without
 speculative recording records, and block deletion of a linked recording until
-explicit relink or unlink; media files are never cascade-deleted. Full schema,
-scanner, availability freshness and broader import implementation remain open. The
+explicit relink or unlink; media files are never cascade-deleted. The bounded
+scanner supports opt-in private-worker continuation with caller-owned checkpoint
+persistence and per-root serialization, but replay scalability, scan scheduling,
+availability freshness and broader import remain open. The
 implemented session and approval procedures do not add login/access-request
 HTTP routes; no temporary legacy-auth adapter is selected.
 D43-D45 require configured
@@ -104,8 +117,11 @@ The implemented identity schema has `library.roots` and
 references to roots and Catalog recordings. Stored paths are metadata, not
 proof of safe filesystem access. A Linux confined opener and bounded ffprobe
 and full ffmpeg decode are composed with persisted root/file lookup and positive
-verification; inconclusive failures preserve prior state. This does not provide
-a scanner, full format support, hard filesystem timeouts or playback grants.
+verification; inconclusive failures preserve prior state. A separate bounded
+scanner explicitly imports bounded batches with optional continuation; active
+prefix replay is bounded and offers no snapshot or full fairness guarantee.
+Scheduling and freshness remain caller-owned work. Full format support, hard filesystem timeouts and
+playback grants remain open.
 Root-management UI and availability freshness remain open. D47
 blocks deletion of a Library root while media-file references remain, without
 cascading media deletion; deletion is possible once references are absent, but
@@ -118,21 +134,58 @@ enforce this boundary; the SDK requires an explicit gateway token and can
 forward only the optional canonical session token. D37's API-resolved session
 remains the sole user identity. Client-IP forwarding stays disabled until
 ingress trust is settled; browser-supplied forwarded headers are not trusted.
-Secret lifecycle/configuration, standalone startup,
-deployment, ingress and TLS/proxy settings remain unimplemented or unsettled.
+Secret lifecycle/configuration, deployment, ingress and TLS/proxy settings
+remain unimplemented or unsettled.
 For fresh targets D41 selects `mint_migrations.__drizzle_migrations` and
 serialized startup migrations across API and worker processes. The platform
 helper implements the dedicated-client session advisory lock and central
-journal, which maps platform rate limits, Accounts, Catalog and Library
-migrations in that order, including Library listing after Library identity.
+journal, which maps platform rate limits, Accounts, Catalog, Library identity
+and listing, then platform events/public cache, Catalog startup seed receipts
+and bounded ListenBrainz ingestion storage.
 Public `runStartupMigrations` takes a packages root
 and lock timeout, and internally supplies the selected history to
 `runMigrations`. The callable API runtime invokes this before listening, with
 explicit pool, migration and listener configuration and notification/error
-bindings. It is not a standalone executable; timeout
-defaults, pool budgets, environment defaults and deployment changes remain
-unselected. See
+bindings. The standalone entry point and base validated runtime configuration
+already existed at the selected baseline. The callable local pg-boss runtime
+also invokes central migrations before pg-boss creates/upgrades its own schema;
+the PostgreSQL public-read cache stores public metadata only and supplies
+bounded leases, stale/negative/error states and fenced publication.
+Feature-specific identity, validation, freshness, provider pacing and cleanup
+scheduling remain caller-owned. A separate opt-in local worker now composes
+ListenBrainz-only startup ingestion with explicit settings, bounded pool/timeouts
+and `build:local`/`start:local` scripts. Disabled mode opens nothing; enabled
+artifacts need the central journal and mapped SQL through `0009`. See
+[worker configuration](migration/compatibility.md#local-worker-runtime).
+Broader worker integration, resource tuning and deployment remain gates. See
 [D32-D48 and the remaining gates](execution/decisions.md#decisions).
+
+Additional bounded slices in this tranche are not phase completion: platform
+provides a callable pg-boss local-job runtime, audience-scoped PostgreSQL event
+log and public-read cache. The separate opt-in ListenBrainz worker consumes the
+job runtime; the legacy worker has not migrated to it, and event-log/cache
+integration with domain producers and the existing WebSocket service remains
+open. Catalog exposes read-only reconciliation
+through a bounded reader port and deterministic startup seed planning. No
+production reconciliation reader/schema/API is implemented. Seed adapter code
+and its receipt migration are included in central startup tag `0007`. A separate
+ListenBrainz-only command now persists at most 100 attributed weekly-global
+occurrences and one permanent completion row under central tag `0008`, without
+canonical recording, authority or Library writes. Its versioned domain payload,
+queue/retry bounds and explicit-recovery limits are documented in
+[the ingestion contract](migration/compatibility.md#listenbrainz-startup-ingestion).
+Combined worker acceptance, other-source ingestion, canonical
+integration and refresh remain separate gates, not a complete metadata pipeline.
+The P4 playback slice now provides fresh-session-authorized, account-owned
+history record/list/delete and private-session operations through the API and
+SDK. It uses verified Library media, per-account event idempotency, the existing
+one-second/completion thresholds and transactionally fenced deletion/privacy
+boundaries; broader P4 capabilities remain open.
+Scanner continuation replays active directory prefixes within a separate budget;
+huge directories can exceed its cap and completed-directory additions require a
+fresh scan. See [the precise limits](migration/compatibility.md#library-scan-continuation).
+The planner alone is
+not durable scheduling, and queued seed intent is not fetched metadata.
 
 Build in dependency-ordered slices, then validate a fresh installation. Earlier
 coexistence/backfill proposals are superseded by the fresh-install decision.

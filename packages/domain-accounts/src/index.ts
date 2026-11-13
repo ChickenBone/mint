@@ -8,6 +8,7 @@ export type {
   SessionIssuanceDependencies,
 } from "./session-lifecycle";
 export { createAccountAuthenticator } from "./authenticate-account";
+export { argon2Passwords } from "./argon2-passwords";
 export type {
   AuthenticationAccount,
   AccountAuthenticationRepository,

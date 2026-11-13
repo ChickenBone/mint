@@ -1,0 +1,122 @@
+# Opt-in overlay for docker-compose.yml. Target storage is separate from legacy storage.
+
+services:
+  web:
+    entrypoint: ["/bin/sh", "/opt/mint/target-web-entrypoint.sh"]
+    environment:
+      MINT_TARGET_API_URL: http://target-api:3002/trpc
+      MINT_TARGET_WEB_ORIGIN: https://${MINT_DOMAIN:?Set MINT_DOMAIN}
+      MINT_TARGET_TRUSTED_PROXY: authenticated-ingress
+    secrets: [target_gateway_token, target_ingress_token]
+    volumes:
+      - ./deploy/docker/target-web-entrypoint.sh:/opt/mint/target-web-entrypoint.sh:ro
+    networks: [target-data]
+
+  caddy:
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - 'export MINT_TARGET_INGRESS_TOKEN="$$(cat /run/secrets/target_ingress_token)"; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile'
+    secrets: [target_ingress_token]
+    configs: !override
+      - source: target_caddyfile
+        target: /etc/caddy/Caddyfile
+
+  target-api:
+    image: mint-target-api:local
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.target-api
+    restart: unless-stopped
+    environment:
+      MINT_API_DB_HOST: target-postgres
+      MINT_API_DB_PORT: "5432"
+      MINT_API_DB_NAME: mint_target
+      MINT_API_DB_USER: mint_target
+      MINT_API_DB_TLS: disabled
+      MINT_API_DB_POOL_MAX: "10"
+      MINT_API_DB_CONNECT_TIMEOUT_MS: "10000"
+      MINT_API_MIGRATIONS_PACKAGES_ROOT: /repo/packages
+      MINT_API_MIGRATIONS_LOCK_TIMEOUT_MS: "30000"
+      MINT_API_LISTEN_HOST: 0.0.0.0
+      MINT_API_LISTEN_PORT: "3002"
+      MINT_API_NOTIFICATION_SINK: stdout
+      MINT_API_PUBLIC_AUTH_PROXY: gateway
+    secrets: [target_db_password, target_gateway_token]
+    read_only: true
+    tmpfs: ["/tmp"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [target-data]
+    depends_on:
+      target-postgres: { condition: service_healthy }
+
+  target-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mint_target
+      POSTGRES_DB: mint_target
+      POSTGRES_PASSWORD_FILE: /run/secrets/target_db_password
+    secrets: [target_db_password]
+    volumes: [target_postgres:/var/lib/postgresql/data]
+    networks: [target-data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "mint_target", "-d", "mint_target"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+secrets:
+  target_db_password:
+    file: ${MINT_TARGET_DB_PASSWORD_FILE:?Set MINT_TARGET_DB_PASSWORD_FILE}
+  target_gateway_token:
+    file: ${MINT_TARGET_GATEWAY_TOKEN_FILE:?Set MINT_TARGET_GATEWAY_TOKEN_FILE}
+  target_ingress_token:
+    file: ${MINT_TARGET_INGRESS_TOKEN_FILE:?Set MINT_TARGET_INGRESS_TOKEN_FILE}
+
+configs:
+  target_caddyfile:
+    content: |
+      {
+        admin off
+      }
+      ${MINT_DOMAIN:?Set MINT_DOMAIN} {
+        encode zstd gzip
+        handle /ws* {
+          reverse_proxy realtime:3001 {
+            header_up X-Forwarded-For {remote_host}
+          }
+        }
+        @ingest path /ingest/*
+        handle @ingest {
+          request_body {
+            max_size 250MB
+          }
+          reverse_proxy hub:8090 {
+            header_up X-Forwarded-For {remote_host}
+            transport http {
+              read_timeout 1h
+              write_timeout 1h
+            }
+          }
+        }
+        handle {
+          reverse_proxy web:3000 {
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Real-IP {remote_host}
+            header_up x-mint-ingress-token {$$MINT_TARGET_INGRESS_TOKEN}
+            header_up x-mint-client-ip {remote_host}
+          }
+        }
+        log {
+          output stdout
+          format console
+        }
+      }
+
+networks:
+  target-data:
+    internal: true
+
+volumes:
+  target_postgres: {}

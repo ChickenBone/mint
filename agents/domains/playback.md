@@ -5,6 +5,7 @@
 ## Boundaries
 
 - Owns the single native two-deck HTMLAudio/Web Audio engine, queue snapshots, player APIs (`/api/player/**`), offline service worker/PWA shell, lyrics providers and the private audio/transcode path.
+- Owns target `@mint/domain-playback` account-owned listening history and private-session persistence, composed through the authenticated API and `@mint/sdk`; the browser UI remains on its existing backend.
 - Does not own catalog search (`library`), collections (`collections`), analysis measurement (`analysis`) or device handoff (`devices`). It consumes their contracts.
 
 ## Invariants
@@ -16,6 +17,7 @@
 - Smart Fades are measured Mint transitions with Off/Fixed/Smart, album-safe boundaries and a `v1` fallback, never "Sweet Fades".
 - Lyrics: on demand, prefer real word timing over line sync over plain text, never synthesize word timing, and never send audio, paths or credentials to providers.
 - The service worker caches only the generic offline shell, never authenticated pages or APIs. Offline content is account-scoped IndexedDB with logout cleanup.
+- History is always scoped to the freshly resolved active account; private-session changes and event deletion establish a boundary that rejects delayed pre-boundary events. Event idempotency is account-scoped, and only verified media files can be recorded.
 
 Details: [playback and library](../playback-and-library.md).
 
@@ -31,11 +33,11 @@ Details: [playback and library](../playback-and-library.md).
 
 - **Scope:** Native player, progressive queues, DSP and Smart Fades, offline, lyrics, listening history and audio delivery.
 - **Read before editing:** [agents/playback-and-library.md](../playback-and-library.md), [agents/design.md](../design.md) (UI: also check desktop/mobile per DESIGN.md).
-- **Imports from:** [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
+- **Imports from:** [`accounts`](accounts.md), [`analysis`](analysis.md), [`catalog`](catalog.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map playback` (exports, line counts, cross-domain import edges).
 
-### Owned files (55)
+### Owned files (64)
 
 - `apps/web/public/` `.gitkeep`, `offline.css`, `offline.html`, `offline.js`, `sw.js`
 - `apps/web/src/app/api/` `player/audio/[id]/route.ts`, `player/catalog/route.ts`, `player/info/[id]/route.ts`, `player/items/route.ts`, `player/lyrics/[id]/matches/route.ts`, `player/lyrics/[id]/route.ts`, `player/offline/logout/route.ts`, `player/offline/route.ts`, `player/queue/[[...path]]/route.ts`, `player/session/route.ts`
@@ -48,10 +50,14 @@ Details: [playback and library](../playback-and-library.md).
 - `packages/core/migrations/` `0008_listening.sql`, `0009_playback_scale.sql`
 - `packages/core/src/` `playback.ts`
 - `packages/core/src/db/` `listening.ts`, `playback-queues.ts`
+- `packages/domain-playback/` `package.json`, `tsconfig.json`
+- `packages/domain-playback/migrations/` `0000_listening_history.sql`
+- `packages/domain-playback/src/` `history-policy.ts`, `history.ts`, `index.ts`, `schema.ts`
+- `packages/domain-playback/tests/` `history-policy.test.ts`, `schema.test.ts`
 
 ### Validate
 
-Owned tests: 10.
+Owned tests: 12.
 
 ```bash
 corepack pnpm --filter @mint/web run typecheck
@@ -60,6 +66,8 @@ corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/listeni
 corepack pnpm --filter @mint/worker run typecheck
 corepack pnpm --filter @mint/worker exec tsx --test --test-force-exit src/playback.integration.test.ts src/playback.test.ts src/player-features.test.ts src/transcode.test.ts
 corepack pnpm --filter @mint/core run typecheck
+corepack pnpm --filter @mint/domain-playback run typecheck
+corepack pnpm --filter @mint/domain-playback exec tsx --test tests/history-policy.test.ts tests/schema.test.ts
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.

@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { clientIp, publicUrl, userAgent } from "./request";
 import { currentNativeContext } from "./native-context";
+import { targetAuthentication, targetAuthenticationEnabled } from "./target-auth";
+import { TargetRequestError } from "./target-api";
 
 export type SessionUser = Pick<typeof schema.users.$inferSelect, "id" | "email" | "name" | "role" | "status">;
 
@@ -28,6 +30,12 @@ export async function createSession(userId: string) {
 export async function destroySession() {
   const jar = await cookies();
   const token = jar.get(SESSION_COOKIE)?.value;
+  if (targetAuthenticationEnabled()) {
+    const { sdk, signal } = await targetAuthentication(true);
+    await sdk.accounts.signOut({ signal });
+    jar.delete(SESSION_COOKIE);
+    return;
+  }
   if (token) await getDb().delete(schema.sessions).where(eq(schema.sessions.id, sha256(token)));
   jar.delete(SESSION_COOKIE);
 }
@@ -36,6 +44,16 @@ export async function destroySession() {
 export const getUser = cache(async (): Promise<SessionUser | null> => {
   const native = currentNativeContext();
   if (native) return native.user;
+  if (targetAuthenticationEnabled()) {
+    try {
+      const { sdk, signal } = await targetAuthentication();
+      return await sdk.accounts.session({ signal });
+    } catch (error) {
+      if (!(error instanceof TargetRequestError) || error.status !== 401) throw error;
+      console.error("TargetAuthInvalidSession");
+      return null;
+    }
+  }
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   if (token.startsWith("mn1.")) return null;

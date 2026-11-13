@@ -16,6 +16,35 @@ const resolve = (yaml, env = {}) =>
     }),
   );
 
+test("target overlay keeps API and database private and wires authenticated ingress", () => {
+  const env = {
+    ...process.env,
+    MINT_DOMAIN: "mint.example.com",
+    MINT_TARGET_DB_PASSWORD_FILE: "/tmp/mint-target-db-fixture",
+    MINT_TARGET_GATEWAY_TOKEN_FILE: "/tmp/mint-target-gateway-fixture",
+    MINT_TARGET_INGRESS_TOKEN_FILE: "/tmp/mint-target-ingress-fixture",
+  };
+  const config = JSON.parse(execFileSync(docker, [
+    "compose", "--project-name", "mint-target-test", "-f", "docker-compose.yml",
+    "-f", "deploy/docker/target-api.compose.yml", "config", "--format", "json",
+  ], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env }));
+  const api = config.services["target-api"];
+  const postgres = config.services["target-postgres"];
+  assert.equal(api.ports, undefined);
+  assert.equal(postgres.ports, undefined);
+  assert.deepEqual(Object.keys(api.networks), ["target-data"]);
+  assert.deepEqual(Object.keys(postgres.networks), ["target-data"]);
+  assert.equal(config.networks["target-data"].internal, true);
+  assert.ok(Object.hasOwn(config.services.web.networks, "target-data"));
+  assert.equal(config.services.web.environment.MINT_TARGET_API_URL, "http://target-api:3002/trpc");
+  assert.equal(config.services.web.environment.MINT_TARGET_TRUSTED_PROXY, "authenticated-ingress");
+  assert.equal(api.environment.MINT_API_PUBLIC_AUTH_PROXY, "gateway");
+  assert.ok(!api.volumes?.some(mount => mount.target === "/music"));
+  const caddy = config.configs.target_caddyfile.content;
+  assert.match(caddy, /header_up x-mint-ingress-token \{\$\$MINT_TARGET_INGRESS_TOKEN\}/);
+  assert.match(caddy, /header_up x-mint-client-ip \{remote_host\}/);
+});
+
 test("Cobalt opt-in image and client preserve private defaults across CLI, NAS and volunteer setup", () => {
   const cli = readFileSync(new URL("../../docker-compose.yml", import.meta.url), "utf8");
   const agent = readFileSync(new URL("../../docker-compose.agent.yml", import.meta.url), "utf8");

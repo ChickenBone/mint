@@ -156,8 +156,8 @@
       "id": "accounts",
       "surface": "server",
       "title": "Accounts domain",
-      "summary": "Target account policy, browser sessions, authentication ports and fresh account schema",
-      "keywords": ["domain accounts", "account policy", "browser session lookup", "account authentication", "account schema", "mint/domain-accounts"],
+      "summary": "Target account policy, browser sessions, Argon2 binding, optional initial-admin bootstrap and fresh account schema",
+      "keywords": ["domain accounts", "account policy", "browser session lookup", "account authentication", "Argon2", "Argon2 binding", "initial admin bootstrap", "account schema", "mint/domain-accounts"],
       "guides": ["agents/architecture.md"],
       "paths": ["packages/domain-accounts/**"],
       "validate": ["corepack pnpm --filter @mint/domain-accounts run typecheck", "corepack pnpm --filter @mint/domain-accounts test"]
@@ -165,7 +165,7 @@
     {
       "id": "platform",
       "title": "Platform core",
-      "summary": "Shared schemas, database and platform primitives, workspace plumbing, and target API composition/transport",
+      "summary": "Shared database primitives, central migrations, local pg-boss jobs, durable PostgreSQL events and public cache, workspace plumbing and target API composition",
       "keywords": [
         "schema",
         "migration",
@@ -175,6 +175,11 @@
         "redis",
         "bullmq",
         "job queue",
+        "pg-boss",
+        "durable job receipt",
+        "job outbox",
+        "Postgres replay",
+        "durable replay log",
         "crypto",
         "signing",
         "env",
@@ -186,6 +191,8 @@
         "api server",
         "Fastify",
         "tRPC",
+        "initial admin bootstrap",
+        "Argon2 runtime bootstrap",
         "read cache",
         "public read cache",
         "public-cache"
@@ -207,6 +214,7 @@
         "apps/worker/tsconfig.json",
         "apps/worker/src/index.ts",
         "apps/worker/src/config.ts",
+        "apps/worker/src/local-job*.ts",
         "apps/worker/src/http.ts",
         "apps/worker/src/log.ts",
         "apps/worker/src/queues.ts",
@@ -224,9 +232,11 @@
       ],
       "validate": [
         "corepack pnpm --filter @mint/platform run typecheck",
-        "corepack pnpm --filter @mint/platform exec tsx --test tests/migrations.test.ts tests/rate-limit.test.ts tests/startup-migrations.test.ts",
+        "corepack pnpm --filter @mint/platform exec tsx --test tests/migrations.test.ts tests/rate-limit.test.ts tests/startup-migrations.test.ts tests/jobs.test.ts tests/events.test.ts tests/public-cache.test.ts",
         "corepack pnpm --filter @mint/api run typecheck",
-        "corepack pnpm --filter @mint/api exec tsx --test tests/session.test.ts"
+        "corepack pnpm --filter @mint/api exec tsx --test tests/session.test.ts tests/main.integration.test.ts tests/runtime.integration.test.ts",
+        "corepack pnpm --filter @mint/worker run typecheck",
+        "corepack pnpm --filter @mint/worker exec tsx --test src/local-job-config.test.ts src/local-job-runtime.integration.test.ts src/local-job-main.integration.test.ts"
       ]
     },
     {
@@ -294,14 +304,15 @@
         "packages/core/src/db/playback-queues.ts",
         "packages/core/src/db/listening.ts",
         "packages/core/migrations/0008_listening.sql",
-        "packages/core/migrations/0009_playback_scale.sql"
+        "packages/core/migrations/0009_playback_scale.sql",
+        "packages/domain-playback/**"
       ]
     },
     {
       "id": "library",
       "surface": "server",
       "title": "Library catalog and metadata",
-      "summary": "Target read-only root/media identity, plus existing bounded browsing/search, artwork, artist metadata and Plex indexing",
+      "summary": "Target read-only root/media identity and bounded scanner, plus existing browsing/search, artwork, artist metadata and Plex indexing",
       "keywords": [
         "library",
         "catalog",
@@ -316,6 +327,8 @@
         "index",
         "indexing",
         "metadata",
+        "root scan",
+        "read-only scanner",
         "musicbrainz artist",
         "wikipedia",
         "listenbrainz"
@@ -369,8 +382,12 @@
         "docs/catalog-connection.md"
       ],
       "validate": [
+        "corepack pnpm --filter @mint/web run typecheck",
+        "corepack pnpm --filter @mint/web run lint",
+        "corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/artwork.test.ts tests/catalog-connection.test.ts",
+        "corepack pnpm --filter @mint/worker run typecheck",
         "corepack pnpm --filter @mint/domain-library run typecheck",
-        "corepack pnpm --filter @mint/domain-library exec tsx --test tests/schema.test.ts"
+        "corepack pnpm --filter @mint/domain-library exec tsx --test tests/audio-probe.integration.test.ts tests/path-access.integration.test.ts tests/playback-media.integration.test.ts tests/repository.integration.test.ts tests/schema.test.ts tests/scanner.test.ts tests/scanner-repository.integration.test.ts tests/verify-media-file.integration.test.ts"
       ]
     },
     {
@@ -793,14 +810,14 @@
       "id": "catalog",
       "surface": "server",
       "title": "Catalog metadata and schemas",
-      "summary": "Standalone metadata aggregation and reconciliation, plus the target recording schema and migration",
-      "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "embedding atlas", "domain catalog", "mint/domain-catalog"],
+      "summary": "Standalone metadata aggregation, target recording schema, read-only reconciliation, startup seed receipts and bounded ListenBrainz observations",
+      "keywords": ["standalone catalog", "metadata crawler", "data aggregation", "popularity graph", "vector database", "qdrant", "catalog service", "musicbrainz crawler", "listenbrainz", "catalog embeddings", "catalog dashboard", "catalog console", "youtube crawler", "youtube music crawler", "recording reconciliation", "cross-provider matching", "startup seed planner", "catalog seed receipt", "embedding atlas", "domain catalog", "mint/domain-catalog"],
       "ui": true,
       "guides": ["services/catalog/README.md"],
       "paths": ["services/catalog/**", "packages/domain-catalog/**"],
       "validate": [
         "corepack pnpm --filter @mint/domain-catalog run typecheck",
-        "corepack pnpm --filter @mint/domain-catalog exec tsx --test tests/schema.test.ts",
+        "corepack pnpm --filter @mint/domain-catalog exec tsx --test tests/listenbrainz-source.test.ts tests/reconciliation.test.ts tests/schema.test.ts tests/seed-ingestion.test.ts tests/seed-ingestion.integration.test.ts tests/startup-seed-store.test.ts tests/startup-seeding.test.ts",
         "python -m pytest services/catalog/tests",
         "python -m ruff check services/catalog",
         "node --test services/catalog/tests/*.test.cjs",

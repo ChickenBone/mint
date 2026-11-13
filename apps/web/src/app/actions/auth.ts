@@ -11,6 +11,10 @@ import { createSession, destroySession } from "@/lib/auth";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request";
 import { authenticateAccount } from "@/lib/account-login";
+import { BROWSER_SESSION_COOKIE_NAME } from "@mint/contracts";
+import { cookies } from "next/headers";
+import { publicUrl } from "@/lib/request";
+import { authenticationFailure, targetAuthentication, targetAuthenticationEnabled } from "@/lib/target-auth";
 
 export interface FormState {
   error?: string;
@@ -31,6 +35,22 @@ export async function login(_prev: FormState, form: FormData): Promise<FormState
   const values = { email: String(form.get("email") ?? "").slice(0, 200) };
   if (!parsed.success) return { error: "Enter your email and password.", values };
   const { email, password } = parsed.data;
+  if (targetAuthenticationEnabled()) {
+    try {
+      const { sdk, signal } = await targetAuthentication(true, true);
+      const result = await sdk.accounts.signIn({ email, password }, { signal });
+      if ("error" in result) return { error: result.error, values };
+      (await cookies()).set(BROWSER_SESSION_COOKIE_NAME, result.token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production" || publicUrl().startsWith("https://"),
+        sameSite: "lax", path: "/", expires: new Date(result.expiresAt),
+      });
+    } catch (error) {
+      return { ...authenticationFailure(error), values };
+    }
+    const next = parsed.data.next;
+    redirect(next && next.startsWith("/app") ? next : "/app");
+  }
   const ip = await clientIp();
   const result = await authenticateAccount(email, password, ip);
   if ("error" in result) return { error: result.error, values };
@@ -62,6 +82,15 @@ export async function requestAccess(_prev: FormState, form: FormData): Promise<F
     const fieldErrors: Record<string, string> = {};
     for (const issue of parsed.error.issues) fieldErrors[String(issue.path[0])] ??= issue.message;
     return { fieldErrors, values };
+  }
+  if (targetAuthenticationEnabled()) {
+    try {
+      const { sdk, signal } = await targetAuthentication(true, true);
+      const result = await sdk.accounts.requestAccess(parsed.data, { signal });
+      return "ok" in result ? result : { ...result, values };
+    } catch (error) {
+      return { ...authenticationFailure(error), values };
+    }
   }
   const ip = await clientIp();
   if (!(await rateLimit(`request:ip:${ip}`, 5, 3600))) return { error: "Too many requests from your network. Try again in an hour.", values };

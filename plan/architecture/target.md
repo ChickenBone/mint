@@ -15,17 +15,37 @@ separate runtime-validating `@mint/sdk` now exist. The API requires and checks
 the dedicated gateway token; the SDK requires it explicitly and forwards only
 the optional canonical session token. Its session and approval operations use a
 fresh persisted session through the Accounts repository. The runtime requires
-explicit settings and notification/error bindings; it is not a standalone
-executable. Library provides persisted verification and bounded listing/search,
-with a confined Linux opener and full decode verification. The API, SDK and
+explicit settings and notification/error bindings. A standalone entry point and
+validated environment configuration already existed at the selected baseline;
+deployment packaging and secret rotation remain separate gates. Library provides
+persisted verification and bounded listing/search, with a confined Linux opener
+and full decode verification. Its original-media playback reader also existed at
+baseline and is not authorized HTTP streaming. The API, SDK and
 server-only Next.js session, approval, Library GET and member-status POST routes
 are connected and accepted as bounded gateway slices. Admin account listing
 and role changes are accepted through the SDK and HTTP API against PostgreSQL,
 with fresh persisted active-admin authorization; they are not yet integrated
 into the existing admin UI. The existing
-UI/auth/actions still use the legacy backend; automated imports, preserved target
-UI actions and full Catalog behavior are not implemented.
+UI/auth/actions still use the legacy backend. Explicit bounded root-prefix import
+and read-only Catalog reconciliation/seed scheduling services now exist, plus
+bounded ListenBrainz weekly-global source observations without canonical writes.
+Playback now owns a bounded account-scoped history API/SDK slice: record only
+verified media, list at most 101 entries per page, delete one/all, and read or
+set private-session state. Fresh persisted sessions authorize every request;
+idempotency is account-scoped, and private-session/deletion transactions fence
+stale client events without exposing history to other accounts.
+However, automatic Library import lifecycle, preserved target UI actions and full Catalog behavior
+are not implemented.
 Neither Expo app nor `@mint/client` has changed.
+
+Platform also provides a callable local pg-boss runtime that runs the central
+migration set before pg-boss manages its own schema, and an audience-scoped
+PostgreSQL event log with bounded replay and a durable replay floor. These
+jobs now have a separate opt-in ListenBrainz-only worker composition; domain
+outboxes, event producers and WebSocket reconnect remain unimplemented.
+Queue singleton keys deduplicate
+only while work is queued, retrying or active; they are not durable receipts.
+Event callers still own authorization, payload validation and retention.
 
 Audio-copy currently composes `apps/server`, Expo `apps/listener`, Vite
 `apps/admin`, and `contracts`, `db-core`, `domain-app`, `domain-catalog`,
@@ -52,7 +72,7 @@ packages/
   domain-collections/       likes, playlists, folders, invitations and discovery
   domain-providers/         charts, provider account links and source-managed imports
   domain-acquisition/       explicit requests, source choice, intent and durable work
-  domain-playback/          server queues, media grants, history and lyrics
+  domain-playback/          server queues, media grants, account-owned history and lyrics
   domain-analysis/          measured analysis, leases and backfill lifecycle
   domain-devices/           registry, handoff and single-output parties
   domain-workers/           remote-worker capability contracts; execution deferred
@@ -136,7 +156,12 @@ requires PostgreSQL to block deletion while media-file references remain,
 without cascading media deletion, and allows deletion once no references remain.
 No administrator workflow for moving, removing or unlinking media files is
 selected. This identity foundation does not complete the Library schema or
-select management/deletion UI, deployment mounts or scanner implementation.
+select management/deletion UI, deployment mounts or automated scan lifecycle.
+The bounded scanner supports opt-in private-worker continuation, with callers
+persisting checkpoints and serializing scans per root. Active-prefix replay is
+bounded, not seek-efficient; it supplies neither snapshots nor full fairness,
+scheduling or freshness reconciliation. See
+[continuation limits](../migration/compatibility.md#library-scan-continuation).
 The implemented Linux confined opener and trusted local verification compose
 persisted paths with bounded ffprobe and full ffmpeg decode, not playback grants
 or universal format and filesystem timeout guarantees. D44 uses persisted verified
@@ -146,7 +171,8 @@ identities, and optional tags/analysis do not block verified audio; persisted
 verification is not a playback grant. D45 displays imported file tags first,
 then confirmed Catalog metadata, then filename/unknown fallback, without
 rewriting originals or inferring recording identity from filenames. These
-decisions do not specify availability freshness or an automated scanner. D33
+decisions do not specify availability freshness or an automated scan lifecycle.
+D33
 moves only the account/session/approval work needed for this slice into P1;
 other account/runtime work remains in P2. D34-D35 preserve current
 Accounts-owned user/session fields, approval
@@ -179,9 +205,14 @@ optional canonical session cookie. Neither service secret nor header conveys
 user identity; the API resolves identity solely from the persisted session.
 Keep client-IP forwarding disabled until ingress trust is settled. A shared
 secret does not make browser-supplied forwarded-IP headers trustworthy.
-Secret generation/rotation and lifecycle, standalone startup/deployment wiring,
-TLS/proxy settings and ingress trust
-rules remain unselected or unimplemented.
+The standalone API reads explicit database, listener, migration, gateway-token and
+notification-sink configuration. Optional initial-admin bootstrap uses
+`MINT_API_BOOTSTRAP_ADMIN_EMAIL`, `MINT_API_BOOTSTRAP_ADMIN_NAME` and
+`MINT_API_BOOTSTRAP_ADMIN_PASSWORD` as an all-or-none set; it runs after
+migrations and before listen, inserts only when the case-insensitive email is
+absent, and uses the Accounts Argon2 binding. It does not expose login or
+access-request routes. Secret generation/rotation, deployment wiring, TLS/proxy
+settings and ingress trust rules remain unselected or unimplemented.
 
 Domain schemas can share PostgreSQL; schema boundaries do not imply independent
 databases. PostgreSQL foreign keys across domain and schema boundaries are
@@ -195,10 +226,16 @@ It obtains a session-level advisory lock using a dedicated pool client also
 passed to the official migrator, and restores/releases the lock safely. The
 stable two-integer key is `[0x4d494e54, 0x4d494752]`. The central journal now
 maps platform rate limits, Accounts, Catalog, Library identity and Library
-listing migrations, in that order.
-The callable API runtime invokes it before listening; worker composition and packaged migration artifacts,
-timeout defaults, pool budgets, environment defaults and deployment changes
-remain unimplemented or unselected. Domain SQL for `platform.rate_limits`
+listing, then platform event-log/public-cache, Catalog seed-receipt and bounded
+ListenBrainz ingestion migrations.
+The API invokes it before
+listening; the callable local job runtime invokes it before pg-boss manages its
+own schema. Central tag `0009` adds Playback's account-owned listening-history
+tables after the Accounts and Library prerequisites. The separate opt-in
+ListenBrainz worker now composes this path with
+explicit settings and build/start scripts; its artifact must retain the central
+journal and mapped SQL through `0008`. Broader task composition, representative
+pool/timeout tuning and image/deployment integration remain gates. Domain SQL for `platform.rate_limits`
 creates the `platform` schema, so a separate history schema avoids a collision.
 Donor no-cross-schema SQL is a
 documented contract, not established raw SQL enforcement; Mint's selected
@@ -211,10 +248,11 @@ must remain safely importable; do not reset a running installation or rewrite fi
 
 The stack and separate API/local-worker topology are selected. The platform
 migration helper and history/journal mechanism are invoked by the callable API
-runtime; validate packaged migration execution and cross-process startup through
-real API/worker composition. API/SDK listing and its new Next.js route do not
-provide the unchanged member UI listing flow. Transaction,
-queue/realtime/cache/vector semantics still require implementation evidence.
+and local job runtimes; validate packaged migration execution and cross-process
+startup through real API/worker composition. API/SDK listing and its new Next.js route do not
+provide the unchanged member UI listing flow. The public-read-cache primitive
+exists, but feature-specific cache policy/integration, queue/realtime/vector
+semantics and end-to-end transaction recovery still require implementation evidence.
 See [replacement responsibilities and retirement gates](plex-free.md).
 Prefer one reviewed decision at a time with deployment, cache,
 job receipt, schema fingerprint and client compatibility evidence. Preserve

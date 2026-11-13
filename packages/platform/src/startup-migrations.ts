@@ -19,6 +19,11 @@ const files = [
   { tag: "0002_catalog_recordings", path: "domain-catalog/migrations/0000_recordings.sql" },
   { tag: "0003_library_identity", path: "domain-library/migrations/0000_library_identity.sql" },
   { tag: "0004_library_listing", path: "domain-library/migrations/0001_library_listing.sql" },
+  { tag: "0005_platform_events", path: "platform/migrations/0001_events.sql" },
+  { tag: "0006_platform_public_read_cache", path: "platform/migrations/0002_public_read_cache.sql" },
+  { tag: "0007_catalog_startup_seed_receipts", path: "domain-catalog/migrations/0001_startup_seed_receipts.sql" },
+  { tag: "0008_catalog_listenbrainz_seed_ingestion", path: "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql" },
+  { tag: "0009_playback_listening_history", path: "domain-playback/migrations/0000_listening_history.sql" },
 ] as const;
 
 /**

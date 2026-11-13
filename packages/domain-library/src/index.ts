@@ -19,6 +19,8 @@ export {
   type LibraryFileListItem,
   type LibraryFilePage,
   type LibraryListInput,
+  type LibraryRecheckCandidates,
+  type LibraryRecheckCandidatesInput,
   type LibraryRepository,
   type LibraryVerificationTarget,
   type LibraryPlaybackTarget,
@@ -35,9 +37,20 @@ export {
 export {
   LibraryMediaFileNotFoundError,
   LibraryMediaMetadataWriteError,
+  recheckLibraryMediaFiles,
   verifyLibraryMediaFile,
   type LibraryMediaVerificationResult,
+  type LibraryRecheckOptions,
+  type LibraryRecheckResult,
 } from "./verify-media-file";
+export {
+  createLibraryScanRepository,
+  LIBRARY_SCAN_AUDIO_EXTENSIONS,
+  scanLibraryRoot,
+  type LibraryScanOptions,
+  type LibraryScanRepository,
+  type LibraryScanResult,
+} from "./scanner";
 export {
   LIBRARY_MEDIA_READ_MAX_BYTES,
   LibraryMediaRangeError,

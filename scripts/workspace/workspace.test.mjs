@@ -28,6 +28,9 @@ const catalogPackage = JSON.parse(readFileSync(path.join(catalogRoot, "package.j
 const libraryRoot = path.join(root, "packages/domain-library");
 const librarySource = path.join(libraryRoot, "src");
 const libraryPackage = JSON.parse(readFileSync(path.join(libraryRoot, "package.json"), "utf8"));
+const playbackRoot = path.join(root, "packages/domain-playback");
+const playbackSource = path.join(playbackRoot, "src");
+const playbackPackage = JSON.parse(readFileSync(path.join(playbackRoot, "package.json"), "utf8"));
 const platformRoot = path.join(root, "packages/platform");
 const platformSource = path.join(platformRoot, "src");
 const platformPackage = JSON.parse(readFileSync(path.join(platformRoot, "package.json"), "utf8"));
@@ -45,6 +48,7 @@ const expectedProjectNames = [
   "@mint/domain-accounts",
   "@mint/domain-catalog",
   "@mint/domain-library",
+  "@mint/domain-playback",
   "@mint/platform",
   "@mint/realtime",
   "@mint/sdk",
@@ -64,6 +68,7 @@ const expectedImporters = [
   "packages/domain-accounts",
   "packages/domain-catalog",
   "packages/domain-library",
+  "packages/domain-playback",
   "packages/platform",
   "packages/sdk",
 ];
@@ -87,6 +92,7 @@ const rootTargets = {
     "@mint/domain-accounts:typecheck",
     "@mint/domain-catalog:typecheck",
     "@mint/domain-library:typecheck",
+    "@mint/domain-playback:typecheck",
     "@mint/platform:typecheck",
     "@mint/sdk:typecheck",
     "@mint/realtime:typecheck",
@@ -104,6 +110,7 @@ const rootTargets = {
     "@mint/domain-accounts:test",
     "@mint/domain-catalog:test",
     "@mint/domain-library:test",
+    "@mint/domain-playback:test",
     "@mint/platform:test",
     "@mint/sdk:test",
     "@mint/agent:test",
@@ -151,8 +158,7 @@ function publicPackageExports(name, packageRoot = clientRoot) {
     assert.equal(catalogPackage.name, name);
     return exportKeys(catalogPackage.exports);
   }
-  const manifest = JSON.parse(readFileSync(createRequire(path.join(packageRoot, "package.json"))
-    .resolve(`${name}/package.json`), "utf8"));
+  const manifest = JSON.parse(readFileSync(path.join(packageRoot, "node_modules", name, "package.json"), "utf8"));
   return exportKeys(manifest.exports);
 }
 
@@ -186,7 +192,10 @@ function serverFreeSourceFiles(dir) {
   });
 }
 
-function checkServerFreeSource(file, source, sourceFiles, dependencies, exportsByPackage, sourceRoot, allowNodeBuiltins = false) {
+function checkServerFreeSource(
+  file, source, sourceFiles, dependencies, exportsByPackage, sourceRoot,
+  allowNodeBuiltins = false, typeDependencies = dependencies,
+) {
   const parsed = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
   const errors = parsed.parseDiagnostics.map((diagnostic) =>
     `${file}: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, " ")}`);
@@ -194,7 +203,7 @@ function checkServerFreeSource(file, source, sourceFiles, dependencies, exportsB
     const position = parsed.getLineAndCharacterOfPosition(node.getStart(parsed));
     errors.push(`${file}:${position.line + 1}:${position.character + 1}: ${message}`);
   };
-  const checkSpecifier = (node) => {
+  const checkSpecifier = (node, allowedDependencies = dependencies) => {
     if (!node || !(ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
       report(node ?? parsed, "module specifier must be a static literal");
       return;
@@ -220,7 +229,7 @@ function checkServerFreeSource(file, source, sourceFiles, dependencies, exportsB
       return;
     }
     if (allowNodeBuiltins && nodeBuiltins.has(specifier)) return;
-    if (![...dependencies].some((name) =>
+    if (![...allowedDependencies].some((name) =>
       isPublicExport(specifier, name, exportsByPackage.get(name) ?? ["."]))) {
       report(node, `dependency is not a public ${allowNodeBuiltins ? "server package" : "server-free"} dependency: ${specifier}`);
     }
@@ -241,12 +250,18 @@ function checkServerFreeSource(file, source, sourceFiles, dependencies, exportsB
   const moduleLoaders = new Set(["require", "require.resolve", "module.require", "globalThis.require",
     "process.mainModule.require", "globalThis.process.mainModule.require"]);
   const visit = (node) => {
-    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
-      if (node.moduleSpecifier) checkSpecifier(node.moduleSpecifier);
+    if (ts.isImportDeclaration(node)) {
+      if (node.moduleSpecifier) {
+        checkSpecifier(node.moduleSpecifier, node.importClause?.isTypeOnly ? typeDependencies : dependencies);
+      }
+    } else if (ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier) {
+        checkSpecifier(node.moduleSpecifier, node.isTypeOnly ? typeDependencies : dependencies);
+      }
     } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      checkSpecifier(node.moduleReference.expression);
+      checkSpecifier(node.moduleReference.expression, node.isTypeOnly ? typeDependencies : dependencies);
     } else if (ts.isImportTypeNode(node)) {
-      checkSpecifier(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : node.argument);
+      checkSpecifier(ts.isLiteralTypeNode(node.argument) ? node.argument.literal : node.argument, typeDependencies);
     } else if (ts.isCallExpression(node)) {
       const expression = node.expression;
       const name = memberName(expression);
@@ -284,12 +299,20 @@ test("API manifest and source respect the public server composition boundary", (
   assert.deepEqual(apiPackage.dependencies, {
     "@mint/contracts": "workspace:*",
     "@mint/domain-accounts": "workspace:*",
+    "@mint/domain-catalog": "workspace:*",
+    "@mint/domain-library": "workspace:*",
+    "@mint/domain-playback": "workspace:*",
+    "@mint/platform": "workspace:*",
     "@trpc/server": "11.28.0",
+    "drizzle-orm": "^0.45.4",
     fastify: "5.12.8",
+    pg: "^8.16.0",
   });
   assert.deepEqual(Object.keys(apiPackage.optionalDependencies ?? {}), []);
   assert.deepEqual(Object.keys(apiPackage.peerDependencies ?? {}), []);
   assert.deepEqual(apiPackage.scripts, {
+    start: "node --import tsx src/main.ts",
+    dev: "node --import tsx src/main.ts",
     typecheck: "tsc --noEmit",
     test: "tsx --test tests/*.test.ts",
   });
@@ -322,6 +345,8 @@ test("API manifest and source respect the public server composition boundary", (
     'import { initTRPC } from "@trpc/server";',
     'import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";',
     'import Fastify from "fastify";',
+    'import pg from "pg";',
+    'import { runStartupMigrations } from "@mint/platform";',
   ]) {
     assert.deepEqual(check(fixture, source), [], source);
   }
@@ -329,7 +354,7 @@ test("API manifest and source respect the public server composition boundary", (
     'import "@mint/core";', 'import "@mint/client";', 'import "next";',
     'import "@mint/domain-accounts/src/session-lookup";',
     'import "@mint/contracts/src/accounts";', 'import "@trpc/server/src/private";',
-    'import "fastify/lib/private";', 'import "pg";', 'import "@mint/platform";',
+    'import "fastify/lib/private";', 'import "@mint/platform/src/private";',
     'import "../../web/src/lib/auth";', 'import(name);',
   ]) {
     assert.notDeepEqual(check(fixture, source), [], source);
@@ -339,7 +364,9 @@ test("API manifest and source respect the public server composition boundary", (
 test("platform manifest and source respect the infrastructure dependency boundary", () => {
   assert.equal(platformPackage.name, "@mint/platform");
   assert.deepEqual(platformPackage.exports, { ".": "./src/index.ts" });
-  assert.deepEqual(platformPackage.dependencies, { "drizzle-orm": "^0.45.4", pg: "^8.16.0" });
+  assert.deepEqual(platformPackage.dependencies, {
+    "drizzle-orm": "^0.45.4", pg: "^8.16.0", "pg-boss": "12.38.2",
+  });
   assert.deepEqual(Object.keys(platformPackage.optionalDependencies ?? {}), []);
   assert.deepEqual(Object.keys(platformPackage.peerDependencies ?? {}), []);
 
@@ -392,22 +419,29 @@ test("catalog manifest and source respect the server domain boundary", () => {
   assert.deepEqual(config.include, ["src/**/*.ts", "tests/**/*.ts"]);
 
   const dependencies = new Set(Object.keys(catalogPackage.dependencies));
-  const drizzleManifest = JSON.parse(readFileSync(path.join(catalogRoot, "node_modules/drizzle-orm/package.json"), "utf8"));
-  const exportsByPackage = new Map([["drizzle-orm", exportKeys(drizzleManifest.exports)]]);
+  const typeDependencies = new Set([...dependencies, ...Object.keys(catalogPackage.devDependencies)]);
+  const exportsByPackage = new Map([...typeDependencies].map((name) =>
+    [name, exportKeys(JSON.parse(readFileSync(path.join(catalogRoot, "node_modules", name, "package.json"), "utf8")).exports)]));
   const files = serverFreeSourceFiles(catalogSource);
   assert.ok(files.includes(path.join(catalogSource, "index.ts")));
   const sourceFiles = new Set(files);
   const check = (file, source) =>
-    checkServerFreeSource(file, source, sourceFiles, dependencies, exportsByPackage, catalogSource, true);
+    checkServerFreeSource(file, source, sourceFiles, dependencies, exportsByPackage, catalogSource, true, typeDependencies);
   assert.deepEqual(files.flatMap((file) => check(file, readFileSync(file, "utf8"))), []);
   const fixture = path.join(catalogSource, "index.ts");
   for (const source of [
     'import { sql } from "drizzle-orm";', 'import { pgSchema } from "drizzle-orm/pg-core";',
     'export { recordings } from "./schema";',
+    'import type { LocalJobRuntime } from "@mint/platform";',
+    'export type { LocalJobRuntime } from "@mint/platform";',
+    'type Runtime = import("@mint/platform").LocalJobRuntime;',
+    'import type { Pool } from "pg";',
   ]) assert.deepEqual(check(fixture, source), [], source);
   for (const source of [
     'import "@mint/core";', 'import "@mint/domain-accounts";', 'import "@mint/platform";',
     'import "pg";', 'import "next";', 'import "drizzle-orm/src/private";',
+    'import type { LocalJobRuntime } from "@mint/platform/src/private";',
+    'export { LocalJobRuntime } from "@mint/platform";', 'import("@mint/platform");',
     'import "../../core/src/index";', 'import "../../../apps/web/src/lib/auth";', 'import(name);',
   ]) assert.notDeepEqual(check(fixture, source), [], source);
 });
@@ -467,7 +501,9 @@ test("library manifest and source respect the server domain boundary", () => {
 test("accounts manifest and source respect the server domain boundary", () => {
   assert.equal(accountsPackage.name, "@mint/domain-accounts");
   assert.deepEqual(accountsPackage.exports, { ".": "./src/index.ts" });
-  assert.deepEqual(accountsPackage.dependencies, { "@mint/contracts": "workspace:*", "drizzle-orm": "^0.45.4" });
+  assert.deepEqual(accountsPackage.dependencies, {
+    "@mint/contracts": "workspace:*", "@node-rs/argon2": "^2.2.2", "drizzle-orm": "^0.45.4",
+  });
   assert.deepEqual(Object.keys(accountsPackage.optionalDependencies ?? {}), []);
   assert.deepEqual(Object.keys(accountsPackage.peerDependencies ?? {}), []);
 
@@ -499,6 +535,60 @@ test("accounts manifest and source respect the server domain boundary", () => {
   ]) {
     assert.notDeepEqual(check(fixture, source), [], source);
   }
+});
+
+test("playback manifest and source respect the server domain boundary", () => {
+  assert.equal(playbackPackage.name, "@mint/domain-playback");
+  assert.equal(playbackPackage.private, true);
+  assert.equal(playbackPackage.type, "module");
+  assert.deepEqual(playbackPackage.exports, { ".": "./src/index.ts" });
+  assert.deepEqual(playbackPackage.dependencies, {
+    "@mint/contracts": "workspace:*",
+    "@mint/domain-accounts": "workspace:*",
+    "@mint/domain-catalog": "workspace:*",
+    "@mint/domain-library": "workspace:*",
+    "drizzle-orm": "^0.45.4",
+  });
+  assert.deepEqual(playbackPackage.devDependencies, {
+    "@types/node": "^22.15.0",
+    "@types/pg": "^8.15.0",
+    pg: "^8.16.0",
+    typescript: "^5.9.3",
+    tsx: "^4.23.15",
+  });
+  assert.deepEqual(playbackPackage.scripts, {
+    typecheck: "tsc --noEmit", test: "tsx --test tests/*.test.ts",
+  });
+  assert.deepEqual(Object.keys(playbackPackage.optionalDependencies ?? []), []);
+  assert.deepEqual(Object.keys(playbackPackage.peerDependencies ?? []), []);
+  const config = JSON.parse(readFileSync(path.join(playbackRoot, "tsconfig.json"), "utf8"));
+  assert.equal(config.extends, "../../tsconfig.base.json");
+  assert.deepEqual(config.include, ["src/**/*.ts", "tests/**/*.ts"]);
+
+  const dependencies = new Set(Object.keys(playbackPackage.dependencies));
+  const exportsByPackage = new Map([...dependencies].map((name) =>
+    [name, publicPackageExports(name, playbackRoot)]));
+  const files = serverFreeSourceFiles(playbackSource);
+  assert.ok(files.includes(path.join(playbackSource, "index.ts")));
+  const sourceFiles = new Set(files);
+  const check = (file, source) =>
+    checkServerFreeSource(file, source, sourceFiles, dependencies, exportsByPackage, playbackSource, true);
+  assert.deepEqual(files.flatMap((file) => check(file, readFileSync(file, "utf8"))), []);
+
+  const fixture = path.join(playbackSource, "index.ts");
+  for (const source of [
+    'import { recordings } from "@mint/domain-catalog";',
+    'import { mediaFiles } from "@mint/domain-library";',
+    'import type { ListeningHistoryPage } from "@mint/contracts";',
+    'import { pgSchema } from "drizzle-orm/pg-core";',
+    'export { listeningHistory } from "./schema";',
+  ]) assert.deepEqual(check(fixture, source), [], source);
+  for (const source of [
+    'import "@mint/domain-catalog/src/schema";', 'import "@mint/platform";',
+    'import "@mint/core";', 'import "pg";', 'import "next";',
+    'import "drizzle-orm/src/private";', 'import "../../core/src/index";',
+    'import "../../../apps/web/src/lib/auth";', 'import(name);',
+  ]) assert.notDeepEqual(check(fixture, source), [], source);
 });
 
 for (const [packageName, sourceRoot, manifest] of [

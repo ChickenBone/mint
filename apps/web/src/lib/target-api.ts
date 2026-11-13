@@ -3,6 +3,7 @@ import {
   BROWSER_SESSION_COOKIE_NAME, browserSessionTokenSchema, gatewayTokenSchema,
 } from "@mint/contracts";
 import { createMintSdk, MintSdkError } from "@mint/sdk";
+import { trustedIngressIp, TrustedIngressError } from "./trusted-ingress";
 
 class TargetConfigurationError extends Error {}
 
@@ -55,14 +56,19 @@ function sessionToken(request: Request): string | undefined {
   return token;
 }
 
-/** Server-only binding: never pass request headers, identity or client IP to the SDK. */
-export function targetApi(request: Request, mutation = false) {
+/** Only explicitly validated credentials and ingress evidence cross this boundary. */
+export function targetApi(request: Request, mutation = false, publicAuthentication = false) {
   const config = configuration();
   if (mutation && request.headers.get("origin") !== config.origin) {
     throw new TargetRequestError("Forbidden origin.", 403);
   }
   const sdk = createMintSdk({
-    url: config.url, gatewayToken: config.gatewayToken, sessionToken: sessionToken(request),
+    url: config.url, gatewayToken: config.gatewayToken,
+    sessionToken: publicAuthentication ? undefined : sessionToken(request),
+    ...(publicAuthentication ? {
+      trustedClientIp: trustedIngressIp(request.headers),
+      userAgent: request.headers.get("user-agent")?.slice(0, 300),
+    } : {}),
   });
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]);
   return { sdk, signal };
@@ -73,7 +79,7 @@ export function targetFailure(error: unknown): Response {
     return targetResponse({ error: error.message }, error.status);
   }
   // Only fixed categories are logged; upstream errors can contain private connection data.
-  const configurationFailure = error instanceof TargetConfigurationError;
+  const configurationFailure = error instanceof TargetConfigurationError || error instanceof TrustedIngressError;
   console.error(configurationFailure ? "TargetApiConfigurationError" : "TargetApiRequestError");
   return targetResponse(
     { error: "Target API unavailable." },

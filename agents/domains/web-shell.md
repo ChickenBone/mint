@@ -6,7 +6,7 @@
 
 - Browser consumer UX is frozen, maintenance-only. Preserve existing routes/listening and security/backend compatibility fixes; Next.js backend/API and admin tools continue. Native mobile governs future consumer design, not a parallel browser redesign.
 - Owns root and app layouts, sidebar and mobile navigation, `components/ui/**`, `globals.css` tokens, auth/session and account actions, public landing/login/request-access/activity pages, Settings, Manage and Admin views, and shared view helpers (`core/src/views.ts`, `stats.ts`).
-- A server-only target SDK binding and same-origin session, approval, Library and member-status routes are implemented and accepted as bounded gateway slices. Existing layouts, auth, actions and listener/admin UI still use the legacy backend: these routes do not establish a migrated UI.
+- A server-only target SDK binding and same-origin session, approval, Library and member-status routes are implemented as bounded gateway slices. Configuring any `MINT_TARGET_*` auth setting switches existing login/request-access actions and browser identity/logout to the target, failing closed on partial configuration; no settings preserves legacy behavior. Native request context remains unchanged. Listener/admin data and layouts are not thereby migrated.
 - Feature panels hosted in Settings or Manage (devices, workers, analysis, sync) belong to their feature domains. This domain owns the frame, not the panel internals.
 - Owns member issue reports: `lib/issue-report-model.ts` (client-safe input contract), `lib/issue-reports.ts`, `POST /api/issue-reports`, the reusable `components/app/report-issue.tsx` entry point (`ReportIssueButton`, `ReportIssueDialog`) and the admin portal **Reports** tab. Feature domains may embed the entry point; the `issue_reports` table and migration belong to `platform`.
 
@@ -18,6 +18,8 @@
 - Issue reports contain only what the member sees and explicitly sends (category, message and optional human-readable context). Never attach audio, lyrics, internal IDs, device or environment data automatically. Only admins can list or resolve reports.
 - An account request is not playback approval. Authorization checks stay server-side. Private HTML and APIs must never become shared cache entries.
 - Public copy describes native Mint playback, never embedded Plexamp. Never invent metrics.
+- Target auth requires `MINT_TARGET_API_URL` (private `/trpc` endpoint), `MINT_TARGET_GATEWAY_TOKEN` (matching API service secret) and `MINT_TARGET_WEB_ORIGIN` (exact canonical public origin). Mutating actions require that Origin. The existing HttpOnly, SameSite=Lax, path=/, 30-day expiry and production/HTTPS Secure cookie policy remain unchanged; passwords are never echoed. Login redirects stay confined to `/app` paths.
+- IP-limited actions additionally require `MINT_TARGET_TRUSTED_PROXY=authenticated-ingress` and `MINT_TARGET_INGRESS_TOKEN`, an independent canonical 32-byte base64url secret. The ingress must overwrite `x-mint-ingress-token` with that secret and `x-mint-client-ip` with one observed client address, not client forwarding claims; keep API/Next ports private behind it. Next server actions cannot inspect the socket peer, so this explicit authenticated-header policy replaces an unverifiable peer/CIDR assumption. Constant-time credential checks and canonical IP validation reject missing, wrong or comma-joined headers; X-Forwarded-For, X-Real-IP and Forwarded are ignored. Never expose ingress/gateway secrets to browser bundles. API public auth must separately be enabled with `MINT_API_PUBLIC_AUTH_PROXY=gateway`.
 - Failed-job removal dismisses one failure version and only matching failed worker records; preserve songs, memberships and running jobs. Later failures reappear.
 
 Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
@@ -38,7 +40,7 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map web-shell` (exports, line counts, cross-domain import edges).
 
-### Owned files (80)
+### Owned files (84)
 
 - `apps/web/` `AGENTS.md`
 - `apps/web/src/app/` `error.tsx`, `globals.css`, `layout.tsx`, `manifest.ts`, `not-found.tsx`
@@ -49,19 +51,19 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 - `apps/web/src/components/` `form.tsx`, `install-app.tsx`, `logo.tsx`, `site-header.tsx`
 - `apps/web/src/components/app/` `account-playback.tsx`, `acquisition-alerts.tsx`, `admin-controls.tsx`, `copy-button.tsx`, `manage-view.tsx`, `matching-panel.tsx`, `page-header.tsx`, `report-issue.tsx`, `settings-view.tsx`, `setup-nudge.tsx`, `sidebar-nav.tsx`, `sign-out.tsx`
 - `apps/web/src/components/ui/` `confirm-dialog.tsx`, `index.ts`, `interactive.tsx`, `layout.tsx`, `primitives.tsx`, `shelf.tsx`, `toast.tsx`
-- `apps/web/src/lib/` `account-login.ts`, `account-playback.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `id.ts`, `issue-report-model.ts`, `issue-reports.ts`, `page-endpoint.ts`, `request-match.ts`, `resolve-request.ts`, `target-api.ts`, `unified-search.ts`, `youtube-search.ts`
-- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `target-accounts-http.integration.test.ts`, `ui.test.ts`, `unified-search.test.ts`
+- `apps/web/src/lib/` `account-login.ts`, `account-playback.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `id.ts`, `issue-report-model.ts`, `issue-reports.ts`, `page-endpoint.ts`, `request-match.ts`, `resolve-request.ts`, `target-api.ts`, `target-auth.ts`, `trusted-ingress.ts`, `unified-search.ts`, `youtube-search.ts`
+- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `target-accounts-http.integration.test.ts`, `target-auth-http.integration.test.ts`, `trusted-ingress.test.ts`, `ui.test.ts`, `unified-search.test.ts`
 - `apps/web/tests/fixtures/` `redesign-network.mjs`, `redesign-preview.mjs`
 - `packages/core/src/` `stats.ts`, `views.ts`
 
 ### Validate
 
-Owned tests: 8.
+Owned tests: 10.
 
 ```bash
 corepack pnpm --filter @mint/web run typecheck
 corepack pnpm --filter @mint/web run lint
-corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/target-accounts-http.integration.test.ts tests/ui.test.ts tests/unified-search.test.ts
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/target-accounts-http.integration.test.ts tests/target-auth-http.integration.test.ts tests/trusted-ingress.test.ts tests/ui.test.ts tests/unified-search.test.ts
 corepack pnpm --filter @mint/core run typecheck
 ```
 

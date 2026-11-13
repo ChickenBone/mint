@@ -1,0 +1,11 @@
+# Optional initial admin bootstrap. Remove this overlay after successful startup.
+services:
+  target-api:
+    environment:
+      MINT_API_BOOTSTRAP_ADMIN_EMAIL: ${MINT_TARGET_ADMIN_EMAIL:?Set MINT_TARGET_ADMIN_EMAIL}
+      MINT_API_BOOTSTRAP_ADMIN_NAME: ${MINT_TARGET_ADMIN_NAME:?Set MINT_TARGET_ADMIN_NAME}
+    secrets: [target_admin_password]
+
+secrets:
+  target_admin_password:
+    file: ${MINT_TARGET_ADMIN_PASSWORD_FILE:?Set MINT_TARGET_ADMIN_PASSWORD_FILE}

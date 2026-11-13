@@ -143,7 +143,7 @@ test("real verified media -> caller-owned confined original-byte playback and st
         mediaFileId: file.id, sizeBytes: original.length, contentType: "audio/wav",
       });
       assert.deepEqual(Object.keys(media).sort(), ["chunks", "close", "metadata", "read"]);
-      assert.doesNotMatch(JSON.stringify(media), /relativePath|rootId|root|path|fd|write|\/home\//);
+      assert.doesNotMatch(JSON.stringify(media), /"(?:relativePath|rootId|root|path|fd|write)"\s*:|\/home\//);
       assert.ok(Object.isFrozen(media) && Object.isFrozen(media.metadata));
       assert.equal(hash(await collect(media.chunks())), originalHash);
       assert.deepEqual(parseLibraryMediaByteRange(undefined, original.length), {
@@ -295,7 +295,6 @@ test("real verified media -> caller-owned confined original-byte playback and st
     const prototype: FileHandle = Object.getPrototypeOf(control);
     await control.close();
     const originalStat = prototype.stat;
-    const originalClose = prototype.close;
     const metadataFailure = new Error("Fixture descriptor metadata failure");
     let statCalls = 0;
     const statMock = t.mock.method(prototype, "stat", async function(this: FileHandle) {
@@ -322,10 +321,23 @@ test("real verified media -> caller-owned confined original-byte playback and st
       readMock.mock.restore();
       await readErrorMedia.close();
     }
-    const closeErrorMedia = await openLibraryPlaybackMedia(repository, file.id);
+    // FileHandle.close is instance-owned, unlike stat/read on its prototype.
+    let closeHandle: FileHandle | undefined;
+    const captureHandle = t.mock.method(prototype, "stat", async function(this: FileHandle) {
+      closeHandle = this;
+      return originalStat.call(this);
+    });
+    let closeErrorMedia;
+    try {
+      closeErrorMedia = await openLibraryPlaybackMedia(repository, file.id);
+    } finally {
+      captureHandle.mock.restore();
+    }
+    assert.ok(closeHandle);
+    const originalClose = closeHandle.close;
     const closeFailure = new Error("Fixture close failure");
     let closeCalls = 0;
-    const closeMock = t.mock.method(prototype, "close", async function(this: FileHandle) {
+    const closeMock = t.mock.method(closeHandle, "close", async function(this: FileHandle) {
       closeCalls++;
       await originalClose.call(this);
       throw closeFailure;

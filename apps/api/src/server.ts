@@ -1,8 +1,22 @@
 import { timingSafeEqual } from "node:crypto";
 import {
+  accountAccessRequestInputSchema, accountAccessRequestResultSchema,
+  browserSignInInputSchema, browserSignInResultSchema,
+  TRUSTED_CLIENT_IP_HEADER, trustedClientIpSchema,
+} from "@mint/contracts";
+import {
+  createAccountAuthenticator, createAccountAccessRequester,
+  issueBrowserSession, revokeBrowserSession,
+  type AccountsRepository, type AccountAuthenticationPasswords,
+  type AccountAuthenticationAdmission,
+} from "@mint/domain-accounts";
+import {
   accountPrincipalSchema, BROWSER_SESSION_COOKIE_NAME, browserSessionTokenSchema,
   decideAccessRequestInputSchema, GATEWAY_TOKEN_HEADER_NAME, gatewayTokenSchema,
   libraryListInputSchema, libraryFilePageSchema,
+  listeningHistoryDeleteInputSchema, listeningHistoryListInputSchema,
+  listeningHistoryPrivateSessionInputSchema, listeningHistoryRecordInputSchema,
+  listeningHistoryRecordResultSchema, listeningHistoryPageSchema,
   setMemberStatusInputSchema,
   adminAccountListInputSchema, adminAccountPageSchema, setMemberRoleInputSchema,
 } from "@mint/contracts";
@@ -15,6 +29,10 @@ import {
   AdminAccountsInputError, type AdminAccountsRepository,
 } from "@mint/domain-accounts";
 import { LibraryRepositoryInputError, type LibraryRepository } from "@mint/domain-library";
+import {
+  ListeningHistoryInputError, ListeningHistoryMediaUnavailableError,
+  type ListeningHistoryRepository,
+} from "@mint/domain-playback";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { fastifyTRPCPlugin } from "@trpc/server/adapters/fastify";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -26,11 +44,18 @@ export interface ApiErrorLogger {
 export interface ApiServerDependencies {
   /** Explicit server-only service credential, never a user identity. */
   gatewayToken: string;
+  publicAuth?: {
+    trustedProxy: "gateway";
+    repository: AccountsRepository;
+    passwords: AccountAuthenticationPasswords;
+    admission: AccountAuthenticationAdmission;
+  };
   sessions: SessionLookupRepository;
   decisions: AccessRequestDecisionRepository;
   memberStatuses?: MemberStatusRepository;
   adminAccounts?: AdminAccountsRepository;
   library?: Pick<LibraryRepository, "listFiles">;
+  playbackHistory?: ListeningHistoryRepository;
   notifyAccessRequests(notification: { pending: number }): Promise<void>;
   errors: ApiErrorLogger;
   now?: () => Date;
@@ -38,6 +63,8 @@ export interface ApiServerDependencies {
 
 interface ApiContext {
   sessionToken: string | null;
+  clientIp: string | null;
+  userAgent: string | undefined;
 }
 
 const trpc = initTRPC.context<ApiContext>().create({
@@ -51,6 +78,21 @@ const trpc = initTRPC.context<ApiContext>().create({
 });
 
 function createRouter(dependencies: ApiServerDependencies) {
+  const auth = dependencies.publicAuth;
+  const authenticate = auth && createAccountAuthenticator({
+    repository: auth.repository, passwords: auth.passwords, admission: auth.admission,
+    logger: { error: () => dependencies.errors.error({ name: "PasswordVerificationError" }) },
+  });
+  const requestAccess = auth && createAccountAccessRequester({
+    repository: auth.repository, admission: auth.admission,
+    hash: auth.passwords.hash, notify: dependencies.notifyAccessRequests,
+  });
+  function requirePublicAuth(ctx: ApiContext) {
+    if (!auth || auth.trustedProxy !== "gateway" || !ctx.clientIp) {
+      throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Public authentication unavailable." });
+    }
+    return { repository: auth.repository, ip: ctx.clientIp };
+  }
   const decide = createAccessRequestDecider({
     repository: dependencies.decisions,
     notify: dependencies.notifyAccessRequests,
@@ -82,14 +124,27 @@ function createRouter(dependencies: ApiServerDependencies) {
     }
     return { actor, service: adminAccounts };
   }
+  async function requireActiveMember(ctx: ApiContext) {
+    const actor = await lookupBrowserSession(ctx.sessionToken, dependencies.sessions, dependencies.now);
+    if (!actor || actor.status !== "active" || !["user", "admin"].includes(actor.role)) {
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "Unauthorized" });
+    }
+    return actor;
+  }
+  function historyError(error: unknown): never {
+    if (error instanceof ListeningHistoryInputError) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+    }
+    if (error instanceof ListeningHistoryMediaUnavailableError) {
+      throw new TRPCError({ code: "NOT_FOUND", message: "Playable song not found." });
+    }
+    throw error;
+  }
   return trpc.router({
     library: trpc.router({
       listFiles: trpc.procedure.input(libraryListInputSchema.optional())
         .output(libraryFilePageSchema).query(async ({ ctx, input }) => {
-          const actor = await lookupBrowserSession(ctx.sessionToken, dependencies.sessions, dependencies.now);
-          if (!actor || actor.status !== "active" || !["user", "admin"].includes(actor.role)) {
-            throw new TRPCError({ code: "UNAUTHORIZED", message: "Unauthorized" });
-          }
+          await requireActiveMember(ctx);
           if (!dependencies.library) {
             throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Library unavailable" });
           }
@@ -103,7 +158,84 @@ function createRouter(dependencies: ApiServerDependencies) {
           }
         }),
     }),
+    playback: trpc.router({
+        history: trpc.router({
+          list: trpc.procedure.input(listeningHistoryListInputSchema.optional())
+            .output(listeningHistoryPageSchema).query(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackHistory) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Listening history unavailable" });
+              }
+              try {
+                return await dependencies.playbackHistory.list(actor.id, input ?? {});
+              } catch (error) {
+                return historyError(error);
+              }
+            }),
+          record: trpc.procedure.input(listeningHistoryRecordInputSchema)
+            .output(listeningHistoryRecordResultSchema).mutation(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackHistory) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Listening history unavailable" });
+              }
+              try {
+                return await dependencies.playbackHistory.record(actor.id, input);
+              } catch (error) {
+                return historyError(error);
+              }
+            }),
+          delete: trpc.procedure.input(listeningHistoryDeleteInputSchema)
+            .mutation(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackHistory) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Listening history unavailable" });
+              }
+              try {
+                await dependencies.playbackHistory.delete(actor.id, input);
+              } catch (error) {
+                return historyError(error);
+              }
+              return null;
+            }),
+          privateSession: trpc.procedure.query(async ({ ctx }) => {
+            const actor = await requireActiveMember(ctx);
+            if (!dependencies.playbackHistory) {
+              throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Listening history unavailable" });
+            }
+            return dependencies.playbackHistory.privateSession(actor.id);
+          }),
+          setPrivateSession: trpc.procedure.input(listeningHistoryPrivateSessionInputSchema)
+            .mutation(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackHistory) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Listening history unavailable" });
+              }
+              await dependencies.playbackHistory.setPrivateSession(actor.id, input.privateSession);
+              return null;
+            }),
+        }),
+    }),
     accounts: trpc.router({
+      signIn: trpc.procedure.input(browserSignInInputSchema)
+        .output(browserSignInResultSchema).mutation(async ({ ctx, input }) => {
+          const { repository, ip } = requirePublicAuth(ctx);
+          const result = await authenticate!(input.email, input.password, ip);
+          if ("error" in result) return result;
+          const session = await issueBrowserSession({
+            userId: result.principal.id, ip, userAgent: ctx.userAgent,
+          }, repository, { now: dependencies.now });
+          return { principal: result.principal, token: session.token, expiresAt: session.expiresAt.toISOString() };
+        }),
+      requestAccess: trpc.procedure.input(accountAccessRequestInputSchema)
+        .output(accountAccessRequestResultSchema).mutation(({ ctx, input }) => {
+          const { ip } = requirePublicAuth(ctx);
+          return requestAccess!(input, ip);
+        }),
+      signOut: trpc.procedure.mutation(async ({ ctx }) => {
+        if (!auth) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Authentication unavailable." });
+        await revokeBrowserSession(ctx.sessionToken, auth.repository);
+        return null;
+      }),
       session: trpc.procedure.output(accountPrincipalSchema.nullable()).query(({ ctx }) =>
         lookupBrowserSession(ctx.sessionToken, dependencies.sessions, dependencies.now)),
       listAccounts: trpc.procedure.input(adminAccountListInputSchema.optional())
@@ -200,6 +332,9 @@ export function createApiServer(dependencies: ApiServerDependencies): FastifyIns
   if (!gatewayTokenSchema.safeParse(dependencies.gatewayToken).success) {
     throw new Error("Invalid API gateway configuration.");
   }
+  if (dependencies.publicAuth && dependencies.publicAuth.trustedProxy !== "gateway") {
+    throw new Error("Invalid API public authentication configuration.");
+  }
   if (typeof dependencies.decisions?.decidePendingAccess !== "function"
       || typeof dependencies.decisions?.countPending !== "function"
       || typeof dependencies.notifyAccessRequests !== "function") {
@@ -245,7 +380,20 @@ export function createApiServer(dependencies: ApiServerDependencies): FastifyIns
     prefix: "/trpc",
     trpcOptions: {
       router: createRouter(dependencies),
-      createContext: ({ req }) => ({ sessionToken: browserSessionCookie(req.headers.cookie) }),
+      createContext: ({ req }) => {
+        const values: string[] = [];
+        for (let i = 0; i < req.raw.rawHeaders.length; i += 2) {
+          if (req.raw.rawHeaders[i]?.toLowerCase() === TRUSTED_CLIENT_IP_HEADER) {
+            values.push(req.raw.rawHeaders[i + 1] ?? "");
+          }
+        }
+        const ip = values.length === 1 ? trustedClientIpSchema.safeParse(values[0]) : null;
+        return {
+          sessionToken: browserSessionCookie(req.headers.cookie),
+          clientIp: ip?.success ? ip.data : null,
+          userAgent: req.headers["user-agent"],
+        };
+      },
       onError: ({ error }) => {
         if (error.code === "INTERNAL_SERVER_ERROR") {
           dependencies.errors.error({ name: sanitizedErrorName(error.cause) });

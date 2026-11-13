@@ -9,8 +9,9 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import { runStartupMigrations, type StartupMigrationOptions } from "../src/index";
+import { runMigrations, runStartupMigrations, type StartupMigrationOptions } from "../src/index";
 
 const exec = promisify(execFile);
 const packagesRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -21,6 +22,11 @@ const sqlPaths = [
   "domain-catalog/migrations/0000_recordings.sql",
   "domain-library/migrations/0000_library_identity.sql",
   "domain-library/migrations/0001_library_listing.sql",
+  "platform/migrations/0001_events.sql",
+  "platform/migrations/0002_public_read_cache.sql",
+  "domain-catalog/migrations/0001_startup_seed_receipts.sql",
+  "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql",
+  "domain-playback/migrations/0000_listening_history.sql",
 ];
 const key = [0x4d494e54, 0x4d494752];
 const options: StartupMigrationOptions = { packagesRoot, lockTimeoutMs: 5_000 };
@@ -44,6 +50,11 @@ async function expectedHistory(root = packagesRoot) {
     { idx: 2, version: "7", when: 1794441600002, tag: "0002_catalog_recordings", breakpoints: true },
     { idx: 3, version: "7", when: 1794441600003, tag: "0003_library_identity", breakpoints: true },
     { idx: 4, version: "7", when: 1794441600004, tag: "0004_library_listing", breakpoints: true },
+    { idx: 5, version: "7", when: 1794441600005, tag: "0005_platform_events", breakpoints: true },
+    { idx: 6, version: "7", when: 1794441600006, tag: "0006_platform_public_read_cache", breakpoints: true },
+    { idx: 7, version: "7", when: 1794441600007, tag: "0007_catalog_startup_seed_receipts", breakpoints: true },
+    { idx: 8, version: "7", when: 1794441600008, tag: "0008_catalog_listenbrainz_seed_ingestion", breakpoints: true },
+    { idx: 9, version: "7", when: 1794441600009, tag: "0009_playback_listening_history", breakpoints: true },
   ]);
   return Promise.all(sqlPaths.map(async (relative, index) => ({
     hash: createHash("sha256").update(await readFile(path.join(root, relative))).digest("hex"),
@@ -132,10 +143,16 @@ test("serialized fresh-target startup on disposable PostgreSQL", { timeout: 90_0
         await runStartupMigrations(pool, { ...options, lockTimeoutMs: 2_147_483_647 });
         assert.deepEqual(await history(pool), await expectedHistory());
         assert.deepEqual((await pool.query(
-          "SELECT to_regclass('platform.rate_limits')::text AS counter, to_regclass('accounts.users')::text AS users, to_regclass('accounts.sessions')::text AS sessions, to_regclass('catalog.recordings')::text AS recordings, to_regclass('library.roots')::text AS roots, to_regclass('library.media_files')::text AS media_files, to_regclass('library.media_files_verified_id_idx')::text AS verified_idx",
+          "SELECT to_regclass('catalog.listenbrainz_seed_ingestions')::text AS ingestions, to_regclass('catalog.listenbrainz_seed_observations')::text AS observations",
+        )).rows, [{
+          ingestions: "catalog.listenbrainz_seed_ingestions", observations: "catalog.listenbrainz_seed_observations",
+        }]);
+        assert.deepEqual((await pool.query(
+          "SELECT to_regclass('platform.rate_limits')::text AS counter, to_regclass('accounts.users')::text AS users, to_regclass('accounts.sessions')::text AS sessions, to_regclass('catalog.recordings')::text AS recordings, to_regclass('library.roots')::text AS roots, to_regclass('library.media_files')::text AS media_files, to_regclass('library.media_files_verified_id_idx')::text AS verified_idx, to_regclass('playback.history_preferences')::text AS history_preferences, to_regclass('playback.listening_history')::text AS listening_history",
         )).rows, [{
           counter: "platform.rate_limits", users: "accounts.users", sessions: "accounts.sessions", recordings: "catalog.recordings",
           roots: "library.roots", media_files: "library.media_files", verified_idx: "library.media_files_verified_id_idx",
+          history_preferences: "playback.history_preferences", listening_history: "playback.listening_history",
         }]);
         assert.equal((await pool.query(
           "SELECT pg_get_expr(indpred, indrelid) AS predicate FROM pg_index WHERE indexrelid = 'library.media_files_verified_id_idx'::regclass",
@@ -211,6 +228,46 @@ test("serialized fresh-target startup on disposable PostgreSQL", { timeout: 90_0
         await pool.query("INSERT INTO accounts.sessions (id, user_id, expires_at) VALUES ('fixture-session', $1, now())", [inserted.rows[0].id]);
         await pool.query("DELETE FROM accounts.users WHERE id = $1", [inserted.rows[0].id]);
         assert.equal((await pool.query("SELECT count(*) FROM accounts.sessions")).rows[0].count, "0");
+        await unlocked(observer);
+        await reusable(pool);
+      } finally {
+        await Promise.all([pool.end(), observer.end()]);
+      }
+    });
+
+    await t.test("startup upgrades a 0008 database without changing its durable seed receipt", async () => {
+      const { pool, observer } = await database();
+      try {
+        const journal = JSON.parse(await readFile(path.join(packagesRoot, journalPath), "utf8")) as {
+          version: string; dialect: string; entries: { tag: string }[];
+        };
+        const entries = journal.entries.slice(0, -1);
+        await runMigrations(drizzle(pool), {
+          journal: { ...journal, entries },
+          migrationsRoot: packagesRoot,
+          files: entries.map((entry, index) => ({ tag: entry.tag, path: sqlPaths[index]! })),
+          history: { schema: "mint_migrations", table: "__drizzle_migrations" },
+        });
+        const key = "catalog:startup:lb-chart:global";
+        const before = (await pool.query(
+          "INSERT INTO catalog.startup_seed_receipts (key) VALUES ($1) RETURNING *", [key],
+        )).rows;
+        assert.equal((await pool.query("SELECT to_regclass('catalog.listenbrainz_seed_ingestions')::text AS table")).rows[0].table,
+          "catalog.listenbrainz_seed_ingestions");
+        assert.deepEqual(await history(pool), (await expectedHistory()).slice(0, -1));
+        await runStartupMigrations(pool, options);
+        assert.deepEqual(await history(pool), await expectedHistory());
+        assert.deepEqual((await pool.query("SELECT * FROM catalog.startup_seed_receipts")).rows, before);
+        assert.equal((await pool.query("SELECT count(*)::int AS count FROM catalog.listenbrainz_seed_ingestions")).rows[0].count, 0);
+        assert.equal((await pool.query("SELECT count(*)::int AS count FROM catalog.listenbrainz_seed_observations")).rows[0].count, 0);
+        assert.deepEqual((await pool.query(
+          "SELECT to_regclass('playback.history_preferences')::text AS preferences, to_regclass('playback.listening_history')::text AS history",
+        )).rows, [{
+          preferences: "playback.history_preferences", history: "playback.listening_history",
+        }]);
+        await runStartupMigrations(pool, options);
+        assert.deepEqual(await history(pool), await expectedHistory());
+        assert.deepEqual((await pool.query("SELECT * FROM catalog.startup_seed_receipts")).rows, before);
         await unlocked(observer);
         await reusable(pool);
       } finally {
@@ -311,8 +368,8 @@ test("serialized fresh-target startup on disposable PostgreSQL", { timeout: 90_0
           return true;
         });
         assert.deepEqual((await pool.query(
-          "SELECT to_regnamespace('platform') AS platform, to_regnamespace('accounts') AS accounts, to_regnamespace('catalog') AS catalog, to_regnamespace('library') AS library, to_regclass('catalog.recordings') AS recordings, to_regclass('library.roots') AS roots, to_regclass('library.media_files') AS media_files",
-        )).rows, [{ platform: null, accounts: null, catalog: null, library: null, recordings: null, roots: null, media_files: null }]);
+          "SELECT to_regnamespace('platform') AS platform, to_regnamespace('accounts') AS accounts, to_regnamespace('catalog') AS catalog, to_regnamespace('library') AS library, to_regnamespace('playback') AS playback, to_regclass('catalog.recordings') AS recordings, to_regclass('library.roots') AS roots, to_regclass('library.media_files') AS media_files",
+        )).rows, [{ platform: null, accounts: null, catalog: null, library: null, playback: null, recordings: null, roots: null, media_files: null }]);
         assert.deepEqual(await history(pool), []);
         await unlocked(observer);
         await reusable(pool);
@@ -320,10 +377,10 @@ test("serialized fresh-target startup on disposable PostgreSQL", { timeout: 90_0
         await runStartupMigrations(pool, { ...options, packagesRoot: root });
         assert.deepEqual(await history(pool), await expectedHistory());
         assert.deepEqual((await pool.query(
-          "SELECT to_regclass('platform.rate_limits')::text AS counter, to_regclass('accounts.users')::text AS users, to_regclass('accounts.sessions')::text AS sessions, to_regclass('catalog.recordings')::text AS recordings, to_regclass('library.roots')::text AS roots, to_regclass('library.media_files')::text AS media_files",
+          "SELECT to_regclass('platform.rate_limits')::text AS counter, to_regclass('accounts.users')::text AS users, to_regclass('accounts.sessions')::text AS sessions, to_regclass('catalog.recordings')::text AS recordings, to_regclass('library.roots')::text AS roots, to_regclass('library.media_files')::text AS media_files, to_regclass('playback.listening_history')::text AS listening_history",
         )).rows, [{
           counter: "platform.rate_limits", users: "accounts.users", sessions: "accounts.sessions", recordings: "catalog.recordings",
-          roots: "library.roots", media_files: "library.media_files",
+          roots: "library.roots", media_files: "library.media_files", listening_history: "playback.listening_history",
         }]);
         await reusable(pool);
       } finally {

@@ -4,7 +4,7 @@
 
 ## Boundaries
 
-- Owns `apps/realtime`, `core/src/events.ts` (event shapes), the realtime ticket API and live client components.
+- Owns `apps/realtime`, `core/src/events.ts` (legacy event shapes), the realtime ticket API and live client components. The target `PostgresEventLog` is owned by `platform`; it provides audience-scoped replay storage, not transport or current producer wiring.
 - WebSockets enhance server-rendered state. They are never the only recovery path.
 
 ## Invariants
@@ -12,6 +12,7 @@
 - Keep polling and invalidation fallbacks wherever they exist.
 - Public channels must not reveal member-private data. For example, they must not show who liked a track or expose player items or acquisition authorization.
 - Authenticated channels require a valid ticket.
+- PostgreSQL event replay uses separate public, admin and account streams. Authorization and event-payload validation remain with callers; reconnects must handle the durable replay floor by refetching authoritative state. The target event store is not yet integrated with the WebSocket server, producers or clients.
 
 Details: [architecture](../architecture.md#data-and-synchronization).
 

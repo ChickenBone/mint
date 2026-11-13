@@ -487,9 +487,10 @@ test("live feature routing and ownership keep consumer context separate from set
     assert.ok(result.domains.length, query);
     assert.ok(result.domains.every((d) => !d.id.startsWith("mobile")), query);
   }
-  for (const future of ["Jams", "Events", "Profiles"]) {
+  for (const future of ["Jams", "Profiles"]) {
     assert.deepEqual(run("route", `native ${future} extension seam`).domains.map((d) => d.id), ["agent-tooling"]);
   }
+  assert.deepEqual(run("route", "native Events extension seam").domains.map((d) => d.id), ["agent-tooling", "platform"]);
   assert.ok(run("context", "fix mobile auth").domains[0].validation.cmds.includes("npm --prefix apps/mobile run lint"));
 });
 
