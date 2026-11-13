@@ -64,7 +64,7 @@ test("local worker composes migrations, real ingestion, restart, failure and cle
     let release!: () => void;
     const gate = new Promise<void>((resolve) => { release = resolve; });
     const request: typeof fetch = async (input) => {
-      assert.equal(await count("mint_migrations.__drizzle_migrations"), 9);
+      assert.equal(await count("mint_migrations.__drizzle_migrations"), 12);
       assert.match(String(input), /^https:\/\/api\.listenbrainz\.org\//);
       fetched++;
       await gate;

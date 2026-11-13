@@ -7,7 +7,7 @@ export {
   type ReadOnlyMediaFile,
   type ReadOnlyMediaFileWithMetadata,
 } from "./path-access";
-export { librarySchema, mediaFiles, roots } from "./schema";
+export { librarySchema, mediaFiles, roots, scanJobs } from "./schema";
 export {
   createLibraryRepository,
   LibraryMediaWriteError,

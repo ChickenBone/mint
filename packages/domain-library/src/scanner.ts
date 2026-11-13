@@ -413,7 +413,7 @@ export async function scanLibraryRoot(
         if (stopped()) break;
         const verification = await verifyLibraryMediaFile(repository, file.id, audio);
         result[verification.status]++;
-        if (verification.status === "inconclusive") {
+        if (verification.status === "inconclusive" && verification.reason !== "cancelled") {
           issue(relativePath, new Error(`Library audio verification is inconclusive: ${verification.reason}`));
         }
         if (stopped()) break;

@@ -147,7 +147,9 @@ test("standalone process migrates before listening, authenticates and releases r
       "domain-library/migrations/0001_library_listing.sql", "platform/migrations/0001_events.sql",
       "platform/migrations/0002_public_read_cache.sql", "domain-catalog/migrations/0001_startup_seed_receipts.sql",
       "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql",
-      "domain-playback/migrations/0000_listening_history.sql"];
+      "domain-playback/migrations/0000_listening_history.sql",
+      "domain-library/migrations/0002_library_scan_jobs.sql",
+      "domain-playback/migrations/0001_queue_snapshots.sql"];
     assert.deepEqual((await observer.query("SELECT hash FROM mint_migrations.__drizzle_migrations ORDER BY id")).rows.map((row) => row.hash),
       await Promise.all(files.map(async (file) => hash(await readFile(path.join(packagesRoot, file))))));
     assert.equal((await fetch(`${address}/trpc/accounts.session`)).status, 401);

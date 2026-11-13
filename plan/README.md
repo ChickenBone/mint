@@ -68,18 +68,23 @@ legacy. Bootstrap is disabled when all `MINT_API_BOOTSTRAP_ADMIN_EMAIL`,
 variables are absent; supplying any requires all three. It runs after
 migrations and before listen, inserts an active admin only when the
 case-insensitive email is absent, and never modifies an existing account.
-Login/access-request HTTP routes remain unwired under D49. These do not complete P1:
-the existing Next.js UI, layout, global auth and actions still use the legacy
+Login and access-request HTTP onboarding now use the explicitly authenticated
+ingress policy described in [the web-shell card](../agents/domains/web-shell.md).
+These slices do not complete P1:
+the existing Next.js UI, layout and many actions still use the legacy
 backend, preserved playback/collection dependencies are not migrated, and
 the accepted bounded slices are not integrated into a working existing UI.
 The standalone API entry point and base validated runtime configuration
 (`apps/api/src/main.ts` and `runtime-config.ts`) already existed at the selected
-baseline; optional admin-bootstrap configuration/wiring is new. The Library original-media reader (`playback-media.ts`) also existed:
-it reopens and reads original media but is not authorized HTTP streaming.
+baseline; optional admin-bootstrap configuration/wiring is new. The Library original-media reader (`playback-media.ts`) also existed.
+The authenticated API now exposes original media via `GET`/`HEAD /media/{id}`
+and the Next audio route proxies it in target-auth mode; conversion and the
+remaining player/queue integration are not complete.
 Admin listing defaults to 50, caps at 100 and binds its UUID cursor to strict
 status/members and search filters; it returns only safe account fields. Role
 changes reject either self-role value with the preserved error copy, allow
-pending updates and treat missing targets as no-ops. Admin counts, song/provider
+pending updates and treat missing targets as no-ops. A fresh-session-authorized
+pending-request count is also exposed through the API and SDK; song/provider
 details and other management operations remain outside this slice.
 The approved-member listing depends on the narrowly required target-owned
 account/session/approval work moved into P1 by D33; other account/runtime work
@@ -103,8 +108,8 @@ explicit relink or unlink; media files are never cascade-deleted. The bounded
 scanner supports opt-in private-worker continuation with caller-owned checkpoint
 persistence and per-root serialization, but replay scalability, scan scheduling,
 availability freshness and broader import remain open. The
-implemented session and approval procedures do not add login/access-request
-HTTP routes; no temporary legacy-auth adapter is selected.
+implemented login/access-request routes require authenticated ingress; no
+temporary legacy-auth adapter is selected.
 D43-D45 require configured
 read-only roots to be persisted as Library-owned records with stable IDs; use
 persisted verified availability for listings and recheck files when playback is
@@ -121,7 +126,7 @@ verification; inconclusive failures preserve prior state. A separate bounded
 scanner explicitly imports bounded batches with optional continuation; active
 prefix replay is bounded and offers no snapshot or full fairness guarantee.
 Scheduling and freshness remain caller-owned work. Full format support, hard filesystem timeouts and
-playback grants remain open.
+broader playback integration and compatibility conversion remain open.
 Root-management UI and availability freshness remain open. D47
 blocks deletion of a Library root while media-file references remain, without
 cascading media deletion; deletion is possible once references are absent, but
@@ -133,9 +138,10 @@ invalid credentials rejected. The API and separate SDK now
 enforce this boundary; the SDK requires an explicit gateway token and can
 forward only the optional canonical session token. D37's API-resolved session
 remains the sole user identity. Client-IP forwarding stays disabled until
-ingress trust is settled; browser-supplied forwarded headers are not trusted.
-Secret lifecycle/configuration, deployment, ingress and TLS/proxy settings
-remain unimplemented or unsettled.
+the explicitly authenticated ingress policy is enabled; browser-supplied
+forwarded headers are not trusted. An opt-in target Compose overlay configures
+that policy, but Docker image, container and end-to-end deployment validation
+remain open.
 For fresh targets D41 selects `mint_migrations.__drizzle_migrations` and
 serialized startup migrations across API and worker processes. The platform
 helper implements the dedicated-client session advisory lock and central
@@ -155,7 +161,7 @@ Feature-specific identity, validation, freshness, provider pacing and cleanup
 scheduling remain caller-owned. A separate opt-in local worker now composes
 ListenBrainz-only startup ingestion with explicit settings, bounded pool/timeouts
 and `build:local`/`start:local` scripts. Disabled mode opens nothing; enabled
-artifacts need the central journal and mapped SQL through `0009`. See
+artifacts need the complete central journal and its mapped SQL files. See
 [worker configuration](migration/compatibility.md#local-worker-runtime).
 Broader worker integration, resource tuning and deployment remain gates. See
 [D32-D48 and the remaining gates](execution/decisions.md#decisions).
@@ -219,7 +225,7 @@ The slices above do not establish a working unchanged web listing, full
 metadata/library behavior, or integrated web actions. Catalog currently has a
 six-field recording schema with checks and simple full-text search, not the
 complete metadata engine or pgvector parity; automated scanning and full import
-remain future work. Login/access-request HTTP onboarding remains unwired. The stack, Plex elimination and
+remain future work. The stack, Plex elimination and
 PostgreSQL/pgvector consolidation are confirmed directions, not proof of
 implemented replacements. User permission to reuse Audio-copy source is
 recorded in [D31](execution/decisions.md#decisions); third-party licensing

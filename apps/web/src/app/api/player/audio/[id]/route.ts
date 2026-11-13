@@ -1,6 +1,8 @@
 import { signToken } from "@mint/core/crypto";
 import { UUID, type PlaybackClaim } from "@mint/core/playback";
 import { getSessionHash, getUser } from "@/lib/auth";
+import { targetAuthenticationEnabled } from "@/lib/target-auth";
+import { targetFailure, targetMedia } from "@/lib/target-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,9 +10,24 @@ export const maxDuration = 180;
 const json = (error: string, status: number) => Response.json({ error }, { status, headers: { "cache-control": "private, no-store" } });
 
 export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
+  const { id } = await context.params;
+  if (targetAuthenticationEnabled()) {
+    try {
+      const requested = new URL(request.url).searchParams.get("format");
+      if (!UUID.test(id) || requested) {
+        const user = await getUser();
+        if (!user) return json("Approved membership required", 401);
+        if (!UUID.test(id)) return json("Invalid track", 400);
+        if (requested !== "mp3") return json("Unsupported compatibility format", 400);
+        return json("Compatibility audio conversion is unavailable in the target media transport", 415);
+      }
+      return await targetMedia(request, id);
+    } catch (error) {
+      return targetFailure(error);
+    }
+  }
   const user = await getUser();
   if (!user) return json("Approved membership required", 401);
-  const { id } = await context.params;
   if (!UUID.test(id)) return json("Invalid track", 400);
   const sessionHash = await getSessionHash();
   if (!sessionHash) return json("Sign in required", 401);

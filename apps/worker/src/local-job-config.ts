@@ -1,8 +1,12 @@
 import { isAbsolute } from "node:path";
 import type { ConnectionOptions } from "node:tls";
+import {
+  validateLocalLibraryScanConfiguration, type LocalLibraryScanConfiguration,
+} from "./local-library-scan";
 
 export type LocalWorkerConfiguration = { enabledSources: readonly [] } | {
-  enabledSources: readonly ["listenbrainz"];
+  enabledSources: readonly ("listenbrainz" | "library")[];
+  libraryScan?: LocalLibraryScanConfiguration;
   database: {
     host: string; port: number; database: string; user: string; password: string;
     ssl: false | ConnectionOptions; max: number; connectionTimeoutMillis: number;
@@ -23,11 +27,16 @@ function text(value: unknown, empty = false): value is string {
 }
 
 export function validateLocalWorkerConfiguration(config: LocalWorkerConfiguration): void {
-  if (!config || !Array.isArray(config.enabledSources) || config.enabledSources.length > 1
-    || config.enabledSources.some((source) => source !== "listenbrainz")) {
+  if (!config || !Array.isArray(config.enabledSources) || config.enabledSources.length > 2
+    || new Set(config.enabledSources).size !== config.enabledSources.length
+    || config.enabledSources.some((source) => source !== "listenbrainz" && source !== "library")) {
     throw new Error("Invalid local worker enabled sources.");
   }
   if (!isEnabledLocalWorker(config)) return;
+  if (config.enabledSources.includes("library")) {
+    if (!config.libraryScan) throw new Error("Library scans require explicit configuration.");
+    validateLocalLibraryScanConfiguration(config.libraryScan);
+  } else if (config.libraryScan !== undefined) throw new Error("Library scans are not enabled.");
   const db = config.database;
   if (!db || !text(db.host) || !integer(db.port, 1, 65535) || !text(db.database)
     || !text(db.user) || !text(db.password, true)
@@ -45,7 +54,7 @@ export function validateLocalWorkerConfiguration(config: LocalWorkerConfiguratio
 
 export function isEnabledLocalWorker(config: LocalWorkerConfiguration):
   config is Extract<LocalWorkerConfiguration, { database: unknown }> {
-  return config.enabledSources.length === 1;
+  return config.enabledSources.length > 0;
 }
 
 export function readLocalWorkerConfiguration(env: Readonly<Record<string, string | undefined>>): LocalWorkerConfiguration {
@@ -66,14 +75,16 @@ export function readLocalWorkerConfiguration(env: Readonly<Record<string, string
   let sources: unknown;
   try { sources = JSON.parse(rawSources); }
   catch { throw new Error("Invalid local worker enabled sources."); }
-  if (!Array.isArray(sources) || sources.length > 1 || sources.some((source) => source !== "listenbrainz")) {
+  if (!Array.isArray(sources) || sources.length > 2 || new Set(sources).size !== sources.length
+    || sources.some((source) => source !== "listenbrainz" && source !== "library")) {
     throw new Error("Invalid local worker enabled sources.");
   }
   if (sources.length === 0) return { enabledSources: [] };
   const tls = required("DB_TLS");
   if (tls !== "disabled" && tls !== "verify") throw new Error("Invalid local worker database TLS configuration.");
   const config: LocalWorkerConfiguration = {
-    enabledSources: ["listenbrainz"],
+    enabledSources: sources,
+    ...(sources.includes("library") ? { libraryScan: readLibraryScanConfiguration(required("LIBRARY_SCAN")) } : {}),
     database: {
       host: required("DB_HOST"), port: number("DB_PORT"), database: required("DB_NAME"),
       user: required("DB_USER"), password: required("DB_PASSWORD", true),
@@ -88,4 +99,12 @@ export function readLocalWorkerConfiguration(env: Readonly<Record<string, string
   };
   validateLocalWorkerConfiguration(config);
   return config;
+}
+
+function readLibraryScanConfiguration(raw: string): LocalLibraryScanConfiguration {
+  let value: LocalLibraryScanConfiguration;
+  try { value = JSON.parse(raw); }
+  catch { throw new Error("Invalid configuration: MINT_LOCAL_WORKER_LIBRARY_SCAN"); }
+  validateLocalLibraryScanConfiguration(value);
+  return value;
 }

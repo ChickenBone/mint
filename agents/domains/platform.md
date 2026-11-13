@@ -16,7 +16,7 @@
 ## Invariants
 
 - Legacy `@mint/core` migrations run through the pipeline worker. Add one with `npm run db:generate` and keep its journal consistent; never rewrite an applied migration.
-- The target journal applies platform rate-limit/event/cache, Accounts, Catalog receipts/ListenBrainz ingestion and Library identity/listing SQL using fixed history and a dedicated-client advisory lock. API and local-job runtime invoke it; pg-boss manages its own schema. Deployment readiness remains open.
+- The target journal applies platform rate-limit/event/cache, Accounts, Catalog receipts/ListenBrainz ingestion, Library identity/listing/scan state and Playback history/queue SQL using fixed history and a dedicated-client advisory lock. API and local-job runtime invoke it; pg-boss manages its own schema. Deployment readiness remains open.
 - `startLocalJobRuntime` validates explicit queue/retry/retention/concurrency policy and bounded JSON envelopes; handlers validate domain payloads. Same-client enqueue can share a caller's transaction, but singleton keys expire with active/queued/retrying jobs and are not durable receipts. It owns neither signals nor the pool.
 - `PostgresEventLog` provides bounded public/admin/account replay and a durable floor. Callers own authorization, validation and retention; it is not WebSocket transport or producer integration.
 - Cache keys/values are public only. Bounded payloads, coalescing, leases, retention and cleanup require caller-owned provider pacing and cleanup scheduling.
@@ -30,7 +30,7 @@
 
 - `@mint/core` subpath exports in `packages/core/package.json` are the public API for apps. Adding or renaming one is a cross-domain change, so run root `npm run typecheck`.
 - `@mint/platform` exports the migration/rate-limit APIs, `startLocalJobRuntime`, `PostgresEventLog`, `PostgresPublicReadCache` and `publicCacheKey`. PostgreSQL tests require `MINT_TEST_POSTGRES_BIN`; disposable clusters only.
-- `apps/worker/src/local-job-{config,runtime,main}.ts` composes only ListenBrainz startup ingestion. Required JSON `MINT_LOCAL_WORKER_ENABLED_SOURCES=[]` opens nothing; `["listenbrainz"]` requires explicit prefixed DB/migration/cadence/shutdown settings. `build:local`/`start:local` preserve legacy entry points; artifacts need the central journal/SQL through `0009`. No image/deployment, other-source or exhausted-job recovery is supplied. See [runtime contract](../../plan/migration/compatibility.md#local-worker-runtime).
+- `apps/worker/src/local-job-{config,runtime,main}.ts` composes opted-in ListenBrainz ingestion and Library scans. JSON `MINT_LOCAL_WORKER_ENABLED_SOURCES=[]` opens nothing; Library needs bounded options and existing root UUIDs. Local build/start preserve legacy entry points; no worker image/deployment is supplied. See [runtime contract](../../plan/migration/compatibility.md#local-worker-runtime).
 - `db/schema.ts` is imported by nearly every domain. Coordinate column changes with the owning feature domain.
 - [Public cache coverage](../architecture.md#server-side-public-read-caches): the fixture is test-only, TTL/version/provider identity invalidates reads, and there is no manual purge or global Redis byte cap. Test core and affected adapters when contracts change.
 
@@ -49,12 +49,12 @@
 - **Imported by:** [`accounts`](accounts.md), [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`catalog`](catalog.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map platform` (exports, line counts, cross-domain import edges).
 
-### Owned files (90)
+### Owned files (93)
 
 - `./` `nx.json`, `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.base.json`
-- `apps/api/` `package.json`, `tsconfig.json`
-- `apps/api/src/` `index.ts`, `main.ts`, `runtime-config.ts`, `runtime.ts`, `server.ts`
-- `apps/api/tests/` `admin-accounts.integration.test.ts`, `library.integration.test.ts`, `listening-history.integration.test.ts`, `main.integration.test.ts`, `member-status.integration.test.ts`, `runtime.integration.test.ts`, `session.test.ts`
+- `apps/api/` `LIBRARY-ROOT.md`, `package.json`, `tsconfig.json`
+- `apps/api/src/` `index.ts`, `main.ts`, `provision-library-root.ts`, `runtime-config.ts`, `runtime.ts`, `server.ts`
+- `apps/api/tests/` `admin-accounts.integration.test.ts`, `library.integration.test.ts`, `listening-history.integration.test.ts`, `main.integration.test.ts`, `member-status.integration.test.ts`, `provision-library-root.integration.test.ts`, `runtime.integration.test.ts`, `session.test.ts`
 - `apps/web/` `eslint.config.mjs`, `next-env.d.ts`, `next.config.ts`, `package.json`, `postcss.config.mjs`, `tsconfig.json`
 - `apps/web/src/lib/` `queues.ts`, `rate-limit.ts`, `request.ts`
 - `apps/worker/` `package.json`, `tsconfig.json`
@@ -73,11 +73,11 @@
 
 ### Validate
 
-Owned tests: 20.
+Owned tests: 21.
 
 ```bash
 corepack pnpm --filter @mint/api run typecheck
-corepack pnpm --filter @mint/api exec tsx --test tests/admin-accounts.integration.test.ts tests/library.integration.test.ts tests/listening-history.integration.test.ts tests/main.integration.test.ts tests/member-status.integration.test.ts tests/runtime.integration.test.ts tests/session.test.ts
+corepack pnpm --filter @mint/api exec tsx --test tests/admin-accounts.integration.test.ts tests/library.integration.test.ts tests/listening-history.integration.test.ts tests/main.integration.test.ts tests/member-status.integration.test.ts tests/provision-library-root.integration.test.ts tests/runtime.integration.test.ts tests/session.test.ts
 corepack pnpm --filter @mint/web run typecheck
 corepack pnpm --filter @mint/web run lint
 corepack pnpm --filter @mint/worker run typecheck

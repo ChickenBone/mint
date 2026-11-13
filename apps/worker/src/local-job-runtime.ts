@@ -2,16 +2,18 @@ import {
   CATALOG_LISTENBRAINZ_SEED_QUEUE_V1,
   createCatalogSeedIngestor, createCatalogSeedStore, scheduleCatalogStartupSeeds,
 } from "@mint/domain-catalog";
-import { startLocalJobRuntime, type LocalJobRuntime, type LocalJobRuntimeOptions } from "@mint/platform";
+import { startLocalJobRuntime, type LocalJobQueue, type LocalJobRuntime, type LocalJobRuntimeOptions } from "@mint/platform";
 import pg from "pg";
 import { isEnabledLocalWorker, validateLocalWorkerConfiguration, type LocalWorkerConfiguration } from "./local-job-config";
+import { dispatchLibraryScans, LIBRARY_SCAN_QUEUE, requestLibraryScan, runLibraryScanBatch } from "./local-library-scan";
 
 export type LocalWorkerError = Parameters<LocalJobRuntimeOptions["onError"]>[0]
-  | { name: "LocalWorkerPoolError" | "LocalWorkerCleanupError" }
-  | { name: "LocalWorkerStartupError"; phase: "ingestor" | "job-runtime" | "seed-scheduling" };
+  | { name: "LocalWorkerPoolError" | "LocalWorkerCleanupError" | "LocalWorkerScanDispatchError" }
+  | { name: "LocalWorkerStartupError"; phase: "ingestor" | "job-runtime" | "seed-scheduling" | "scan-scheduling" };
 
 export interface LocalWorkerRuntime {
   readonly status: "running" | "disabled";
+  requestScan(rootId: string, mode: "resume" | "restart"): Promise<"accepted" | "busy">;
   stop(): Promise<void>;
 }
 
@@ -24,15 +26,25 @@ export async function startLocalWorker(
     throw new Error("Invalid local worker bindings.");
   }
   bindings.signal?.throwIfAborted();
-  if (!isEnabledLocalWorker(config)) return { status: "disabled", async stop() {} };
+  if (!isEnabledLocalWorker(config)) return {
+    status: "disabled", async stop() {},
+    async requestScan() { throw new Error("Library scans are disabled."); },
+  };
   const pool = new pg.Pool({ ...config.database, application_name: "mint-local-worker" });
   pool.on("error", () => bindings.onError({ name: "LocalWorkerPoolError" }));
   let jobs: LocalJobRuntime | undefined;
   let stopping: Promise<void> | undefined;
-  let phase: "ingestor" | "job-runtime" | "seed-scheduling" = "ingestor";
+  let phase: "ingestor" | "job-runtime" | "seed-scheduling" | "scan-scheduling" = "ingestor";
+  const shutdown = new AbortController();
+  const signal = bindings.signal ? AbortSignal.any([bindings.signal, shutdown.signal]) : shutdown.signal;
+  let dispatchTimer: ReturnType<typeof setInterval> | undefined;
+  let dispatching: Promise<void> | undefined;
   function stop(): Promise<void> {
     stopping ??= (async () => {
+      shutdown.abort();
+      clearInterval(dispatchTimer);
       let failed = false;
+      try { await dispatching; } catch { failed = true; }
       try { await jobs?.stop(); } catch { failed = true; }
       try { await pool.end(); } catch { failed = true; }
       if (failed) {
@@ -43,9 +55,31 @@ export async function startLocalWorker(
     return stopping;
   }
   try {
-    const ingestor = createCatalogSeedIngestor(pool, {
-      enabledSources: config.enabledSources, ...(bindings.request ? { request: bindings.request } : {}),
-    });
+    const queues: LocalJobQueue[] = [];
+    if (config.enabledSources.includes("listenbrainz")) {
+      const ingestor = createCatalogSeedIngestor(pool, {
+        enabledSources: ["listenbrainz"], ...(bindings.request ? { request: bindings.request } : {}),
+      });
+      queues.push({
+        ...CATALOG_LISTENBRAINZ_SEED_QUEUE_V1,
+        async handle(job) {
+          await ingestor.ingest(job.payload, bindings.signal
+            ? AbortSignal.any([job.signal, bindings.signal]) : job.signal);
+        },
+      });
+    }
+    const scan = config.libraryScan;
+    if (scan) {
+      queues.push({
+        ...LIBRARY_SCAN_QUEUE,
+        async handle(job) {
+          if (Object.keys(job.payload).length !== 1 || typeof job.payload.rootId !== "string") {
+            throw new Error("Invalid Library scan job payload.");
+          }
+          await runLibraryScanBatch(pool, job.payload.rootId, scan, AbortSignal.any([job.signal, signal]));
+        },
+      });
+    }
     phase = "job-runtime";
     jobs = await startLocalJobRuntime(pool, {
       migrations: config.migrations,
@@ -54,21 +88,38 @@ export async function startLocalWorker(
       maintenanceIntervalSeconds: config.maintenanceIntervalSeconds,
       shutdownTimeoutMs: config.shutdownTimeoutMs,
       onError: bindings.onError,
-      queues: [{
-        ...CATALOG_LISTENBRAINZ_SEED_QUEUE_V1,
-        async handle(job) {
-          await ingestor.ingest(job.payload, bindings.signal
-            ? AbortSignal.any([job.signal, bindings.signal]) : job.signal);
-        },
-      }],
+      queues,
     });
     bindings.signal?.throwIfAborted();
     phase = "seed-scheduling";
-    await scheduleCatalogStartupSeeds({
-      enabledSources: config.enabledSources, countries: [], youtubeChannels: [], maxJobs: 1,
-    }, createCatalogSeedStore(pool, jobs, CATALOG_LISTENBRAINZ_SEED_QUEUE_V1.name), bindings.signal);
+    if (config.enabledSources.includes("listenbrainz")) {
+      await scheduleCatalogStartupSeeds({
+        enabledSources: ["listenbrainz"], countries: [], youtubeChannels: [], maxJobs: 1,
+      }, createCatalogSeedStore(pool, jobs, CATALOG_LISTENBRAINZ_SEED_QUEUE_V1.name), signal);
+    }
+    if (scan) {
+      phase = "scan-scheduling";
+      for (const rootId of scan.rootIds) {
+        signal.throwIfAborted();
+        await requestLibraryScan(pool, rootId, "start");
+      }
+      const dispatch = () => dispatchLibraryScans(pool, jobs!, scan.rootIds);
+      await dispatch();
+      dispatchTimer = setInterval(() => {
+        if (dispatching || signal.aborted) return;
+        dispatching = dispatch().catch(() => bindings.onError({ name: "LocalWorkerScanDispatchError" }))
+          .finally(() => { dispatching = undefined; });
+      }, config.pollingIntervalSeconds * 1000);
+    }
     bindings.signal?.throwIfAborted();
-    return { status: "running", stop };
+    return {
+      status: "running", stop,
+      async requestScan(rootId, mode) {
+        if (stopping || signal.aborted) throw new Error("Local worker is stopping.");
+        if (!scan?.rootIds.includes(rootId)) throw new Error("Library scan root is not enabled in this worker.");
+        return requestLibraryScan(pool, rootId, mode);
+      },
+    };
   } catch (error) {
     let cleanupFailed = false;
     try { await stop(); } catch { cleanupFailed = true; }

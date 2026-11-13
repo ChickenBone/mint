@@ -29,6 +29,8 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
   const data = path.join(work, "pg");
   const socket = path.join(work, "sock");
   const app = path.join(work, "web");
+  const mediaRoot = path.join(work, "media");
+  const mediaBytes = Buffer.from("bounded target media fixture");
   const gatewayToken = randomBytes(32).toString("base64url");
   const ingressToken = randomBytes(32).toString("base64url");
   const password = "fixture-password";
@@ -49,6 +51,8 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
   try {
     await mkdir(socket);
     await mkdir(app);
+    await mkdir(mediaRoot);
+    await writeFile(path.join(mediaRoot, "fixture.mp3"), mediaBytes);
     await Promise.all([
       cp(path.join(webRoot, "src"), path.join(app, "src"), { recursive: true }),
       symlink(path.join(webRoot, "node_modules"), path.join(app, "node_modules"), "dir"),
@@ -60,7 +64,7 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
       })),
       writeFile(path.join(app, "next.config.mjs"), `
         import config from ${JSON.stringify(new URL("../next.config.ts", import.meta.url).href)};
-        export default { ...config, output: undefined };
+        export default { ...config, output: undefined, outputFileTracingRoot: ${JSON.stringify(app)}, typescript: { ignoreBuildErrors: true } };
       `),
     ]);
     // Keep the real forms/actions; isolate only unrelated legacy layout/player queries.
@@ -98,17 +102,54 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
       notifyAccessRequests: async () => {},
       errors: { error: ({ name }) => { errors.push(name); } },
     });
+    const root = (await observer.query(
+      "INSERT INTO library.roots (path) VALUES ($1) RETURNING id", [mediaRoot],
+    )).rows[0];
+    assert.ok(root);
+    const mediaFile = (await observer.query(
+      `INSERT INTO library.media_files
+        (root_id, relative_path, availability, checked_at, verified_at, audio_stream_index, audio_codec, decoded_sample_frames)
+       VALUES ($1, 'fixture.mp3', 'verified', now(), now(), 0, 'mp3', 1)
+       RETURNING id`,
+      [root.id],
+    )).rows[0];
+    assert.ok(mediaFile);
+    const nextBin = require.resolve("next/dist/bin/next");
+    try {
+      await exec(process.execPath, [nextBin, "build", "--webpack"], {
+        cwd: app,
+        env: {
+          PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "production",
+          NEXT_TELEMETRY_DISABLED: "1",
+          MINT_TARGET_API_URL: `${runtime.address}/trpc`, MINT_TARGET_GATEWAY_TOKEN: gatewayToken,
+          MINT_TARGET_TRUSTED_PROXY: "authenticated-ingress", MINT_TARGET_INGRESS_TOKEN: ingressToken,
+          MINT_TARGET_WEB_ORIGIN: "http://127.0.0.1:3000",
+        },
+        timeout: 180_000,
+        maxBuffer: 8 * 1024 * 1024,
+      });
+    } catch (error) {
+      const stderr = error && typeof error === "object" && "stderr" in error && typeof error.stderr === "string"
+        ? error.stderr : "";
+      throw new Error(stderr || "Next production build failed.", { cause: error });
+    }
     const script = `
       import { createRequire } from "node:module";
       import { createServer } from "node:http";
       const require = createRequire(${JSON.stringify(path.join(webRoot, "package.json"))});
       const next = require(${JSON.stringify(require.resolve("next"))});
-      const app = next({dev:true, webpack:true, dir:${JSON.stringify(app)}});
+      const reservation = createServer();
+      await new Promise(resolve => reservation.listen(0, "127.0.0.1", resolve));
+      const address = reservation.address();
+      if (!address || typeof address === "string") throw new Error("Next test server did not bind.");
+      const port = address.port;
+      await new Promise(resolve => reservation.close(resolve));
+      const origin = "http://127.0.0.1:" + port;
+      process.env.MINT_TARGET_WEB_ORIGIN = origin;
+      const app = next({dev:false, dir:${JSON.stringify(app)}, hostname:"127.0.0.1", port});
       await app.prepare();
       const server = createServer(app.getRequestHandler());
-      server.listen(0, "127.0.0.1", () => {
-        const origin = "http://127.0.0.1:" + server.address().port;
-        process.env.MINT_TARGET_WEB_ORIGIN = origin;
+      server.listen(port, "127.0.0.1", () => {
         process.send({origin});
       });
       process.once("SIGTERM", async () => {
@@ -121,7 +162,7 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
     next = spawn(process.execPath, ["--input-type=module", "--eval", script], {
       cwd: app, stdio: ["ignore", "pipe", "pipe", "ipc"],
       env: {
-        PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "development", NEXT_TELEMETRY_DISABLED: "1",
+        PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "production", NEXT_TELEMETRY_DISABLED: "1",
         MINT_TARGET_API_URL: `${runtime.address}/trpc`, MINT_TARGET_GATEWAY_TOKEN: gatewayToken,
         MINT_TARGET_TRUSTED_PROXY: "authenticated-ingress", MINT_TARGET_INGRESS_TOKEN: ingressToken,
         // No legacy database or Redis configuration is provided to Next.
@@ -191,6 +232,49 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
     const home = await fetch(`${origin}/app`, { headers: { cookie: sessionCookie } });
     assert.equal(home.status, 200);
     assert.match(await home.text(), /admin@fixture.test/);
+    const audioUrl = `${origin}/api/player/audio/${mediaFile.id}`;
+    const anonymousMedia = await fetch(audioUrl);
+    assert.equal(anonymousMedia.status, 401, (await anonymousMedia.text()).slice(0, 1000));
+    assert.equal((await fetch(`${audioUrl}?format=mp3`)).status, 401);
+    assert.equal((await fetch(`${origin}/api/player/audio/invalid`)).status, 401);
+    const invalidSession = await fetch(audioUrl, { headers: { cookie: "mint_session=invalid" } });
+    assert.equal(invalidSession.status, 401);
+    assert.equal((await fetch(`${origin}/api/player/audio/invalid`, {
+      headers: { cookie: sessionCookie },
+    })).status, 400);
+    const fullMedia = await fetch(audioUrl, { headers: { cookie: sessionCookie } });
+    assert.equal(fullMedia.status, 200);
+    assert.equal(fullMedia.headers.get("content-type"), "audio/mpeg");
+    // Next strips Content-Length from streamed Route Handler responses.
+    assert.equal(fullMedia.headers.get("content-length"), null);
+    assert.equal(fullMedia.headers.get("cache-control"), "private, no-store");
+    assert.deepEqual(Buffer.from(await fullMedia.arrayBuffer()), mediaBytes);
+    const partialMedia = await fetch(audioUrl, {
+      headers: { cookie: sessionCookie, range: "bytes=3-9" },
+    });
+    assert.equal(partialMedia.status, 206);
+    assert.equal(partialMedia.headers.get("content-range"), `bytes 3-9/${mediaBytes.length}`);
+    assert.deepEqual(Buffer.from(await partialMedia.arrayBuffer()), mediaBytes.subarray(3, 10));
+    const headMedia = await fetch(audioUrl, { method: "HEAD", headers: { cookie: sessionCookie } });
+    assert.equal(headMedia.status, 200);
+    assert.equal(headMedia.headers.get("content-length"), null);
+    assert.equal(await headMedia.text(), "");
+    const compatibilityFormat = await fetch(`${audioUrl}?format=mp3`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(compatibilityFormat.status, 415);
+    assert.equal((await fetch(`${audioUrl}?format=unsupported`, {
+      headers: { cookie: sessionCookie },
+    })).status, 400);
+    const invalidRange = await fetch(audioUrl, {
+      headers: { cookie: sessionCookie, range: "bytes=0-1,4-5" },
+    });
+    assert.equal(invalidRange.status, 416);
+    assert.equal(invalidRange.headers.get("content-range"), `bytes */${mediaBytes.length}`);
+    const missingMedia = await fetch(`${origin}/api/player/audio/00000000-0000-4000-8000-000000000000`, {
+      headers: { cookie: sessionCookie },
+    });
+    assert.equal(missingMedia.status, 404);
     const logout = await form("/app", {}, { cookie: sessionCookie });
     assert.equal(logout.status, 303);
     assert.match(logout.headers.get("set-cookie") ?? "", /mint_session=;/);
@@ -220,6 +304,9 @@ test("existing Next forms onboard through trusted ingress, SDK and persisted API
       next.kill("SIGTERM");
       const timer = setTimeout(() => next?.kill("SIGKILL"), 15_000);
       try { await exited; } finally { clearTimeout(timer); }
+    }
+    if (!succeeded) {
+      logs += "\nNext production server output is captured above.";
     }
     try { await runtime?.stop(); } finally {
       await observer.end();

@@ -16,10 +16,16 @@ import {
   type AccountPrincipal, type DecideAccessRequestInput,
   type LibraryFilePage, type LibraryListInput,
   adminAccountListInputSchema, adminAccountPageSchema, setMemberRoleInputSchema,
+  pendingAccessRequestCountSchema,
+  playbackQueueEditInputSchema, playbackQueueEditRequestSchema,
+  playbackQueueOpenInputSchema, playbackQueuePageInputSchema,
+  playbackQueuePageRequestSchema, playbackQueuePageSchema,
   type AdminAccountListInput, type AdminAccountPage, type SetMemberRoleInput,
   type ListeningHistoryDeleteInput, type ListeningHistoryListInput,
   type ListeningHistoryPage, type ListeningHistoryPrivateSessionInput,
   type ListeningHistoryRecordInput,
+  type PlaybackQueueEditInput, type PlaybackQueueOpenInput, type PlaybackQueuePage,
+  type PlaybackQueuePageInput,
 } from "@mint/contracts";
 import { createTRPCUntypedClient, httpLink } from "@trpc/client";
 
@@ -67,12 +73,18 @@ export interface MintSdk {
     requestAccess(input: AccountAccessRequestInput, options?: { signal?: AbortSignal }): Promise<AccountAccessRequestResult>;
     signOut(options?: { signal?: AbortSignal }): Promise<void>;
     session(options?: { signal?: AbortSignal }): Promise<AccountPrincipal | null>;
+    pendingAccessRequestCount(options?: { signal?: AbortSignal }): Promise<number>;
     decideAccessRequest(input: DecideAccessRequestInput, options?: { signal?: AbortSignal }): Promise<void>;
     setMemberStatus(input: SetMemberStatusInput, options?: { signal?: AbortSignal }): Promise<void>;
     listAccounts(input?: AdminAccountListInput, options?: { signal?: AbortSignal }): Promise<AdminAccountPage>;
     setMemberRole(input: SetMemberRoleInput, options?: { signal?: AbortSignal }): Promise<void>;
   };
   playback: {
+    queue: {
+      open(input: PlaybackQueueOpenInput, options?: { signal?: AbortSignal }): Promise<PlaybackQueuePage>;
+      page(queueId: string, input: PlaybackQueuePageInput, options?: { signal?: AbortSignal }): Promise<PlaybackQueuePage>;
+      edit(queueId: string, input: PlaybackQueueEditInput, options?: { signal?: AbortSignal }): Promise<PlaybackQueuePage>;
+    };
     history: {
       list(input?: ListeningHistoryListInput, options?: { signal?: AbortSignal }): Promise<ListeningHistoryPage>;
       record(input: ListeningHistoryRecordInput, options?: { signal?: AbortSignal }): Promise<{ recorded: boolean }>;
@@ -158,6 +170,21 @@ export function createMintSdk(options: MintSdkOptions): MintSdk {
       },
     },
     accounts: {
+      async pendingAccessRequestCount({ signal } = {}) {
+        let value: unknown;
+        try {
+          value = await client.query("accounts.pendingAccessRequestCount", undefined, { signal });
+        } catch (error) {
+          signal?.throwIfAborted();
+          if (error instanceof Error && "cause" in error && error.cause instanceof MintSdkError) {
+            throw error.cause;
+          }
+          throw new MintSdkError("RPC_ERROR");
+        }
+        const count = pendingAccessRequestCountSchema.safeParse(value);
+        if (!count.success) throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+        return count.data;
+      },
       async signIn(input, { signal } = {}) {
         const parsed = browserSignInInputSchema.safeParse(input);
         if (!parsed.success) throw new MintSdkError("INVALID_INPUT");
@@ -278,6 +305,65 @@ export function createMintSdk(options: MintSdkOptions): MintSdk {
       },
     },
     playback: {
+      queue: {
+        async open(input, { signal } = {}) {
+          const parsed = playbackQueueOpenInputSchema.safeParse(input);
+          if (!parsed.success) throw new MintSdkError("INVALID_INPUT");
+          let value: unknown;
+          try {
+            value = await client.mutation("playback.queue.open", parsed.data, { signal });
+          } catch (error) {
+            signal?.throwIfAborted();
+            if (error instanceof Error && "cause" in error && error.cause instanceof MintSdkError) {
+              throw error.cause;
+            }
+            throw new MintSdkError("RPC_ERROR");
+          }
+          const page = playbackQueuePageSchema.safeParse(value);
+          if (!page.success) throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+          return page.data;
+        },
+        async page(queueId, input, { signal } = {}) {
+          const parsedId = playbackQueuePageRequestSchema.shape.queueId.safeParse(queueId);
+          const parsedInput = playbackQueuePageInputSchema.safeParse(input);
+          if (!parsedId.success || !parsedInput.success) throw new MintSdkError("INVALID_INPUT");
+          const request = playbackQueuePageRequestSchema.safeParse({ queueId: parsedId.data, ...parsedInput.data });
+          if (!request.success) throw new MintSdkError("INVALID_INPUT");
+          let value: unknown;
+          try {
+            value = await client.query("playback.queue.page", request.data, { signal });
+          } catch (error) {
+            signal?.throwIfAborted();
+            if (error instanceof Error && "cause" in error && error.cause instanceof MintSdkError) {
+              throw error.cause;
+            }
+            throw new MintSdkError("RPC_ERROR");
+          }
+          const page = playbackQueuePageSchema.safeParse(value);
+          if (!page.success) throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+          return page.data;
+        },
+        async edit(queueId, input, { signal } = {}) {
+          const parsedId = playbackQueueEditRequestSchema.shape.queueId.safeParse(queueId);
+          const parsedInput = playbackQueueEditInputSchema.safeParse(input);
+          if (!parsedId.success || !parsedInput.success) throw new MintSdkError("INVALID_INPUT");
+          const request = playbackQueueEditRequestSchema.safeParse({ queueId: parsedId.data, ...parsedInput.data });
+          if (!request.success) throw new MintSdkError("INVALID_INPUT");
+          let value: unknown;
+          try {
+            value = await client.mutation("playback.queue.edit", request.data, { signal });
+          } catch (error) {
+            signal?.throwIfAborted();
+            if (error instanceof Error && "cause" in error && error.cause instanceof MintSdkError) {
+              throw error.cause;
+            }
+            throw new MintSdkError("RPC_ERROR");
+          }
+          const page = playbackQueuePageSchema.safeParse(value);
+          if (!page.success) throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+          return page.data;
+        },
+      },
       history: {
         async list(input = {}, { signal } = {}) {
           const parsed = listeningHistoryListInputSchema.safeParse(input);

@@ -14,15 +14,39 @@ import {
 } from "@/lib/data";
 import { listIssueReports } from "@/lib/issue-reports";
 import { publicUrl } from "@/lib/request";
+import { targetAuthentication, targetAuthenticationEnabled } from "@/lib/target-auth";
+import { targetManageAccounts } from "@/lib/app-routes";
 
 export const metadata: Metadata = { title: "Admin portal" };
 export const dynamic = "force-dynamic";
 
-export default async function ManagePage() {
+export default async function ManagePage({ searchParams }: {
+  searchParams: Promise<{ requestsCursor?: string | string[]; membersCursor?: string | string[] }>;
+}) {
   const admin = await requireAdmin();
+  const target = targetAuthenticationEnabled();
+  const params = await searchParams;
+  if (Array.isArray(params.requestsCursor) || Array.isArray(params.membersCursor)) {
+    throw new Error("Invalid account page.");
+  }
+  const { requestsCursor, membersCursor } = params;
+  const accounts = target
+    ? (async () => {
+        const { sdk, signal } = await targetAuthentication();
+        const [requests, members] = await Promise.all([
+          sdk.accounts.listAccounts({ status: "pending", limit: 50, cursor: requestsCursor }, { signal }),
+          sdk.accounts.listAccounts({ status: "members", limit: 50, cursor: membersCursor }, { signal }),
+        ]);
+        return targetManageAccounts(requests, members, requestsCursor, membersCursor);
+      })()
+    : Promise.all([getAccessRequests(), getMembers()]).then(([requests, members]) => ({
+        requests: requests.map(({ id, name, email, requestNote, createdAt }) =>
+          ({ id, name, email, requestNote, createdAt: createdAt.toISOString() })),
+        members,
+        pagination: null,
+      }));
   const [
-    requests,
-    members,
+    accountData,
     failedTracks,
     activeTracks,
     health,
@@ -31,8 +55,7 @@ export default async function ManagePage() {
     remotePoolSize,
     issueReports,
   ] = await Promise.all([
-    getAccessRequests(),
-    getMembers(),
+    accounts,
     getFailedTracks(),
     getActiveTracks(),
     getHealth(),
@@ -46,14 +69,9 @@ export default async function ManagePage() {
     <ManageView
       adminId={admin.id}
       origin={publicUrl()}
-      requests={requests.map((r) => ({
-        id: r.id,
-        name: r.name,
-        email: r.email,
-        requestNote: r.requestNote,
-        createdAt: r.createdAt.toISOString(),
-      }))}
-      members={members}
+      requests={accountData.requests}
+      members={accountData.members}
+      accountPagination={accountData.pagination}
       failedTracks={failedTracks}
       activeTracks={activeTracks}
       health={health}

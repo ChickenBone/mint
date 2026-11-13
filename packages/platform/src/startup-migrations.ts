@@ -24,6 +24,8 @@ const files = [
   { tag: "0007_catalog_startup_seed_receipts", path: "domain-catalog/migrations/0001_startup_seed_receipts.sql" },
   { tag: "0008_catalog_listenbrainz_seed_ingestion", path: "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql" },
   { tag: "0009_playback_listening_history", path: "domain-playback/migrations/0000_listening_history.sql" },
+  { tag: "0010_library_scan_jobs", path: "domain-library/migrations/0002_library_scan_jobs.sql" },
+  { tag: "0011_playback_queue_snapshots", path: "domain-playback/migrations/0001_queue_snapshots.sql" },
 ] as const;
 
 /**

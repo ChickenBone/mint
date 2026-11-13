@@ -2,7 +2,10 @@ import type { ConnectionOptions } from "node:tls";
 import { argon2Passwords, bootstrapAdmin, createAccountsRepository, sessions, users } from "@mint/domain-accounts";
 import { recordings } from "@mint/domain-catalog";
 import { createLibraryRepository, mediaFiles, roots } from "@mint/domain-library";
-import { createListeningHistoryRepository, historyPreferences, listeningHistory } from "@mint/domain-playback";
+import {
+  createListeningHistoryRepository, createPlaybackQueueRepository,
+  historyPreferences, listeningHistory, queueEntries, queueSnapshots,
+} from "@mint/domain-playback";
 import { PostgresRateLimiter, runStartupMigrations, type StartupMigrationOptions } from "@mint/platform";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -63,6 +66,7 @@ export async function startApiRuntime(options: ApiRuntimeOptions): Promise<ApiRu
   let phase = "configuration";
   try {
     const repository = createAccountsRepository(drizzle(pool, { schema: { users, sessions } }));
+    const library = createLibraryRepository(drizzle(pool, { schema: { roots, mediaFiles, recordings } }));
     app = createApiServer({
       gatewayToken: options.gatewayToken,
       ...(options.publicAuthProxy ? { publicAuth: {
@@ -73,9 +77,13 @@ export async function startApiRuntime(options: ApiRuntimeOptions): Promise<ApiRu
       decisions: repository,
       memberStatuses: repository,
       adminAccounts: repository,
-      library: createLibraryRepository(drizzle(pool, { schema: { roots, mediaFiles, recordings } })),
+      library,
+      libraryMedia: library,
       playbackHistory: createListeningHistoryRepository(drizzle(pool, {
         schema: { historyPreferences, listeningHistory, mediaFiles, recordings, users },
+      })),
+      playbackQueues: createPlaybackQueueRepository(drizzle(pool, {
+        schema: { queueSnapshots, queueEntries, mediaFiles, recordings, users },
       })),
       notifyAccessRequests: options.notifyAccessRequests,
       errors: options.errors,

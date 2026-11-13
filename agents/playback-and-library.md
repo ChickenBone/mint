@@ -32,6 +32,8 @@ The mini-player and Now Playing are one presentation surface. Expansion/collapse
 
 Original browser-supported audio streams unchanged. MP3 compatibility is an explicit private conversion cache; it must not replace original files. Codec/autoplay/background limitations need truthful messages, not hidden failure or guaranteed seamlessness claims.
 
+In target-auth mode, `/api/player/audio/{id}` proxies the browser session and server-only gateway credential to the private API's `/media/{id}` endpoint. The API opens only verified library media and supports `GET`, `HEAD`, and single byte ranges without exposing filesystem paths or mounting media into Next. The proxy validates audio and range metadata and streams the response without buffering; unsupported MP3 compatibility conversion returns `415`. Next's streamed Route Handler adapter removes `Content-Length` on the browser-facing response, so end-to-end checks verify the exact bytes and `Content-Range`; the private API itself still reports the exact content length.
+
 Keep same-origin/blob media allowed by the initial document CSP so navigating from a public page does not retain a media-blocking policy. Authorization still belongs on private media endpoints.
 
 ## Artwork

@@ -1,3 +1,5 @@
+import type { AdminAccountPage } from "@mint/contracts";
+
 const libraryTabs: Record<string, string> = {
   album: "album",
   albums: "album",
@@ -65,6 +67,39 @@ export function resolveSettingsSection(section?: string | null): SettingsSection
 export function resolveManageTab(tab?: string | null): ManageTab {
   const normalized = tab?.toLowerCase() as ManageTab | undefined;
   return normalized && validManageTabs.has(normalized) ? normalized : "requests";
+}
+
+export function manageAccountPageHref(
+  current: URLSearchParams,
+  name: "requestsCursor" | "membersCursor",
+  cursor: string | null,
+) {
+  const params = new URLSearchParams(current);
+  if (cursor) params.set(name, cursor);
+  else params.delete(name);
+  return withQuery("/app/manage", params);
+}
+
+export function targetManageAccounts(
+  requests: AdminAccountPage,
+  members: AdminAccountPage,
+  requestsCursor?: string,
+  membersCursor?: string,
+) {
+  return {
+    requests: requests.items.map(({ id, name, email, requestNote, createdAt }) =>
+      ({ id, name, email, requestNote, createdAt })),
+    members: members.items.map(({ id, name, email, role, status, createdAt }) => ({
+      id, name, email, role, status, created_at: createdAt,
+      tracks: null, linked: null, last_synced_at: null,
+    })),
+    pagination: {
+      requestsCursor: requestsCursor ?? null,
+      membersCursor: membersCursor ?? null,
+      nextRequestsCursor: requests.nextCursor,
+      nextMembersCursor: members.nextCursor,
+    },
+  };
 }
 
 export function legacyMusicHref(params: URLSearchParams) {

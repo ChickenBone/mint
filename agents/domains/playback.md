@@ -37,7 +37,7 @@ Details: [playback and library](../playback-and-library.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`providers`](providers.md), [`realtime`](realtime.md), [`web-shell`](web-shell.md)
 - **Live detail:** `npm run agents -- map playback` (exports, line counts, cross-domain import edges).
 
-### Owned files (64)
+### Owned files (67)
 
 - `apps/web/public/` `.gitkeep`, `offline.css`, `offline.html`, `offline.js`, `sw.js`
 - `apps/web/src/app/api/` `player/audio/[id]/route.ts`, `player/catalog/route.ts`, `player/info/[id]/route.ts`, `player/items/route.ts`, `player/lyrics/[id]/matches/route.ts`, `player/lyrics/[id]/route.ts`, `player/offline/logout/route.ts`, `player/offline/route.ts`, `player/queue/[[...path]]/route.ts`, `player/session/route.ts`
@@ -51,13 +51,13 @@ Details: [playback and library](../playback-and-library.md).
 - `packages/core/src/` `playback.ts`
 - `packages/core/src/db/` `listening.ts`, `playback-queues.ts`
 - `packages/domain-playback/` `package.json`, `tsconfig.json`
-- `packages/domain-playback/migrations/` `0000_listening_history.sql`
-- `packages/domain-playback/src/` `history-policy.ts`, `history.ts`, `index.ts`, `schema.ts`
-- `packages/domain-playback/tests/` `history-policy.test.ts`, `schema.test.ts`
+- `packages/domain-playback/migrations/` `0000_listening_history.sql`, `0001_queue_snapshots.sql`
+- `packages/domain-playback/src/` `history-policy.ts`, `history.ts`, `index.ts`, `queue.ts`, `schema.ts`
+- `packages/domain-playback/tests/` `history-policy.test.ts`, `queue.integration.test.ts`, `schema.test.ts`
 
 ### Validate
 
-Owned tests: 12.
+Owned tests: 13.
 
 ```bash
 corepack pnpm --filter @mint/web run typecheck
@@ -67,7 +67,7 @@ corepack pnpm --filter @mint/worker run typecheck
 corepack pnpm --filter @mint/worker exec tsx --test --test-force-exit src/playback.integration.test.ts src/playback.test.ts src/player-features.test.ts src/transcode.test.ts
 corepack pnpm --filter @mint/core run typecheck
 corepack pnpm --filter @mint/domain-playback run typecheck
-corepack pnpm --filter @mint/domain-playback exec tsx --test tests/history-policy.test.ts tests/schema.test.ts
+corepack pnpm --filter @mint/domain-playback exec tsx --test tests/history-policy.test.ts tests/queue.integration.test.ts tests/schema.test.ts
 ```
 
 > Integration/DB tests skip without PostgreSQL/Redis/audio env vars; see `.github/workflows/ci.yml`. A skip is not a pass.

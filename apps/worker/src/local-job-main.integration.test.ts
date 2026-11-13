@@ -111,7 +111,7 @@ test("standalone worker migrates before scheduling and handles repeated/startup 
     for (let i = 0; i < 2; i++) {
       const running = start();
       await until(() => running.stdout.includes("local-worker-running"));
-      assert.equal(Number((await observer.query("SELECT count(*) FROM mint_migrations.__drizzle_migrations")).rows[0].count), 9);
+      assert.equal(Number((await observer.query("SELECT count(*) FROM mint_migrations.__drizzle_migrations")).rows[0].count), 12);
       assert.equal(Number((await observer.query("SELECT count(*) FROM mint_jobs.job")).rows[0].count), 0);
       running.child.kill("SIGTERM");
       running.child.kill("SIGTERM");

@@ -302,10 +302,11 @@ these local contracts, not live upstream access or deployment readiness.
 ### Local worker runtime
 
 The separate `apps/worker/src/local-job-{config,runtime,main}.ts` entry point
-composes only the implemented ListenBrainz queue/handler and one startup seed;
-it does not replace legacy `src/index.ts` or enable the other eight planner
-sources. Required `MINT_LOCAL_WORKER_ENABLED_SOURCES` is JSON `[]` or
-`["listenbrainz"]`. `[]` returns disabled without opening a pool, running
+composes the implemented ListenBrainz queue/handler and one startup seed and
+the explicit Library scan worker; it does not replace legacy `src/index.ts` or
+enable the other eight planner sources. Required
+`MINT_LOCAL_WORKER_ENABLED_SOURCES` is JSON `[]`, `["listenbrainz"]`,
+`["library"]`, or both. `[]` returns disabled without opening a pool, running
 migrations, starting queues or fetching providers. Missing/invalid configuration
 fails closed; no implicit enablement or inherited legacy DB defaults apply.
 
@@ -321,20 +322,39 @@ When enabled, all settings below are required with prefix `MINT_LOCAL_WORKER_`:
 | `SUPERVISE_INTERVAL_SECONDS`, `MAINTENANCE_INTERVAL_SECONDS` | Integer 1–86400 seconds |
 | `SHUTDOWN_TIMEOUT_MS` | Integer 1000–60000 ms |
 
+Library scanning additionally requires `MINT_LOCAL_WORKER_LIBRARY_SCAN` JSON:
+`rootIds` contains 1–32 distinct existing lowercase root UUIDs, and `options`
+contains `maxEntries`, `maxFiles`, `maxDepth`, `timeoutMs`, optional
+`maxReplayEntries`, and `audio` with absolute `ffprobePath` and `ffmpegPath`,
+`maxProbeInputBytes`, `maxDecodeInputBytes`, `maxOutputBytes`,
+`probeTimeoutMs`, and `decodeTimeoutMs`. The configuration validator enforces
+the respective bounds. Register a root separately using the
+[operator command](../../apps/api/LIBRARY-ROOT.md), with the same read-only
+mount and path available to the worker. Configuring a root creates initial scan
+intent only when absent; it does not rescan terminal work on startup.
+
 `corepack pnpm --filter @mint/worker run build:local` builds
 `dist/local-job-main.js`; `start:local` starts that artifact with supplied
 environment. External runtime dependencies must be available, and the configured
 packages tree must retain `platform/migrations/meta/_journal.json` plus all mapped
-domain/platform SQL through central `0009`. Build/start scripts are not container
+domain/platform SQL including central `0011`. Build/start scripts are not container
 or deployment wiring. The worker starts central migrations before pg-boss,
 validates its queue policy and schedules intent using the atomic receipt adapter.
-Existing startup receipts do not recover an exhausted job automatically.
+Existing ListenBrainz startup receipts do not recover an exhausted job
+automatically. Library scan intent is durable and pending work is periodically
+redispatched after queue exhaustion or restart. A per-root advisory lock
+serializes scanning and explicit requests. Completed, partial, blocked and
+failed states persist; `LocalWorkerRuntime.requestScan(rootId, "resume" |
+"restart")` can explicitly recover configured roots, with restart discarding
+the cursor. This method has no operator CLI or HTTP endpoint yet. Scan failures
+are bounded at five consecutive thrown failures; cancellation preserves pending
+intent and does not consume that budget.
 
 SIGINT/SIGTERM abort source work and stop queues before closing the owned pool;
 startup errors clean up and report sanitized phase/error names. Disposable
 PostgreSQL 16 fixtures cover the config/runtime/main boundary; a compiled disabled
 smoke is not live-provider or deployment evidence. Other-source handlers,
-canonical integration, automatic recovery, restore/mixed-load and full P2/P3
+canonical integration, ListenBrainz exhausted-job recovery, restore/mixed-load and full P2/P3
 readiness remain open.
 
 ### Library scan continuation
@@ -356,7 +376,7 @@ New-entry/file budgets exclude replay; `replayedEntries` reports its cost.
 Active directory identity/stamp and replayed-prefix changes reject stale cursors.
 Timestamp collisions can hide unread-suffix changes; additions in completed
 directories require a fresh scan. There is no snapshot, universal mutation
-detection, full fairness, worker schedule/lease, freshness reconciliation,
+detection, full fairness, freshness reconciliation,
 deletion sweep, hard filesystem/SQL timeout or playback authorization.
 
 ### Reconciliation bounds

@@ -370,6 +370,9 @@ importers:
       '@mint/domain-catalog':
         specifier: workspace:*
         version: link:../../packages/domain-catalog
+      '@mint/domain-library':
+        specifier: workspace:*
+        version: link:../../packages/domain-library
       '@mint/platform':
         specifier: workspace:*
         version: link:../../packages/platform

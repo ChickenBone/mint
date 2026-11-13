@@ -346,6 +346,7 @@
         "apps/web/src/lib/artwork-query.ts",
         "apps/web/src/lib/data.ts",
         "apps/web/src/components/app/music-browser.tsx",
+        "apps/web/src/components/app/target-library-browser.tsx",
         "apps/web/src/components/app/catalog-artist-albums.tsx",
         "apps/web/src/components/app/catalog-collection-songs.tsx",
         "apps/web/src/components/app/music-links.tsx",
@@ -356,6 +357,7 @@
         "apps/web/src/components/artwork.tsx",
         "apps/web/src/components/fresh-shelf.tsx",
         "apps/web/src/app/app/library/**",
+        "apps/web/tests/target-library-browser.test.ts",
         "apps/web/src/app/app/music/**",
         "apps/web/src/app/app/search/**",
         "apps/web/src/app/api/music/search/**",
@@ -365,6 +367,7 @@
         "apps/web/tests/artwork.test.ts",
         "apps/web/tests/catalog-connection.test.ts",
         "apps/worker/src/library-*.ts",
+        "apps/worker/src/local-library-scan*.ts",
         "apps/worker/src/catalog-priority*.ts",
         "apps/worker/src/jobs/library-*.ts",
         "apps/worker/src/artwork*.ts",
@@ -386,6 +389,7 @@
         "corepack pnpm --filter @mint/web run lint",
         "corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/artwork.test.ts tests/catalog-connection.test.ts",
         "corepack pnpm --filter @mint/worker run typecheck",
+        "corepack pnpm --filter @mint/worker exec tsx --test src/local-library-scan.integration.test.ts",
         "corepack pnpm --filter @mint/domain-library run typecheck",
         "corepack pnpm --filter @mint/domain-library exec tsx --test tests/audio-probe.integration.test.ts tests/path-access.integration.test.ts tests/playback-media.integration.test.ts tests/repository.integration.test.ts tests/schema.test.ts tests/scanner.test.ts tests/scanner-repository.integration.test.ts tests/verify-media-file.integration.test.ts"
       ]

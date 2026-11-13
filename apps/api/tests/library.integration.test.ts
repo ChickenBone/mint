@@ -1,14 +1,20 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { EventEmitter, once } from "node:events";
+import { mkdir, mkdtemp, open, readFile, rm, writeFile, type FileHandle } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { recordings } from "@mint/domain-catalog";
-import { createLibraryRepository, mediaFiles, roots } from "@mint/domain-library";
+import {
+  createLibraryRepository, LIBRARY_MEDIA_READ_MAX_BYTES, mediaFiles, roots,
+  verifyLibraryMediaFile, type LibraryPlaybackTarget, type LibraryRepository,
+} from "@mint/domain-library";
+import type { SessionEvidence } from "@mint/domain-accounts";
 import { createMintSdk, MintSdkError } from "@mint/sdk";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -195,6 +201,47 @@ test("Library SDK -> HTTP -> migrated PG16 authorizes fresh sessions and lists o
     assert.equal(await member.accounts.session(), null);
     assert.deepEqual(logged, []);
 
+    const music = path.join(cluster, "music");
+    const wav = path.join(music, "original.wav");
+    await mkdir(music);
+    await exec("/usr/bin/ffmpeg", [
+      "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100:duration=1",
+      "-c:a", "pcm_s16le", wav,
+    ]);
+    const original = await readFile(wav);
+    const playbackRoot = await repository.createRoot({ path: music });
+    const playbackFile = await repository.createMediaFile({ rootId: playbackRoot.id, relativePath: "original.wav" });
+    const verification = await verifyLibraryMediaFile(repository, playbackFile.id, {
+      ffprobePath: "/usr/bin/ffprobe", ffmpegPath: "/usr/bin/ffmpeg",
+      maxProbeInputBytes: 1024 * 1024, maxDecodeInputBytes: 1024 * 1024,
+      maxOutputBytes: 1024 * 1024, probeTimeoutMs: 5000, decodeTimeoutMs: 5000,
+    });
+    assert.equal(verification.status, "verified");
+    const mediaUrl = `${runtime.address}/media/${playbackFile.id}`;
+    const mediaHeaders = { "x-mint-gateway-token": gatewayToken, cookie: `mint_session=${tokens.admin}` };
+    const full = await fetch(mediaUrl, { headers: mediaHeaders });
+    assert.equal(full.status, 200);
+    assert.equal(full.headers.get("content-type"), "audio/wav");
+    assert.equal(full.headers.get("content-length"), String(original.length));
+    assert.deepEqual(Buffer.from(await full.arrayBuffer()), original);
+    const partial = await fetch(mediaUrl, { headers: { ...mediaHeaders, range: "bytes=31-1234" } });
+    assert.equal(partial.status, 206);
+    assert.equal(partial.headers.get("content-range"), `bytes 31-1234/${original.length}`);
+    assert.deepEqual(Buffer.from(await partial.arrayBuffer()), original.subarray(31, 1235));
+    const head = await fetch(mediaUrl, { method: "HEAD", headers: mediaHeaders });
+    assert.equal(head.status, 200);
+    assert.equal(head.headers.get("content-length"), String(original.length));
+    assert.equal((await head.arrayBuffer()).byteLength, 0);
+    await observer.query("UPDATE accounts.users SET status = 'disabled' WHERE id = $1", [userIds.admin]);
+    assert.equal((await fetch(mediaUrl, { headers: mediaHeaders })).status, 401);
+    await observer.query("UPDATE accounts.users SET status = 'active' WHERE id = $1", [userIds.admin]);
+    await rm(wav);
+    assert.equal((await fetch(mediaUrl, { headers: mediaHeaders })).status, 404);
+    assert.equal((await observer.query(
+      "SELECT availability FROM library.media_files WHERE id = $1", [playbackFile.id],
+    )).rows[0].availability, "unavailable");
+    assert.deepEqual(logged, []);
+
     // Real database failures must be explicit, sanitized failures, never empty pages.
     await observer.query("ALTER TABLE library.media_files RENAME TO fixture_hidden_files");
     try {
@@ -269,5 +316,365 @@ test("Library factory compatibility fails explicitly when unavailable and valida
     assert.equal(logged.length, 1);
   } finally {
     await invalid.close();
+  }
+});
+
+async function mediaFixture(t: TestContext) {
+  const directory = await mkdtemp(path.join(tmpdir(), "mint-api-media-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const bytes = Buffer.alloc(LIBRARY_MEDIA_READ_MAX_BYTES * 4 + 17);
+  for (let index = 0; index < bytes.length; index++) bytes[index] = index % 251;
+  await writeFile(path.join(directory, "fixture.flac"), bytes);
+  await writeFile(path.join(directory, "unsupported.bin"), bytes);
+  const probe = await open(path.join(directory, "fixture.flac"), "r");
+  const prototype = Object.getPrototypeOf(probe) as FileHandle;
+  await probe.close();
+  const handles = new Set<FileHandle>();
+  const originalStat = prototype.stat;
+  t.mock.method(prototype, "stat", function (this: FileHandle, ...args: Parameters<FileHandle["stat"]>) {
+    handles.add(this);
+    return originalStat.apply(this, args);
+  });
+  const rootId = randomUUID();
+  const id = randomUUID();
+  const token = randomBytes(32).toString("base64url");
+  const gatewayToken = randomBytes(32).toString("base64url");
+  const now = new Date();
+  const evidence: SessionEvidence = {
+    expiresAt: new Date(now.getTime() + 60_000),
+    principal: {
+      id: randomUUID(), email: "fixture@example.test", name: "Fixture", role: "user", status: "active",
+    },
+  };
+  const state = {
+    evidence: evidence as SessionEvidence | null,
+    sessionReads: 0,
+    targetReads: 0,
+    target: {
+      root: { id: rootId, path: directory },
+      mediaFile: { rootId, relativePath: "fixture.flac" },
+      availability: "verified", audioCodec: "flac",
+    } as LibraryPlaybackTarget | null,
+    failure: null as Error | null,
+    sessionFailure: null as Error | null,
+    writes: [] as Parameters<LibraryRepository["recordVerification"]>[],
+    errors: [] as string[],
+  };
+  const headers = { "x-mint-gateway-token": gatewayToken, cookie: `mint_session=${token}` };
+  const dependencies = {
+    gatewayToken,
+    sessions: { findByTokenHash: async (value: string) => {
+      state.sessionReads++;
+      if (state.sessionFailure) throw state.sessionFailure;
+      return value === hash(token) ? state.evidence : null;
+    } },
+    decisions: { decidePendingAccess: async () => {}, countPending: async () => 0 },
+    libraryMedia: {
+      getPlaybackTarget: async (value: string) => {
+        state.targetReads++;
+        if (state.failure) throw state.failure;
+        return value === id ? state.target : null;
+      },
+      recordVerification: async (...args: Parameters<LibraryRepository["recordVerification"]>) => {
+        state.writes.push(args);
+      },
+    },
+    notifyAccessRequests: async () => {},
+    errors: { error: ({ name }: { name: string }) => { state.errors.push(name); } },
+    now: () => now,
+  };
+  const app = createApiServer(dependencies);
+  t.after(async () => {
+    await app.close();
+    assert.ok([...handles].every((handle) => handle.fd === -1), "Every opened media handle must be closed");
+  });
+  const request = (options: { method?: "GET" | "HEAD"; range?: string; cookie?: string; url?: string } = {}) =>
+    app.inject({
+      method: options.method ?? "GET", url: options.url ?? `/media/${id}`,
+      headers: {
+        ...headers,
+        ...(options.range === undefined ? {} : { range: options.range }),
+        ...(options.cookie === undefined ? {} : { cookie: options.cookie }),
+      },
+    });
+  return { app, state, request, headers, id, bytes, handles, prototype, dependencies };
+}
+
+test("private media authenticates gateway before lookup and re-resolves active sessions on every request", async (t) => {
+  const { app, state, request, headers, id } = await mediaFixture(t);
+  for (const method of ["GET", "HEAD"] as const) {
+    for (const value of ["", randomBytes(32).toString("base64url")]) {
+      const response = await app.inject({
+        method, url: `/media/${id}`,
+        headers: { ...headers, "x-mint-gateway-token": value },
+      });
+      assert.equal(response.statusCode, 401);
+      assert.equal(response.headers["cache-control"], "private, no-store");
+    }
+  }
+  assert.equal(state.sessionReads, 0);
+  assert.equal(state.targetReads, 0);
+  for (const cookie of ["", "mint_session=unknown", `${headers.cookie}; ${headers.cookie}`, "mint_session=mn1.native"]) {
+    assert.equal((await request({ cookie })).statusCode, 401);
+  }
+  const forged = await app.inject({
+    url: `/media/${id}`,
+    headers: {
+      ...headers, cookie: "", authorization: "Bearer forged-session",
+      "x-forwarded-for": "127.0.0.1", "x-real-ip": "127.0.0.1",
+      "x-mint-client-ip": "127.0.0.1", "x-mint-user-role": "admin", "x-mint-user-status": "active",
+    },
+  });
+  assert.equal(forged.statusCode, 401);
+  const evidence = state.evidence!;
+  for (const status of ["pending", "denied", "disabled"] as const) {
+    state.evidence = { ...evidence, principal: { ...evidence.principal, status } };
+    assert.equal((await request()).statusCode, 401);
+  }
+  state.evidence = { ...evidence, expiresAt: new Date(0) };
+  assert.equal((await request()).statusCode, 401);
+  state.evidence = null;
+  assert.equal((await request()).statusCode, 401);
+  assert.equal(state.targetReads, 0);
+  for (const role of ["user", "admin"] as const) {
+    state.evidence = { ...evidence, principal: { ...evidence.principal, role } };
+    assert.equal((await request()).statusCode, 200);
+  }
+  state.evidence = { ...evidence, principal: { ...evidence.principal, status: "disabled" } };
+  assert.equal((await request()).statusCode, 401);
+  assert.equal(state.targetReads, 2);
+  assert.deepEqual(state.errors, []);
+});
+
+test("media GET and HEAD preserve exact original bytes, safe headers and single-range semantics", async (t) => {
+  const { request, bytes, state } = await mediaFixture(t);
+  for (const [range, start, end] of [
+    [undefined, 0, bytes.length - 1],
+    [`bytes=0-${bytes.length - 1}`, 0, bytes.length - 1],
+    ["bytes=31-1234", 31, 1234],
+    ["bytes=950-", 950, bytes.length - 1],
+    ["bytes=-777", bytes.length - 777, bytes.length - 1],
+    [`bytes=${bytes.length - 10}-${bytes.length + 999}`, bytes.length - 10, bytes.length - 1],
+    ["bytes=0-0", 0, 0],
+  ] as const) {
+    for (const method of ["GET", "HEAD"] as const) {
+      const response = await request({ method, range });
+      assert.equal(response.statusCode, range === undefined ? 200 : 206);
+      assert.equal(response.headers["content-type"], "audio/flac");
+      assert.equal(response.headers["content-length"], String(end - start + 1));
+      assert.equal(response.headers["accept-ranges"], "bytes");
+      assert.equal(response.headers["cache-control"], "private, no-store");
+      assert.equal(response.headers["content-range"],
+        range === undefined ? undefined : `bytes ${start}-${end}/${bytes.length}`);
+      for (const header of ["location", "content-disposition", "etag", "last-modified", "set-cookie"]) {
+        assert.equal(response.headers[header], undefined);
+      }
+      assert.deepEqual(response.rawPayload, method === "HEAD" ? Buffer.alloc(0) : bytes.subarray(start, end + 1));
+    }
+  }
+  assert.deepEqual(state.writes, []);
+  assert.deepEqual(state.errors, []);
+});
+
+test("media ranges reject malformed, multiple and unsatisfiable ranges with 416 and close the handle", async (t) => {
+  const { request, bytes, state } = await mediaFixture(t);
+  for (const range of [
+    "bytes=", "items=0-1", "bytes=0-1,2-3", "bytes=-0", "bytes=3-2",
+    `bytes=${bytes.length}-`, "bytes=9007199254740992-", "bytes=0-1 ",
+  ]) {
+    for (const method of ["GET", "HEAD"] as const) {
+      const response = await request({ range, method });
+      assert.equal(response.statusCode, 416);
+      assert.equal(response.headers["content-range"], `bytes */${bytes.length}`);
+      assert.equal(response.headers["accept-ranges"], "bytes");
+      assert.equal(response.headers["cache-control"], "private, no-store");
+      assert.doesNotMatch(response.body, /fixture|\.flac|stack/);
+    }
+  }
+  assert.deepEqual(state.errors, []);
+});
+
+test("media validates IDs and intentionally hides missing/unverified files, unsupported formats and internal failures", async (t) => {
+  const { app, request, state, dependencies, headers } = await mediaFixture(t);
+  for (const id of ["not-a-uuid", "%2e%2e%2fprivate.flac", "0".repeat(36)]) {
+    assert.equal((await request({ url: `/media/${id}` })).statusCode, 400);
+  }
+  assert.equal(state.targetReads, 0);
+  const target = state.target!;
+  for (const availability of ["unverified", "unavailable"] as const) {
+    state.target = { ...target, availability };
+    assert.equal((await request()).statusCode, 404);
+  }
+  state.target = null;
+  assert.equal((await request()).statusCode, 404);
+  state.target = { ...target, mediaFile: { ...target.mediaFile, relativePath: "absent.flac" } };
+  assert.equal((await request()).statusCode, 404);
+  assert.equal(state.writes.length, 1);
+  assert.equal(state.writes[0]?.[1].availability, "unavailable");
+  state.target = { ...target, mediaFile: { ...target.mediaFile, relativePath: "unsupported.bin" } };
+  assert.equal((await request()).statusCode, 415);
+  state.failure = new Error("/private/fixture.flac SELECT password secret");
+  const failure = await request();
+  assert.equal(failure.statusCode, 500);
+  assert.deepEqual(failure.json(), { error: "Internal server error" });
+  state.failure = null;
+  state.sessionFailure = new Error("private session database failure");
+  assert.deepEqual((await request()).json(), { error: "Internal server error" });
+  assert.deepEqual(state.errors, ["Error", "Error"]);
+  const unavailable = createApiServer({ ...dependencies, libraryMedia: undefined });
+  try {
+    state.sessionFailure = null;
+    const response = await unavailable.inject({ url: "/media/00000000-0000-4000-8000-000000000001", headers });
+    assert.equal(response.statusCode, 503);
+  } finally {
+    await unavailable.close();
+  }
+  assert.equal(app.server.listening, false);
+});
+
+test("HEAD never reads bytes, while GET uses bounded lazy reads and closes after success", async (t) => {
+  const { request, prototype, bytes } = await mediaFixture(t);
+  const read = t.mock.method(prototype, "read");
+  assert.equal((await request({ method: "HEAD" })).statusCode, 200);
+  assert.equal(read.mock.callCount(), 0);
+  const response = await request();
+  assert.deepEqual(response.rawPayload, bytes);
+  assert.equal(read.mock.callCount(), Math.ceil(bytes.length / LIBRARY_MEDIA_READ_MAX_BYTES));
+  for (const call of read.mock.calls) {
+    const args: readonly unknown[] = call.arguments;
+    assert.ok(Number(args[2]) <= LIBRARY_MEDIA_READ_MAX_BYTES);
+  }
+});
+
+test("media read errors close the handle and return only a sanitized error before headers", async (t) => {
+  const { request, prototype, state } = await mediaFixture(t);
+  t.mock.method(prototype, "read", async () => { throw new Error("/private/media read failed secret"); });
+  const response = await request();
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.json(), { error: "Internal server error" });
+  assert.equal(response.headers["content-range"], undefined);
+  assert.equal(response.headers["accept-ranges"], undefined);
+  assert.equal(Number(response.headers["content-length"]), Buffer.byteLength(response.body));
+  assert.equal(response.headers["content-type"], "application/json; charset=utf-8");
+  assert.deepEqual(state.errors, ["LibraryMediaStreamError", "Error"]);
+});
+
+test("client disconnect during an in-flight read deterministically closes the media handle", { timeout: 10_000 }, async (t) => {
+  const { app, headers, id, prototype, handles, state } = await mediaFixture(t);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let entered!: () => void;
+  const pending = new Promise<void>((resolve) => { entered = resolve; });
+  const read = prototype.read;
+  let calls = 0;
+  t.mock.method(prototype, "read", async function (this: FileHandle, ...args: Parameters<FileHandle["read"]>) {
+    if (++calls === 2) {
+      entered();
+      await gate;
+    }
+    return read.apply(this, args);
+  });
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const client = httpRequest(`${address}/media/${id}`, { headers });
+  const response = once(client, "response");
+  client.end();
+  try {
+    const [incoming] = await response;
+    await pending;
+    const closed = Promise.all([...handles].map((handle) => {
+      assert.ok(handle instanceof EventEmitter);
+      return once(handle, "close");
+    }));
+    incoming.destroy();
+    client.destroy();
+    await closed;
+    assert.ok([...handles].every((handle) => handle.fd === -1));
+  } finally {
+    release();
+    client.destroy();
+  }
+  assert.deepEqual(state.errors, []);
+});
+
+test("client disconnect while the media opener is pending closes the handle before returning", {
+  timeout: 10_000,
+}, async (t) => {
+  const { app, headers, id, prototype, handles, state } = await mediaFixture(t);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  let entered!: () => void;
+  const pending = new Promise<void>((resolve) => { entered = resolve; });
+  const stat = prototype.stat;
+  t.mock.method(prototype, "stat", async function (this: FileHandle, ...args: Parameters<FileHandle["stat"]>) {
+    const info = await stat.apply(this, args);
+    entered();
+    await gate;
+    return info;
+  });
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const client = httpRequest(`${address}/media/${id}`, { headers });
+  client.on("error", () => {});
+  const cancelled = new Promise<void>((resolve) => app.server.once("request", (_request, response) => {
+    response.once("close", resolve);
+  }));
+  client.end();
+  try {
+    await pending;
+    const closed = Promise.all([...handles].map((handle) => {
+      assert.ok(handle instanceof EventEmitter);
+      return once(handle, "close");
+    }));
+    client.destroy();
+    await cancelled;
+    release();
+    await closed;
+    assert.ok([...handles].every((handle) => handle.fd === -1));
+    assert.deepEqual(state.errors, []);
+  } finally {
+    release();
+    client.destroy();
+  }
+});
+
+test("media read failure after headers terminates the HTTP body and closes the handle without leaking details", {
+  timeout: 10_000,
+}, async (t) => {
+  const { app, headers, id, prototype, handles, state } = await mediaFixture(t);
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const read = prototype.read;
+  let calls = 0;
+  t.mock.method(prototype, "read", async function (this: FileHandle, ...args: Parameters<FileHandle["read"]>) {
+    if (++calls === 2) {
+      await gate;
+      throw new Error("/private/fixture.flac secret read failure");
+    }
+    return read.apply(this, args);
+  });
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const client = httpRequest(`${address}/media/${id}`, { headers });
+  const response = once(client, "response");
+  client.end();
+  try {
+    const [incoming] = await response;
+    assert.equal(incoming.statusCode, 200);
+    assert.equal(incoming.headers["content-type"], "audio/flac");
+    const chunks: Buffer[] = [];
+    incoming.on("data", (chunk: Buffer) => chunks.push(chunk));
+    const aborted = once(incoming, "aborted");
+    const closed = Promise.all([...handles].map((handle) => {
+      assert.ok(handle instanceof EventEmitter);
+      return once(handle, "close");
+    }));
+    incoming.on("error", () => {});
+    release();
+    await aborted;
+    await closed;
+    assert.equal(incoming.complete, false);
+    assert.equal(Buffer.concat(chunks).length, LIBRARY_MEDIA_READ_MAX_BYTES);
+    assert.deepEqual(state.errors, ["LibraryMediaStreamError"]);
+  } finally {
+    release();
+    client.destroy();
   }
 });

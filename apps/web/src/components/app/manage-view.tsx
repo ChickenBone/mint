@@ -3,6 +3,7 @@
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import type { TrackView } from "@mint/core/events";
 import type { WorkerView } from "@mint/core";
@@ -26,7 +27,7 @@ import {
 } from "@/app/actions/admin";
 import { revokeWorker, setWorkerStatus } from "@/app/actions/workers";
 import { Badge } from "@/components/ui/primitives";
-import { resolveManageTab, type ManageTab } from "@/lib/app-routes";
+import { manageAccountPageHref, resolveManageTab, type ManageTab } from "@/lib/app-routes";
 import type { Health } from "@/lib/data";
 import type { AdminFailedTrack } from "@/lib/admin-failed-jobs";
 import { issueCategoryLabel, type IssueReportView } from "@/lib/issue-report-model";
@@ -68,10 +69,16 @@ export interface ManageViewProps {
     role: "user" | "admin";
     status: string;
     created_at: string;
-    tracks: string;
-    linked: boolean;
+    tracks: string | null;
+    linked: boolean | null;
     last_synced_at: string | null;
   }>;
+  accountPagination: {
+    requestsCursor: string | null;
+    membersCursor: string | null;
+    nextRequestsCursor: string | null;
+    nextMembersCursor: string | null;
+  } | null;
   failedTracks: AdminFailedTrack[];
   activeTracks: TrackView[];
   health: Health | null;
@@ -114,6 +121,7 @@ export function ManageView({
   origin,
   requests,
   members,
+  accountPagination,
   failedTracks,
   activeTracks,
   health,
@@ -141,6 +149,14 @@ export function ManageView({
     }, 30_000);
     return () => clearInterval(timer);
   }, [router, tab]);
+
+  useEffect(() => {
+    if (tab !== "requests" || !accountPagination) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") router.refresh();
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [router, tab, accountPagination]);
 
   useEffect(() => {
     const initial = setTimeout(() => setNow(Date.now()), 0);
@@ -186,7 +202,7 @@ export function ManageView({
       <header className="mb-9 border-b border-line/70 pb-6">
         <h1 className="text-3xl leading-tight font-bold tracking-[-0.03em] text-fg">{page.title}</h1>
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-muted">{page.description}</p>
-        {tab === "requests" && requests.length > 0 && (
+        {tab === "requests" && !accountPagination && requests.length > 0 && (
           <p className="mt-4 inline-flex min-h-8 items-center rounded-full bg-warn/10 px-3 text-sm font-semibold text-warn">
             {formatCount(requests.length)} waiting for review
           </p>
@@ -205,7 +221,7 @@ export function ManageView({
                     <div>
                       <h2 id="manage-access-requests" className="text-xl font-bold">
                         Access requests{" "}
-                        {requests.length > 0 && (
+                        {!accountPagination && requests.length > 0 && (
                           <span className="text-mint tabular">({formatCount(requests.length)})</span>
                         )}
                       </h2>
@@ -217,7 +233,9 @@ export function ManageView({
 
                   {requests.length === 0 ? (
                     <p className="rounded-xl border border-line/60 bg-elevated/50 p-5 text-sm text-muted">
-                      No one is waiting right now. New access requests appear here automatically.
+                      {accountPagination?.requestsCursor
+                        ? "No requests on this page. Return to the first page to check for new requests."
+                        : "No one is waiting right now. New access requests appear here."}
                     </p>
                   ) : (
                     <ul className="divide-y divide-line rounded-xl border border-line/70 bg-elevated">
@@ -236,7 +254,7 @@ export function ManageView({
                             <ActionButton
                               action={decideRequest.bind(null, r.id, false)}
                               tone="danger"
-                              confirm={`Deny access request from ${r.name} (${r.email})? Their pending request will be removed.`}
+                              confirm={`Deny access request from ${r.name} (${r.email})?`}
                             >
                               Deny
                             </ActionButton>
@@ -248,15 +266,21 @@ export function ManageView({
                       ))}
                     </ul>
                   )}
+                  {accountPagination && (
+                    <AccountPageLinks name="requestsCursor" label="access requests"
+                      cursor={accountPagination.requestsCursor} next={accountPagination.nextRequestsCursor} />
+                  )}
                 </section>
 
                 <section aria-labelledby="manage-members">
                   <div className="mb-4">
                     <h2 id="manage-members" className="text-xl font-bold">
-                      Members <span className="text-sm font-normal text-muted tabular">({formatCount(members.length)})</span>
+                      Members {!accountPagination && <span className="text-sm font-normal text-muted tabular">({formatCount(members.length)})</span>}
                     </h2>
                     <p className="mt-1 max-w-prose text-sm text-muted">
-                      Manage member roles, connected YouTube sync status and account access.
+                      {accountPagination
+                        ? "Manage member roles and account access. YouTube sync and song counts are unavailable for target accounts."
+                        : "Manage member roles, connected YouTube sync status and account access."}
                     </p>
                   </div>
 
@@ -300,13 +324,13 @@ export function ManageView({
                           <div>
                             <dt className="text-faint">YouTube Music</dt>
                             <dd className="mt-0.5 text-muted">
-                              {m.linked ? `Synced ${formatRelative(m.last_synced_at, now)}` : "Not linked"}
+                              {m.linked === null ? "Unavailable" : m.linked ? `Synced ${formatRelative(m.last_synced_at, now)}` : "Not linked"}
                             </dd>
                           </div>
                           <div>
                             <dt className="text-faint">Songs in library</dt>
                             <dd className="mt-0.5 font-medium tabular text-fg">
-                              {formatCount(Number(m.tracks))}
+                              {m.tracks === null ? "Unavailable" : formatCount(Number(m.tracks))}
                             </dd>
                           </div>
                         </dl>
@@ -380,9 +404,9 @@ export function ManageView({
                               </div>
                             </td>
                             <td className="px-4 py-3 text-muted">
-                              {m.linked ? `Synced ${formatRelative(m.last_synced_at, now)}` : "Not linked"}
+                              {m.linked === null ? "Unavailable" : m.linked ? `Synced ${formatRelative(m.last_synced_at, now)}` : "Not linked"}
                             </td>
-                            <td className="px-4 py-3 text-right tabular">{formatCount(Number(m.tracks))}</td>
+                            <td className="px-4 py-3 text-right tabular">{m.tracks === null ? "Unavailable" : formatCount(Number(m.tracks))}</td>
                             <td className="px-4 py-3">
                               {m.id !== adminId && (
                                 <div className="flex justify-end gap-2">
@@ -417,6 +441,10 @@ export function ManageView({
                       </tbody>
                     </table>
                   </div>
+                  {accountPagination && (
+                    <AccountPageLinks name="membersCursor" label="members"
+                      cursor={accountPagination.membersCursor} next={accountPagination.nextMembersCursor} />
+                  )}
                 </section>
               </div>
             ),
@@ -760,6 +788,23 @@ export function ManageView({
         ]}
       />
     </div>
+  );
+}
+
+function AccountPageLinks({ name, label, cursor, next }: {
+  name: "requestsCursor" | "membersCursor";
+  label: string;
+  cursor: string | null;
+  next: string | null;
+}) {
+  const searchParams = useSearchParams();
+  const href = (value: string | null) => manageAccountPageHref(new URLSearchParams(searchParams.toString()), name, value);
+  if (!cursor && !next) return null;
+  return (
+    <nav aria-label={`${label} pages`} className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+      {cursor && <Link className="inline-flex min-h-11 items-center text-fg underline" href={href(null)}>First {label} page</Link>}
+      {next && <Link className="inline-flex min-h-11 items-center text-fg underline" href={href(next)}>Next {label} page</Link>}
+    </nav>
   );
 }
 

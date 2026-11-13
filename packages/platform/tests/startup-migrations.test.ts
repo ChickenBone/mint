@@ -27,6 +27,8 @@ const sqlPaths = [
   "domain-catalog/migrations/0001_startup_seed_receipts.sql",
   "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql",
   "domain-playback/migrations/0000_listening_history.sql",
+  "domain-library/migrations/0002_library_scan_jobs.sql",
+  "domain-playback/migrations/0001_queue_snapshots.sql",
 ];
 const key = [0x4d494e54, 0x4d494752];
 const options: StartupMigrationOptions = { packagesRoot, lockTimeoutMs: 5_000 };
@@ -55,6 +57,8 @@ async function expectedHistory(root = packagesRoot) {
     { idx: 7, version: "7", when: 1794441600007, tag: "0007_catalog_startup_seed_receipts", breakpoints: true },
     { idx: 8, version: "7", when: 1794441600008, tag: "0008_catalog_listenbrainz_seed_ingestion", breakpoints: true },
     { idx: 9, version: "7", when: 1794441600009, tag: "0009_playback_listening_history", breakpoints: true },
+    { idx: 10, version: "7", when: 1794441600010, tag: "0010_library_scan_jobs", breakpoints: true },
+    { idx: 11, version: "7", when: 1794441600011, tag: "0011_playback_queue_snapshots", breakpoints: true },
   ]);
   return Promise.all(sqlPaths.map(async (relative, index) => ({
     hash: createHash("sha256").update(await readFile(path.join(root, relative))).digest("hex"),

@@ -20,6 +20,7 @@
 - Public copy describes native Mint playback, never embedded Plexamp. Never invent metrics.
 - Target auth requires `MINT_TARGET_API_URL` (private `/trpc` endpoint), `MINT_TARGET_GATEWAY_TOKEN` (matching API service secret) and `MINT_TARGET_WEB_ORIGIN` (exact canonical public origin). Mutating actions require that Origin. The existing HttpOnly, SameSite=Lax, path=/, 30-day expiry and production/HTTPS Secure cookie policy remain unchanged; passwords are never echoed. Login redirects stay confined to `/app` paths.
 - IP-limited actions additionally require `MINT_TARGET_TRUSTED_PROXY=authenticated-ingress` and `MINT_TARGET_INGRESS_TOKEN`, an independent canonical 32-byte base64url secret. The ingress must overwrite `x-mint-ingress-token` with that secret and `x-mint-client-ip` with one observed client address, not client forwarding claims; keep API/Next ports private behind it. Next server actions cannot inspect the socket peer, so this explicit authenticated-header policy replaces an unverifiable peer/CIDR assumption. Constant-time credential checks and canonical IP validation reject missing, wrong or comma-joined headers; X-Forwarded-For, X-Real-IP and Forwarded are ignored. Never expose ingress/gateway secrets to browser bundles. API public auth must separately be enabled with `MINT_API_PUBLIC_AUTH_PROXY=gateway`.
+- Target admin pending-request counts use the SDK and a private, reauthorized gateway rather than legacy events; failures remain visibly unavailable and retryable. Target sidebar collections are not yet integrated.
 - Failed-job removal dismisses one failure version and only matching failed worker records; preserve songs, memberships and running jobs. Later failures reappear.
 
 Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
@@ -40,30 +41,30 @@ Details: [design](../design.md) and [UI library](../../docs/ui-library.md).
 - **Imported by:** [`acquisition`](acquisition.md), [`analysis`](analysis.md), [`collections`](collections.md), [`devices`](devices.md), [`library`](library.md), [`mobile-contracts`](mobile-contracts.md), [`platform`](platform.md), [`playback`](playback.md), [`providers`](providers.md), [`realtime`](realtime.md), [`workers`](workers.md)
 - **Live detail:** `npm run agents -- map web-shell` (exports, line counts, cross-domain import edges).
 
-### Owned files (84)
+### Owned files (86)
 
 - `apps/web/` `AGENTS.md`
 - `apps/web/src/app/` `error.tsx`, `globals.css`, `layout.tsx`, `manifest.ts`, `not-found.tsx`
 - `apps/web/src/app/(public)/` `activity/page.tsx`, `layout.tsx`, `login/login-form.tsx`, `login/page.tsx`, `page.tsx`, `request-access/page.tsx`, `request-access/request-form.tsx`
 - `apps/web/src/app/actions/` `admin.ts`, `auth.ts`, `member.ts`
-- `apps/web/src/app/api/` `accounts/session/route.ts`, `admin/access-requests/decision/route.ts`, `admin/matching/route.ts`, `admin/members/status/route.ts`, `app-icon/[size]/route.ts`, `healthz/route.ts`, `issue-reports/route.ts`
+- `apps/web/src/app/api/` `accounts/session/route.ts`, `admin/access-requests/decision/route.ts`, `admin/access-requests/pending-count/route.ts`, `admin/matching/route.ts`, `admin/members/status/route.ts`, `app-icon/[size]/route.ts`, `healthz/route.ts`, `issue-reports/route.ts`
 - `apps/web/src/app/app/` `admin/matching/page.tsx`, `admin/page.tsx`, `error.tsx`, `layout.tsx`, `loading.tsx`, `manage/page.tsx`, `page.tsx`, `settings/page.tsx`
 - `apps/web/src/components/` `form.tsx`, `install-app.tsx`, `logo.tsx`, `site-header.tsx`
 - `apps/web/src/components/app/` `account-playback.tsx`, `acquisition-alerts.tsx`, `admin-controls.tsx`, `copy-button.tsx`, `manage-view.tsx`, `matching-panel.tsx`, `page-header.tsx`, `report-issue.tsx`, `settings-view.tsx`, `setup-nudge.tsx`, `sidebar-nav.tsx`, `sign-out.tsx`
 - `apps/web/src/components/ui/` `confirm-dialog.tsx`, `index.ts`, `interactive.tsx`, `layout.tsx`, `primitives.tsx`, `shelf.tsx`, `toast.tsx`
 - `apps/web/src/lib/` `account-login.ts`, `account-playback.ts`, `app-routes.ts`, `auth.ts`, `format.ts`, `id.ts`, `issue-report-model.ts`, `issue-reports.ts`, `page-endpoint.ts`, `request-match.ts`, `resolve-request.ts`, `target-api.ts`, `target-auth.ts`, `trusted-ingress.ts`, `unified-search.ts`, `youtube-search.ts`
-- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `target-accounts-http.integration.test.ts`, `target-auth-http.integration.test.ts`, `trusted-ingress.test.ts`, `ui.test.ts`, `unified-search.test.ts`
+- `apps/web/tests/` `issue-reports.test.ts`, `mutation-origin.test.ts`, `page-endpoint.test.ts`, `request-match.test.ts`, `routes.test.ts`, `target-accounts-http.integration.test.ts`, `target-auth-http.integration.test.ts`, `target-pending-count.test.ts`, `trusted-ingress.test.ts`, `ui.test.ts`, `unified-search.test.ts`
 - `apps/web/tests/fixtures/` `redesign-network.mjs`, `redesign-preview.mjs`
 - `packages/core/src/` `stats.ts`, `views.ts`
 
 ### Validate
 
-Owned tests: 10.
+Owned tests: 11.
 
 ```bash
 corepack pnpm --filter @mint/web run typecheck
 corepack pnpm --filter @mint/web run lint
-corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/target-accounts-http.integration.test.ts tests/target-auth-http.integration.test.ts tests/trusted-ingress.test.ts tests/ui.test.ts tests/unified-search.test.ts
+corepack pnpm --filter @mint/web exec tsx --test --test-force-exit tests/issue-reports.test.ts tests/mutation-origin.test.ts tests/page-endpoint.test.ts tests/request-match.test.ts tests/routes.test.ts tests/target-accounts-http.integration.test.ts tests/target-auth-http.integration.test.ts tests/target-pending-count.test.ts tests/trusted-ingress.test.ts tests/ui.test.ts tests/unified-search.test.ts
 corepack pnpm --filter @mint/core run typecheck
 ```
 

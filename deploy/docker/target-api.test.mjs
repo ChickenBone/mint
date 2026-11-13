@@ -40,3 +40,12 @@ test("target gateway and API require distinct private secrets and overwrite ingr
   assert.doesNotMatch(read("target-api-entrypoint.sh"), /target_ingress_token/);
   assert.doesNotMatch(read("target-web-entrypoint.sh"), /target_db_password/);
 });
+
+test("target media overlay requires explicit paths and a non-creating read-only bind", () => {
+  const media = read("target-media.compose.yml");
+  assert.match(media, /MINT_TARGET_MEDIA_HOST_PATH:\?Set MINT_TARGET_MEDIA_HOST_PATH/);
+  assert.match(media, /MINT_TARGET_MEDIA_CONTAINER_PATH:\?Set MINT_TARGET_MEDIA_CONTAINER_PATH/);
+  assert.match(media, /read_only: true/);
+  assert.match(media, /create_host_path: false/);
+  assert.doesNotMatch(compose, /MINT_TARGET_MEDIA_(?:HOST|CONTAINER)_PATH/);
+});

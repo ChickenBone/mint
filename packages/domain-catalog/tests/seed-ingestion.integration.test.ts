@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -104,8 +105,14 @@ test("real Catalog source ingestion on disposable PostgreSQL16 and pg-boss", { t
     await runStartupMigrations(pool, options.migrations);
 
     await t.test("central startup applies source SQL twice without changing canonical schema", async () => {
-      const history = (await pool.query("SELECT * FROM mint_migrations.__drizzle_migrations ORDER BY id")).rows;
-      assert.equal(history.length, 9);
+      const history = (await pool.query<{ hash: string }>(
+        "SELECT * FROM mint_migrations.__drizzle_migrations ORDER BY id",
+      )).rows;
+      for (const migration of ["0001_startup_seed_receipts.sql", "0002_listenbrainz_seed_ingestion.sql"]) {
+        const sql = await readFile(new URL(`../migrations/${migration}`, import.meta.url));
+        const hash = createHash("sha256").update(sql).digest("hex");
+        assert.equal(history.filter((row) => row.hash === hash).length, 1, `${migration} applied once`);
+      }
       await runStartupMigrations(pool, options.migrations);
       assert.deepEqual((await pool.query("SELECT * FROM mint_migrations.__drizzle_migrations ORDER BY id")).rows, history);
       assert.equal((await pool.query(`SELECT count(*)::int AS count FROM information_schema.columns

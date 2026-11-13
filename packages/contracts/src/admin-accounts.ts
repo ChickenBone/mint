@@ -3,6 +3,8 @@ import { accountPrincipalSchema, accountRoleSchema, accountStatusSchema } from "
 
 const cursor = z.string().min(1).max(2048).regex(/^[A-Za-z0-9_-]+$/);
 
+export const pendingAccessRequestCountSchema = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+
 export const adminAccountListInputSchema = z.strictObject({
   limit: z.number().int().min(1).max(100).optional(),
   status: z.enum(["pending", "active", "disabled", "denied", "members"]).optional(),

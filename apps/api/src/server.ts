@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
+import { Readable } from "node:stream";
 import {
   accountAccessRequestInputSchema, accountAccessRequestResultSchema,
   browserSignInInputSchema, browserSignInResultSchema,
@@ -19,6 +20,9 @@ import {
   listeningHistoryRecordResultSchema, listeningHistoryPageSchema,
   setMemberStatusInputSchema,
   adminAccountListInputSchema, adminAccountPageSchema, setMemberRoleInputSchema,
+  pendingAccessRequestCountSchema,
+  playbackQueueEditRequestSchema, playbackQueueOpenInputSchema, playbackQueuePageRequestSchema,
+  playbackQueuePageSchema,
 } from "@mint/contracts";
 import {
   AccessRequestDecisionForbiddenError, createAccessRequestDecider, lookupBrowserSession,
@@ -28,9 +32,15 @@ import {
   createAdminAccountsService, AdminAccountsForbiddenError, AdminAccountsSelfRoleError,
   AdminAccountsInputError, type AdminAccountsRepository,
 } from "@mint/domain-accounts";
-import { LibraryRepositoryInputError, type LibraryRepository } from "@mint/domain-library";
+import {
+  LIBRARY_MEDIA_READ_MAX_BYTES, LibraryMediaRangeError, LibraryPlaybackMediaError,
+  LibraryRepositoryInputError, openLibraryPlaybackMedia, parseLibraryMediaByteRange,
+  type LibraryRepository,
+} from "@mint/domain-library";
 import {
   ListeningHistoryInputError, ListeningHistoryMediaUnavailableError,
+  PlaybackQueueError,
+  type PlaybackQueueRepository,
   type ListeningHistoryRepository,
 } from "@mint/domain-playback";
 import { initTRPC, TRPCError } from "@trpc/server";
@@ -55,7 +65,9 @@ export interface ApiServerDependencies {
   memberStatuses?: MemberStatusRepository;
   adminAccounts?: AdminAccountsRepository;
   library?: Pick<LibraryRepository, "listFiles">;
+  libraryMedia?: Pick<LibraryRepository, "getPlaybackTarget" | "recordVerification">;
   playbackHistory?: ListeningHistoryRepository;
+  playbackQueues?: PlaybackQueueRepository;
   notifyAccessRequests(notification: { pending: number }): Promise<void>;
   errors: ApiErrorLogger;
   now?: () => Date;
@@ -114,11 +126,15 @@ function createRouter(dependencies: ApiServerDependencies) {
     }
     throw error;
   }
-  async function requireAdminService(ctx: ApiContext) {
+  async function requireAdmin(ctx: ApiContext) {
     const actor = await lookupBrowserSession(ctx.sessionToken, dependencies.sessions, dependencies.now);
     if (!actor || actor.role !== "admin" || actor.status !== "active") {
       throw new TRPCError({ code: "FORBIDDEN", message: "Forbidden" });
     }
+    return actor;
+  }
+  async function requireAdminService(ctx: ApiContext) {
+    const actor = await requireAdmin(ctx);
     if (!adminAccounts) {
       throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Account management unavailable" });
     }
@@ -134,6 +150,14 @@ function createRouter(dependencies: ApiServerDependencies) {
   function historyError(error: unknown): never {
     if (error instanceof ListeningHistoryInputError) {
       throw new TRPCError({ code: "BAD_REQUEST", message: error.message });
+    }
+    function playbackQueueError(error: unknown): never {
+      if (error instanceof PlaybackQueueError) {
+        const code = error.code === "NOT_FOUND" ? "NOT_FOUND"
+          : error.code === "CONFLICT" ? "CONFLICT" : "BAD_REQUEST";
+        throw new TRPCError({ code, message: error.message });
+      }
+      throw error;
     }
     if (error instanceof ListeningHistoryMediaUnavailableError) {
       throw new TRPCError({ code: "NOT_FOUND", message: "Playable song not found." });
@@ -159,6 +183,45 @@ function createRouter(dependencies: ApiServerDependencies) {
         }),
     }),
     playback: trpc.router({
+        queue: trpc.router({
+          open: trpc.procedure.input(playbackQueueOpenInputSchema)
+            .output(playbackQueuePageSchema).mutation(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackQueues) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Playback queue unavailable" });
+              }
+              try {
+                return await dependencies.playbackQueues.open(actor.id, input);
+              } catch (error) {
+                return playbackQueueError(error);
+              }
+            }),
+          page: trpc.procedure.input(playbackQueuePageRequestSchema)
+            .output(playbackQueuePageSchema).query(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackQueues) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Playback queue unavailable" });
+              }
+              try {
+                return await dependencies.playbackQueues.page(actor.id, input.queueId, input.position);
+              } catch (error) {
+                return playbackQueueError(error);
+              }
+            }),
+          edit: trpc.procedure.input(playbackQueueEditRequestSchema)
+            .output(playbackQueuePageSchema).mutation(async ({ ctx, input }) => {
+              const actor = await requireActiveMember(ctx);
+              if (!dependencies.playbackQueues) {
+                throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Playback queue unavailable" });
+              }
+              try {
+                const { queueId, ...edit } = input;
+                return await dependencies.playbackQueues.edit(actor.id, queueId, edit);
+              } catch (error) {
+                return playbackQueueError(error);
+              }
+            }),
+        }),
         history: trpc.router({
           list: trpc.procedure.input(listeningHistoryListInputSchema.optional())
             .output(listeningHistoryPageSchema).query(async ({ ctx, input }) => {
@@ -238,6 +301,11 @@ function createRouter(dependencies: ApiServerDependencies) {
       }),
       session: trpc.procedure.output(accountPrincipalSchema.nullable()).query(({ ctx }) =>
         lookupBrowserSession(ctx.sessionToken, dependencies.sessions, dependencies.now)),
+      pendingAccessRequestCount: trpc.procedure.output(pendingAccessRequestCountSchema)
+        .query(async ({ ctx }) => {
+          await requireAdmin(ctx);
+          return dependencies.decisions.countPending();
+        }),
       listAccounts: trpc.procedure.input(adminAccountListInputSchema.optional())
         .output(adminAccountPageSchema).query(async ({ ctx, input }) => {
           const { actor, service } = await requireAdminService(ctx);
@@ -374,7 +442,116 @@ export function createApiServer(dependencies: ApiServerDependencies): FastifyIns
     const status = typeof statusCode === "number" && statusCode >= 400 && statusCode < 500
       ? statusCode : 500;
     if (status === 500) dependencies.errors.error({ name: sanitizedErrorName(error) });
+    if (_request.routeOptions.url === "/media/:id") {
+      reply.removeHeader("content-length").removeHeader("content-range").removeHeader("accept-ranges");
+      reply.type("application/json");
+    }
     reply.code(status).send({ error: status === 500 ? "Internal server error" : "Invalid request" });
+  });
+  app.route<{ Params: { id: string } }>({
+    method: ["GET", "HEAD"],
+    url: "/media/:id",
+    async handler(request, reply) {
+      const actor = await lookupBrowserSession(
+        browserSessionCookie(request.headers.cookie), dependencies.sessions, dependencies.now,
+      );
+      if (!actor || actor.status !== "active" || !["user", "admin"].includes(actor.role)) {
+        return reply.code(401).send({ error: "Unauthorized" });
+      }
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(request.params.id)) {
+        return reply.code(400).send({ error: "Invalid media ID" });
+      }
+      if (!dependencies.libraryMedia) {
+        return reply.code(503).send({ error: "Media unavailable" });
+      }
+      const controller = new AbortController();
+      let stream: Readable | undefined;
+      const cancel = () => {
+        controller.abort();
+        stream?.destroy();
+      };
+      request.raw.once("aborted", cancel);
+      reply.raw.once("close", cancel);
+      if (request.raw.aborted || reply.raw.destroyed) cancel();
+      const detach = () => {
+        request.raw.removeListener("aborted", cancel);
+        reply.raw.removeListener("close", cancel);
+      };
+      let media: Awaited<ReturnType<typeof openLibraryPlaybackMedia>> | undefined;
+      let transferred = false;
+      try {
+        media = await openLibraryPlaybackMedia(dependencies.libraryMedia, request.params.id, {
+          signal: controller.signal,
+        });
+        const range = parseLibraryMediaByteRange(request.headers.range, media.metadata.sizeBytes);
+        if (request.method === "HEAD") {
+          await media.close();
+        } else {
+          const opened = media;
+          let position = range.start;
+          stream = new Readable({
+            highWaterMark: LIBRARY_MEDIA_READ_MAX_BYTES,
+            read() {
+              void opened.read(position, Math.min(LIBRARY_MEDIA_READ_MAX_BYTES, range.end - position + 1))
+                .then((bytes) => {
+                  if (this.destroyed) return;
+                  position += bytes.length;
+                  this.push(bytes);
+                  if (position > range.end) this.push(null);
+                }, (error: unknown) => this.destroy(
+                  error instanceof Error ? error : new Error("Media read failed"),
+                ));
+            },
+            destroy(error, callback) {
+              controller.abort();
+              void opened.close().then(() => {
+                if (error) dependencies.errors.error({ name: "LibraryMediaStreamError" });
+                callback(error ? new Error("Media stream failed") : null);
+              }, () => {
+                dependencies.errors.error({ name: "LibraryMediaStreamError" });
+                callback(new Error("Media stream failed"));
+              });
+            },
+          });
+          stream.once("close", detach);
+          if (controller.signal.aborted || reply.raw.destroyed) stream.destroy();
+        }
+        reply.code(range.status)
+          .type(media.metadata.contentType)
+          .header("content-length", range.length)
+          .header("accept-ranges", "bytes");
+        if (range.contentRange) reply.header("content-range", range.contentRange);
+        if (stream) {
+          reply.send(stream);
+          transferred = true;
+          return reply;
+        }
+        return reply.send();
+      } catch (error) {
+        if (error instanceof LibraryPlaybackMediaError && error.code === "CANCELLED"
+          && controller.signal.aborted && reply.raw.destroyed) return reply;
+        if (error instanceof LibraryMediaRangeError) {
+          await media?.close();
+          return reply.code(416).header("content-range", error.contentRange)
+            .header("accept-ranges", "bytes").send({ error: "Invalid media range" });
+        }
+        if (error instanceof LibraryPlaybackMediaError) {
+          if (["NOT_FOUND", "NOT_VERIFIED", "FILE_UNAVAILABLE"].includes(error.code)) {
+            return reply.code(404).send({ error: "Media not found" });
+          }
+          if (error.code === "UNSUPPORTED_ORIGINAL_FORMAT") {
+            return reply.code(415).send({ error: "Unsupported media format" });
+          }
+        }
+        throw error;
+      } finally {
+        if (!transferred) {
+          detach();
+          stream?.destroy();
+          await media?.close();
+        }
+      }
+    },
   });
   app.register(fastifyTRPCPlugin<AppRouter>, {
     prefix: "/trpc",

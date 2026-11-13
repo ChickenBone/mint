@@ -71,6 +71,20 @@
       "when": 1794441600009,
       "tag": "0009_playback_listening_history",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794441600010,
+      "tag": "0010_library_scan_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794441600011,
+      "tag": "0011_playback_queue_snapshots",
+      "breakpoints": true
     }
   ]
 }

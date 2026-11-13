@@ -39,10 +39,47 @@ test("target overlay keeps API and database private and wires authenticated ingr
   assert.equal(config.services.web.environment.MINT_TARGET_API_URL, "http://target-api:3002/trpc");
   assert.equal(config.services.web.environment.MINT_TARGET_TRUSTED_PROXY, "authenticated-ingress");
   assert.equal(api.environment.MINT_API_PUBLIC_AUTH_PROXY, "gateway");
-  assert.ok(!api.volumes?.some(mount => mount.target === "/music"));
+  assert.equal(api.volumes, undefined);
   const caddy = config.configs.target_caddyfile.content;
   assert.match(caddy, /header_up x-mint-ingress-token \{\$\$MINT_TARGET_INGRESS_TOKEN\}/);
   assert.match(caddy, /header_up x-mint-client-ip \{remote_host\}/);
+});
+
+test("target media is opt-in, read-only and available only to the target API", () => {
+  const env = {
+    ...process.env,
+    MINT_DOMAIN: "mint.example.com",
+    MINT_TARGET_DB_PASSWORD_FILE: "/tmp/mint-target-db-fixture",
+    MINT_TARGET_GATEWAY_TOKEN_FILE: "/tmp/mint-target-gateway-fixture",
+    MINT_TARGET_INGRESS_TOKEN_FILE: "/tmp/mint-target-ingress-fixture",
+    MINT_TARGET_MEDIA_HOST_PATH: "/mint-target-media-fixture",
+    MINT_TARGET_MEDIA_CONTAINER_PATH: "/library-originals",
+  };
+  const args = [
+    "compose", "--project-name", "mint-target-test", "-f", "docker-compose.yml",
+    "-f", "deploy/docker/target-api.compose.yml", "-f", "deploy/docker/target-media.compose.yml",
+    "config", "--format", "json",
+  ];
+  const config = JSON.parse(execFileSync(docker, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env }));
+  const api = config.services["target-api"];
+  const mount = api.volumes.find(volume => volume.target === env.MINT_TARGET_MEDIA_CONTAINER_PATH);
+  assert.equal(mount.type, "bind");
+  assert.equal(mount.source, env.MINT_TARGET_MEDIA_HOST_PATH);
+  assert.equal(mount.read_only, true);
+  assert.notEqual(mount.bind?.create_host_path, true);
+  assert.equal(api.read_only, true);
+  assert.equal(api.ports, undefined);
+  assert.deepEqual(Object.keys(api.networks), ["target-data"]);
+  for (const [name, service] of Object.entries(config.services)) {
+    if (name === "target-api") continue;
+    assert.ok(!(service.volumes || []).some(volume =>
+      volume.source === env.MINT_TARGET_MEDIA_HOST_PATH || volume.target === env.MINT_TARGET_MEDIA_CONTAINER_PATH), name);
+  }
+  for (const missing of ["MINT_TARGET_MEDIA_HOST_PATH", "MINT_TARGET_MEDIA_CONTAINER_PATH"]) {
+    const incomplete = { ...env, [missing]: "" };
+    assert.throws(() => execFileSync(docker, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: incomplete }),
+      error => error.stderr.includes(`Set ${missing}`));
+  }
 });
 
 test("Cobalt opt-in image and client preserve private defaults across CLI, NAS and volunteer setup", () => {

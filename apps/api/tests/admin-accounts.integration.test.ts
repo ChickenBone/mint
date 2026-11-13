@@ -18,6 +18,83 @@ const hash = (value: string) => createHash("sha256").update(value).digest("hex")
 const packagesRoot = fileURLToPath(new URL("../../../packages/", import.meta.url));
 const rpcError = (error: unknown) => error instanceof MintSdkError && error.code === "RPC_ERROR";
 
+test("pending-access count authenticates before reads and sanitizes invalid storage output and failures", async (t) => {
+  const gatewayToken = randomBytes(32).toString("base64url");
+  const token = randomBytes(32).toString("base64url");
+  const now = new Date();
+  const state = {
+    actor: { id: randomUUID(), email: "admin@fixture.test", name: "Admin", role: "admin" as "admin" | "user", status: "active" as "active" | "disabled" },
+    expiresAt: new Date(now.getTime() + 60_000),
+    sessionFailure: false, countFailure: false, count: 7, reads: 0,
+    errors: [] as { name: string }[],
+  };
+  const app = createApiServer({
+    gatewayToken, now: () => now,
+    sessions: { async findByTokenHash(value) {
+      if (state.sessionFailure) throw new Error("private-session-connection");
+      return value === hash(token) ? { principal: state.actor, expiresAt: state.expiresAt } : null;
+    } },
+    decisions: {
+      decidePendingAccess: async () => {},
+      async countPending() {
+        state.reads++;
+        if (state.countFailure) throw new Error("private-count-SQL-password");
+        return state.count;
+      },
+    },
+    notifyAccessRequests: async () => {},
+    errors: { error: (event) => { state.errors.push(event); } },
+  });
+  t.after(() => app.close());
+  const query = (cookie = `mint_session=${token}`, serviceToken = gatewayToken) => app.inject({
+    method: "GET", url: "/trpc/accounts.pendingAccessRequestCount",
+    headers: {
+      [GATEWAY_TOKEN_HEADER_NAME]: serviceToken, cookie,
+      "x-user-role": "admin", "x-user-id": state.actor.id,
+    },
+  });
+  const initial = await query();
+  assert.equal(initial.statusCode, 200);
+  assert.deepEqual(initial.json(), { result: { data: 7 } });
+  assert.match(initial.headers["cache-control"]!, /private, no-store/);
+  assert.equal(initial.headers["set-cookie"], undefined);
+  assert.equal(initial.headers["access-control-allow-origin"], undefined);
+  assert.equal(state.reads, 1);
+  for (const cookie of ["", "mint_session=unknown", `mint_session=${token}; mint_session=${token}`, "mint_session=mn1.native"]) {
+    assert.equal((await query(cookie)).statusCode, 403);
+  }
+  assert.equal((await query(`mint_session=${token}`, randomBytes(32).toString("base64url"))).statusCode, 401);
+  state.actor.role = "user";
+  assert.equal((await query()).statusCode, 403);
+  state.actor.role = "admin";
+  state.actor.status = "disabled";
+  assert.equal((await query()).statusCode, 403);
+  state.actor.status = "active";
+  state.expiresAt = now;
+  assert.equal((await query()).statusCode, 403);
+  state.expiresAt = new Date(now.getTime() + 60_000);
+  assert.equal(state.reads, 1, "Forbidden requests must not read account totals.");
+  for (const count of [-1, 0.1, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN]) {
+    state.count = count;
+    const response = await query();
+    assert.equal(response.statusCode, 500);
+    assert.doesNotMatch(response.body, /Zod|issues|password|SQL|stack|connection/);
+  }
+  state.count = 0;
+  assert.deepEqual((await query()).json(), { result: { data: 0 } });
+  state.countFailure = true;
+  const countFailure = await query();
+  assert.equal(countFailure.statusCode, 500);
+  assert.doesNotMatch(countFailure.body, /private|SQL|password/);
+  state.countFailure = false;
+  state.sessionFailure = true;
+  const sessionFailure = await query();
+  assert.equal(sessionFailure.statusCode, 500);
+  assert.doesNotMatch(sessionFailure.body, /private|connection/);
+  assert.equal(state.errors.length, 7);
+  assert.ok(state.errors.every(({ name }) => name === "Error"));
+});
+
 test("admin accounts SDK to HTTP to migrated PostgreSQL preserves bounded reads and fresh authorization", {
   timeout: 90_000,
 }, async (t) => {
@@ -107,6 +184,33 @@ test("admin accounts SDK to HTTP to migrated PostgreSQL preserves bounded reads 
         CASE WHEN n % 4 = 0 THEN 'request note' ELSE NULL END
       FROM generate_series(1, 120) n
     `);
+
+    await t.test("pending count reads real storage and fresh active-admin authorization", async () => {
+      const expected = async () => Number((await observer.query(
+        "SELECT count(*) FROM accounts.users WHERE status = 'pending'",
+      )).rows[0].count);
+      assert.equal(await admin.accounts.pendingAccessRequestCount(), await expected());
+      const id = await account("count-only", "user", "pending");
+      assert.equal(await admin.accounts.pendingAccessRequestCount(), await expected());
+      await admin.accounts.decideAccessRequest({ userId: id, approve: false });
+      assert.equal(await admin.accounts.pendingAccessRequestCount(), await expected());
+      await observer.query("DELETE FROM accounts.users WHERE id=$1", [id]);
+      for (const token of [undefined, memberToken, pendingToken, inactiveToken, expiredToken, revokedToken]) {
+        await assert.rejects(sdk(token).accounts.pendingAccessRequestCount(), rpcError);
+      }
+      const count = () => fetch(`${url}/accounts.pendingAccessRequestCount`, {
+        headers: {
+          [GATEWAY_TOKEN_HEADER_NAME]: gatewayToken, cookie: `mint_session=${adminToken}`,
+          "x-user-role": "admin", "x-user-id": adminId,
+        },
+      });
+      await observer.query("UPDATE accounts.users SET role='user' WHERE id=$1", [adminId]);
+      assert.equal((await count()).status, 403);
+      await observer.query("UPDATE accounts.users SET role='admin', status='disabled' WHERE id=$1", [adminId]);
+      assert.equal((await count()).status, 403);
+      await observer.query("UPDATE accounts.users SET status='active' WHERE id=$1", [adminId]);
+      assert.equal(await admin.accounts.pendingAccessRequestCount(), await expected());
+    });
 
     await t.test("bounded UUID traversal, filters and cursor binding", async () => {
       const traverse = async (input: AdminAccountListInput) => {

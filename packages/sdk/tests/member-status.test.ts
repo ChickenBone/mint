@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { setMemberStatusInputSchema, type SetMemberStatusInput } from "@mint/contracts";
+import { pendingAccessRequestCountSchema, setMemberStatusInputSchema, type SetMemberStatusInput } from "@mint/contracts";
 import { createMintSdk, MintSdkError, type MintSdkErrorCode } from "../src/index";
 
 const gatewayToken = "A".repeat(43);
@@ -8,6 +8,57 @@ const sessionToken = "fixture-browser-session-token";
 const input: SetMemberStatusInput = { userId: "00000000-0000-4000-8000-000000000001", status: "disabled" };
 const errorCode = (code: MintSdkErrorCode) => (error: unknown) =>
   error instanceof MintSdkError && error.code === code && error.cause === undefined;
+
+test("pending-access count validates bounded output and sanitizes transport failures", async () => {
+  let value: unknown = 0;
+  let mode = "success";
+  const sdk = createMintSdk({
+    url: "https://fixture.test/trpc", gatewayToken, sessionToken,
+    fetch: async (url, init) => {
+      assert.equal(String(url), "https://fixture.test/trpc/accounts.pendingAccessRequestCount");
+      assert.equal(init?.method, "GET");
+      const headers = new Headers(init?.headers);
+      assert.equal(headers.get("cookie"), `mint_session=${sessionToken}`);
+      assert.equal(headers.get("x-mint-gateway-token"), gatewayToken);
+      assert.equal(headers.has("x-user-role"), false);
+      assert.equal(init?.cache, "no-store");
+      assert.equal(init?.redirect, "error");
+      if (mode === "network") throw new Error("private-db-password");
+      if (mode === "http") return new Response("private-db-password", { status: 500 });
+      if (mode === "rpc") return Response.json({
+        error: { code: -32603, message: "private-db-password", data: { code: "INTERNAL_SERVER_ERROR" } },
+      });
+      return Response.json({ result: { data: value } });
+    },
+  });
+  for (const count of [0, 7, Number.MAX_SAFE_INTEGER]) {
+    value = count;
+    assert.equal(pendingAccessRequestCountSchema.parse(count), count);
+    assert.equal(await sdk.accounts.pendingAccessRequestCount(), count);
+  }
+  for (const count of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, NaN, Infinity, "7", {}, [], null, true]) {
+    value = count;
+    assert.equal(pendingAccessRequestCountSchema.safeParse(count).success, false);
+    await assert.rejects(sdk.accounts.pendingAccessRequestCount(), errorCode("INCOMPATIBLE_RESPONSE"));
+  }
+  for (const failure of ["network", "http", "rpc"]) {
+    mode = failure;
+    await assert.rejects(sdk.accounts.pendingAccessRequestCount(),
+      errorCode(failure === "network" ? "TRANSPORT_ERROR" : "RPC_ERROR"));
+  }
+});
+
+test("pending-access count preserves caller cancellation", async () => {
+  const reason = new Error("count cancelled");
+  const controller = new AbortController();
+  controller.abort(reason);
+  const sdk = createMintSdk({
+    url: "https://fixture.test/trpc", gatewayToken,
+    fetch: async () => { assert.fail("pre-aborted request must not fetch"); },
+  });
+  await assert.rejects(sdk.accounts.pendingAccessRequestCount({ signal: controller.signal }),
+    (error) => error === reason);
+});
 
 test("member-status schema and SDK reject malformed or actor-bearing input before fetching", async () => {
   let calls = 0;

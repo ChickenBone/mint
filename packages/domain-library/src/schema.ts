@@ -1,9 +1,11 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   foreignKey,
   index,
   integer,
+  jsonb,
   pgSchema,
   text,
   timestamp,
@@ -80,3 +82,22 @@ export const mediaFiles = librarySchema.table(
     index("media_files_verified_id_idx").on(table.id).where(sql`${table.availability} = 'verified'`),
   ],
 );
+
+// Private local-worker intent/checkpoints, not a listing or playback contract.
+export const scanJobs = librarySchema.table("scan_jobs", {
+  rootId: uuid("root_id").primaryKey(),
+  status: text("status").$type<"pending" | "completed" | "partial" | "blocked" | "failed">().notNull().default("pending"),
+  cursor: text("cursor"),
+  hadIssues: boolean("had_issues").notNull().default(false),
+  failures: integer("failures").notNull().default(0),
+  lastResult: jsonb("last_result"),
+  lastError: text("last_error"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ name: "scan_jobs_root_fk", columns: [table.rootId], foreignColumns: [roots.id] }).onDelete("restrict"),
+  check("scan_jobs_status_check", sql`${table.status} IN ('pending', 'completed', 'partial', 'blocked', 'failed')`),
+  check("scan_jobs_cursor_check", sql`${table.cursor} IS NULL OR octet_length(${table.cursor}) BETWEEN 1 AND 1048576`),
+  check("scan_jobs_failures_check", sql`${table.failures} BETWEEN 0 AND 5`),
+  check("scan_jobs_last_error_check", sql`${table.lastError} IN ('cursor-rejected', 'root-unavailable', 'no-progress', 'scan-failed')`),
+  check("scan_jobs_terminal_cursor", sql`${table.status} NOT IN ('completed', 'partial') OR ${table.cursor} IS NULL`),
+]);

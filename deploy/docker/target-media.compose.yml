@@ -1,0 +1,10 @@
+# Optional read-only Library root for the target API. Use with target-api.compose.yml.
+services:
+  target-api:
+    volumes:
+      - type: bind
+        source: ${MINT_TARGET_MEDIA_HOST_PATH:?Set MINT_TARGET_MEDIA_HOST_PATH}
+        target: ${MINT_TARGET_MEDIA_CONTAINER_PATH:?Set MINT_TARGET_MEDIA_CONTAINER_PATH}
+        read_only: true
+        bind:
+          create_host_path: false

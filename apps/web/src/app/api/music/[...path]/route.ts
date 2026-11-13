@@ -1,24 +1,100 @@
 import { z } from "zod";
+import {
+  listeningHistoryDeleteInputSchema, listeningHistoryListInputSchema,
+  listeningHistoryPrivateSessionInputSchema, listeningHistoryRecordInputSchema,
+} from "@mint/contracts";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb, schema } from "@mint/core/db";
 import { musicFolders, musicHistory, musicLikes, musicExclusions } from "@mint/core/music-db";
 import { collectionMutationSchema, createCollectionSchema, historyEventSchema, MusicError } from "@mint/core/music";
 import { getUser } from "@/lib/auth";
-import { boundedJson, originAllowed, publicUrl } from "@/lib/request";
+import { boundedJson, originAllowed, publicUrl, RequestInputError } from "@/lib/request";
 import { collectionDetail, createCollection, deleteHistory, listCollections, musicProfile, mutateCollection,
   importedLikeCandidates, organizeCollection, playlistLibrarySearch, recordHistory, respondInvitation, setPrivateSession } from "@/lib/music-store";
 import { discoverMusic } from "@/lib/music-discovery";
 import { trackPlayerItem } from "@/lib/player-protocol";
 import { toTrackView } from "@mint/core/views";
-import { validConsumerMutation } from "@/lib/native-context";
+import { currentNativeContext, validConsumerMutation } from "@/lib/native-context";
 import { rateLimit } from "@/lib/rate-limit";
 import { changeTrackSource, trackSourceState } from "@/lib/track-sources";
+import { targetAuthenticationEnabled } from "@/lib/target-auth";
+import { targetApi, targetFailure, TargetRequestError, targetResponse } from "@/lib/target-api";
 
 export const dynamic = "force-dynamic";
 type Context = { params: Promise<{ path: string[] }> };
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "cache-control": "private, no-store" } });
 const uuid = (id: string | undefined) => z.uuid().parse(id);
+const targetHistoryEventSchema = listeningHistoryRecordInputSchema.omit({ mediaFileId: true }).extend({ trackId: z.uuid() });
+
+async function targetHistory(request: Request, path: string[]) {
+  try {
+    const method = request.method;
+    const { sdk, signal } = targetApi(request, method !== "GET");
+    const [resource, id] = path;
+    if (path.length > (resource === "history" ? 2 : 1)
+      || (id && method !== "DELETE")) {
+      throw new TargetRequestError("Music endpoint not found.", 404);
+    }
+    if (!(resource === "history" ? ["GET", "POST", "DELETE"] : ["GET", "PATCH"]).includes(method)) {
+      throw new TargetRequestError("Method not allowed.", 405);
+    }
+    const parameters = new URL(request.url).searchParams;
+    const query: { page?: number } = {};
+    for (const [name, value] of parameters) {
+      if (resource !== "history" || method !== "GET" || name !== "page"
+        || query.page !== undefined || !/^(?:0|[1-9][0-9]{0,4})$/.test(value)) {
+        throw new TargetRequestError("Invalid history query.", 400);
+      }
+      query.page = Number(value);
+    }
+    const listInput = listeningHistoryListInputSchema.safeParse(query);
+    if (!listInput.success) throw new TargetRequestError("Invalid history query.", 400);
+    if (!await sdk.accounts.session({ signal })) throw new TargetRequestError("Approved membership required.", 401);
+    const history = sdk.playback.history;
+    const body = async () => {
+      if (request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+        throw new TargetRequestError("Send a JSON request.", 415);
+      }
+      try {
+        return await boundedJson(request, 1024);
+      } catch (error) {
+        if (error instanceof RequestInputError) throw new TargetRequestError(error.message, error.status);
+        if (error instanceof SyntaxError) throw new TargetRequestError("Invalid JSON.", 400);
+        throw error;
+      }
+    };
+    if (resource === "preferences") {
+      if (method === "PATCH") {
+        const input = listeningHistoryPrivateSessionInputSchema.safeParse(await body());
+        if (!input.success) throw new TargetRequestError("Invalid private-session request.", 400);
+        await history.setPrivateSession(input.data, { signal });
+      }
+      // Likes and exclusions are separate, unmigrated capabilities, not empty target data.
+      return targetResponse({ privateSession: await history.privateSession({ signal }) });
+    }
+    if (method === "GET") return targetResponse(await history.list(listInput.data, { signal }));
+    if (method === "POST") {
+      const input = targetHistoryEventSchema.safeParse(await body());
+      if (!input.success) throw new TargetRequestError("Invalid listening event.", 400);
+      const { trackId, ...event } = input.data;
+      // The browser's trackId must already be a target media-file ID; never resolve legacy identities.
+      return targetResponse(await history.record({ ...event, mediaFileId: trackId }, { signal }));
+    }
+    const input = listeningHistoryDeleteInputSchema.safeParse(id ? { entryId: id } : {});
+    if (!input.success) throw new TargetRequestError("Invalid history entry.", 400);
+    await history.delete(input.data, { signal });
+    return targetResponse({ ok: true });
+  } catch (error) {
+    return targetFailure(error);
+  }
+}
+
 async function handle(request: Request, context: Context) {
+  const path = (await context.params).path;
+  if (!currentNativeContext() && targetAuthenticationEnabled()
+    && (path[0] === "history" || path[0] === "preferences")) {
+    return targetHistory(request, path);
+  }
   const user = await getUser();
   if (!user) return json({ error: "Approved membership required." }, 401);
   try {
@@ -32,7 +108,6 @@ async function handle(request: Request, context: Context) {
         return await boundedJson(request, 200_000);
       } catch (error) { throw new MusicError(error instanceof Error ? error.message : "The request is not valid JSON."); }
     };
-    const path = (await context.params).path;
     const [resource, id, action] = path;
     const db = getDb();
     if (resource === "collections") {

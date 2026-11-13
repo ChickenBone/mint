@@ -165,7 +165,7 @@ This is an opt-in integration path for the in-development fresh-target runtime,
 not a replacement for the existing installation or a published image. It uses a
 separate PostgreSQL database and volume; it does **not** migrate legacy accounts
 or library data, and does not provide missing target features or a media worker.
-The target API is private, has no music mount or published port, and shares its
+The target API is private, has no music mount by default or published port, and shares its
 internal network only with the target database and the Next.js gateway. The
 legacy stack and its database remain in place. Use a Next.js web image built
 from the same revision with the target-auth gateway changes; existing published
@@ -232,6 +232,41 @@ the build or startup rather than silently skipping a migration. This experimenta
 configuration has not been validated as a production deployment. Docker Desktop
 was unavailable in the validation environment, so the image build, container
 startup and app-level flow remain unverified.
+
+#### Optional target Library media mount
+
+The target API's private media transport reads verified files from the
+Library's persisted root paths. To make an existing host directory available,
+add the optional media overlay. It mounts only into `target-api`, read-only;
+Next, target PostgreSQL and the other services do not receive this mount.
+Nothing is mounted by default. Choose an existing absolute host directory and
+an absolute container path that does not overlap application files, secrets or
+system directories. The API runs as UID 1000 and needs directory traversal
+and file read permissions. Missing host directories are not automatically
+created.
+
+```bash
+export MINT_TARGET_MEDIA_HOST_PATH="/absolute/host/path/to/originals"
+export MINT_TARGET_MEDIA_CONTAINER_PATH="/library-originals"
+docker compose -f docker-compose.yml -f deploy/docker/target-api.compose.yml -f deploy/docker/target-media.compose.yml config --quiet
+docker compose -f docker-compose.yml -f deploy/docker/target-api.compose.yml -f deploy/docker/target-media.compose.yml up -d --build
+```
+
+The persisted Library root path must be the path **inside the container**:
+for example, `/library-originals` or a directory underneath it, not the host
+path. Any separately configured scanner must see the same Library root path
+and files. The overlay does not register roots, scan or verify files, import
+legacy data, or grant playback authorization. It is not evidence that browsing
+or playback works end to end. Preserve the same mapping across restarts;
+changing it can make previously verified files unavailable. Multiple independent
+roots require additional read-only binds in an operator-managed override; keep
+their in-container paths consistent with persisted roots.
+
+Include `deploy/docker/target-media.compose.yml` on later Compose commands
+that recreate the target API if the mount is still needed. If also bootstrapping
+an administrator, include both this overlay and
+`deploy/docker/target-bootstrap.compose.yml`. Never share this media mount with
+the public web service.
 
 #### Existing Plex with the command-line stack
 

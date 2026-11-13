@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { MusicBrowser } from "@/components/app/music-browser";
+import { TargetLibraryBrowser } from "@/components/app/target-library-browser";
 import { legacyLibraryHref } from "@/lib/app-routes";
+import { targetAuthenticationEnabled } from "@/lib/target-auth";
 
 export const metadata: Metadata = { title: "Library" };
 
@@ -14,5 +16,9 @@ export default async function Library({ searchParams }: { searchParams: Promise<
   }
   const canonical = legacyLibraryHref(params);
   if (canonical !== `/app/library${params.size ? `?${params}` : ""}`) redirect(canonical);
+  if (targetAuthenticationEnabled()) {
+    const query = params.get("q") ?? "";
+    return <TargetLibraryBrowser key={query} initialQuery={query} />;
+  }
   return <MusicBrowser />;
 }

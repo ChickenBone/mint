@@ -104,6 +104,8 @@ test("SDK over HTTP uses migrated PostgreSQL accounts and cleans up runtime reso
       "domain-catalog/migrations/0001_startup_seed_receipts.sql",
       "domain-catalog/migrations/0002_listenbrainz_seed_ingestion.sql",
       "domain-playback/migrations/0000_listening_history.sql",
+      "domain-library/migrations/0002_library_scan_jobs.sql",
+      "domain-playback/migrations/0001_queue_snapshots.sql",
     ];
     const expected = await Promise.all(paths.map(async (p) => hash(await readFile(path.join(packagesRoot, p)))));
     assert.deepEqual((await observer.query(

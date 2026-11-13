@@ -331,6 +331,7 @@ test("cancellation after a positive write reports cancellation without undoing v
     assert.equal(result.status, "cancelled");
     assert.equal(result.stopReason, "cancelled");
     assert.equal(result.inconclusive, 1);
+    assert.equal(result.issueCount, 0);
     assert.equal([...f.files.values()][0]?.outcome?.availability, "verified");
     assert.ok(result.nextCursor);
     const retry = await scanLibraryRoot(f.repository, f.root.id, { ...options, cursor: result.nextCursor });

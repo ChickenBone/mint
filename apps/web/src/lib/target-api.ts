@@ -1,6 +1,7 @@
 import "server-only";
 import {
   BROWSER_SESSION_COOKIE_NAME, browserSessionTokenSchema, gatewayTokenSchema,
+  GATEWAY_TOKEN_HEADER_NAME,
 } from "@mint/contracts";
 import { createMintSdk, MintSdkError } from "@mint/sdk";
 import { trustedIngressIp, TrustedIngressError } from "./trusted-ingress";
@@ -74,8 +75,149 @@ export function targetApi(request: Request, mutation = false, publicAuthenticati
   return { sdk, signal };
 }
 
+export async function targetMedia(request: Request, mediaFileId: string): Promise<Response> {
+  const config = configuration();
+  const token = sessionToken(request);
+  if (!token) throw new TargetRequestError("Approved membership required.", 401);
+  if (request.method !== "GET" && request.method !== "HEAD") {
+    throw new TargetRequestError("Method not allowed.", 405);
+  }
+
+  const endpoint = new URL(config.url);
+  endpoint.pathname = `/media/${encodeURIComponent(mediaFileId)}`;
+  endpoint.search = "";
+  endpoint.hash = "";
+  const headers = new Headers({
+    [GATEWAY_TOKEN_HEADER_NAME]: config.gatewayToken,
+    cookie: `${BROWSER_SESSION_COOKIE_NAME}=${token}`,
+  });
+  const range = request.headers.get("range");
+  if (range !== null) headers.set("range", range);
+
+  const controller = new AbortController();
+  const abort = () => controller.abort(request.signal.reason);
+  if (request.signal.aborted) abort();
+  else request.signal.addEventListener("abort", abort, { once: true });
+
+  let upstream: Response;
+  const connectTimeout = setTimeout(() => controller.abort(), 10_000);
+  try {
+    upstream = await fetch(endpoint, {
+      method: request.method,
+      headers,
+      cache: "no-store",
+      redirect: "error",
+      signal: controller.signal,
+    });
+  } catch {
+    request.signal.removeEventListener("abort", abort);
+    if (request.signal.aborted) throw new TargetRequestError("Request cancelled.", 499);
+    throw new MintSdkError("TRANSPORT_ERROR");
+  } finally {
+    clearTimeout(connectTimeout);
+  }
+
+  const forwarded = new Headers({ "cache-control": "private, no-store" });
+  if (upstream.status === 416) {
+    const contentRange = upstream.headers.get("content-range");
+    if (!request.headers.has("range") || !contentRange || !/^bytes \*\/(?:0|[1-9]\d*)$/.test(contentRange)) {
+      request.signal.removeEventListener("abort", abort);
+      await upstream.body?.cancel();
+      throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+    }
+    forwarded.set("content-range", contentRange);
+    request.signal.removeEventListener("abort", abort);
+    await upstream.body?.cancel();
+    return new Response(null, { status: upstream.status, headers: forwarded });
+  }
+  if (upstream.status !== 200 && upstream.status !== 206) {
+    request.signal.removeEventListener("abort", abort);
+    await upstream.body?.cancel();
+    const messages: Record<number, string> = {
+      400: "Invalid media range.",
+      401: "Approved membership required.",
+      403: "Playback is not allowed.",
+      404: "Media not found.",
+      415: "The original audio format is not supported.",
+      503: "Media is unavailable.",
+    };
+    const message = messages[upstream.status];
+    if (message) return targetResponse({ error: message }, upstream.status);
+    throw new MintSdkError("RPC_ERROR");
+  }
+
+  const contentType = upstream.headers.get("content-type");
+  const contentLength = upstream.headers.get("content-length");
+  const acceptRanges = upstream.headers.get("accept-ranges");
+  const contentRange = upstream.headers.get("content-range");
+  const parsedContentRange = contentRange
+    ? /^bytes (0|[1-9]\d*)-(0|[1-9]\d*)\/(0|[1-9]\d*)$/.exec(contentRange)
+    : null;
+  const contentLengthNumber = contentLength === null ? NaN : Number(contentLength);
+  const validPartialRange = parsedContentRange !== null
+    && parsedContentRange.slice(1).every((part) => Number.isSafeInteger(Number(part)))
+    && Number(parsedContentRange[2]) >= Number(parsedContentRange[1])
+    && Number(parsedContentRange[2]) < Number(parsedContentRange[3])
+    && Number(parsedContentRange[2]) - Number(parsedContentRange[1]) + 1 === contentLengthNumber;
+  if (!contentType || !/^audio\/[a-z0-9.+-]+$/i.test(contentType)
+    || !contentLength || !/^(?:0|[1-9]\d*)$/.test(contentLength)
+    || !Number.isSafeInteger(contentLengthNumber) || acceptRanges !== "bytes"
+    || (request.headers.has("range") !== (upstream.status === 206))
+    || (upstream.status === 200 && contentRange !== null)
+    || (upstream.status === 206 && !validPartialRange)) {
+    request.signal.removeEventListener("abort", abort);
+    await upstream.body?.cancel();
+    throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+  }
+  forwarded.set("content-type", contentType);
+  forwarded.set("content-length", contentLength);
+  forwarded.set("accept-ranges", acceptRanges);
+  if (contentRange !== null) forwarded.set("content-range", contentRange);
+
+  const bodyless = request.method === "HEAD";
+  if (bodyless) {
+    request.signal.removeEventListener("abort", abort);
+    await upstream.body?.cancel();
+    return new Response(null, { status: upstream.status, headers: forwarded });
+  }
+  const body = upstream.body;
+  if (!body) {
+    request.signal.removeEventListener("abort", abort);
+    throw new MintSdkError("INCOMPATIBLE_RESPONSE");
+  }
+  const reader = body.getReader();
+  let cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true;
+    request.signal.removeEventListener("abort", abort);
+  };
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(sink) {
+      try {
+        const result = await reader.read();
+        if (result.done) {
+          cleanup();
+          sink.close();
+        } else {
+          sink.enqueue(result.value);
+        }
+      } catch (error) {
+        cleanup();
+        sink.error(error);
+      }
+    },
+    async cancel(reason) {
+      cleanup();
+      await reader.cancel(reason);
+    },
+  });
+  return new Response(stream, { status: upstream.status, headers: forwarded });
+}
+
 export function targetFailure(error: unknown): Response {
   if (error instanceof TargetRequestError) {
+    if (error.status === 499) return new Response(null, { status: 499, headers: { "cache-control": "private, no-store" } });
     return targetResponse({ error: error.message }, error.status);
   }
   // Only fixed categories are logged; upstream errors can contain private connection data.

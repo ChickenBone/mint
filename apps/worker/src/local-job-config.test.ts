@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { readLocalWorkerConfiguration } from "./local-job-config";
 import { startLocalWorker } from "./local-job-runtime";
+import { validateLocalLibraryScanConfiguration, type LocalLibraryScanConfiguration } from "./local-library-scan";
 
 const prefix = "MINT_LOCAL_WORKER_";
 function env(overrides: Record<string, string | undefined> = {}): Record<string, string | undefined> {
@@ -46,4 +47,38 @@ test("enabled configuration validates every resource policy before startup", asy
   const controller = new AbortController();
   controller.abort();
   await assert.rejects(startLocalWorker(config, { onError() {}, signal: controller.signal }), { name: "AbortError" });
+});
+
+const scan: LocalLibraryScanConfiguration = {
+  rootIds: ["12345678-1234-4234-8234-123456789012"],
+  options: {
+    maxEntries: 100, maxFiles: 10, maxDepth: 8, timeoutMs: 30_000, maxReplayEntries: 1000,
+    audio: {
+      ffprobePath: "/usr/bin/ffprobe", ffmpegPath: "/usr/bin/ffmpeg",
+      maxProbeInputBytes: 1024 * 1024, maxDecodeInputBytes: 1024 * 1024,
+      maxOutputBytes: 1024 * 1024, probeTimeoutMs: 5000, decodeTimeoutMs: 5000,
+    },
+  },
+};
+
+test("Library scans require explicit persisted root IDs and bounded policies", () => {
+  for (const sources of ['["library"]', '["listenbrainz","library"]']) {
+    const config = readLocalWorkerConfiguration(env({ ENABLED_SOURCES: sources, LIBRARY_SCAN: JSON.stringify(scan) }));
+    assert.ok("database" in config);
+    assert.deepEqual(config.libraryScan, scan);
+  }
+  for (const raw of [undefined, "{}", "null", "{", JSON.stringify({ ...scan, rootIds: [] }),
+    JSON.stringify({ ...scan, rootIds: ["/music"] }),
+    JSON.stringify({ ...scan, rootIds: [scan.rootIds[0], scan.rootIds[0]] }),
+    JSON.stringify({ ...scan, options: { ...scan.options, cursor: "untrusted" } })]) {
+    assert.throws(() => readLocalWorkerConfiguration(env({ ENABLED_SOURCES: '["library"]', LIBRARY_SCAN: raw })));
+  }
+  for (const options of [
+    { ...scan.options, maxEntries: 100001 }, { ...scan.options, maxFiles: 0 },
+    { ...scan.options, maxDepth: 65 }, { ...scan.options, timeoutMs: 3600001 },
+    { ...scan.options, maxReplayEntries: 100001 },
+    { ...scan.options, audio: { ...scan.options.audio, maxDecodeInputBytes: 0 } },
+    { ...scan.options, audio: { ...scan.options.audio, ffmpegPath: "ffmpeg" } },
+    { ...scan.options, audio: { ...scan.options.audio, decodeTimeoutMs: 120001 } },
+  ]) assert.throws(() => validateLocalLibraryScanConfiguration({ ...scan, options }));
 });

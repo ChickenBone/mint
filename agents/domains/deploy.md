@@ -37,12 +37,12 @@ Details: [workers and operations](../workers-and-operations.md#self-hosting-and-
 - **Imported by:** none
 - **Live detail:** `npm run agents -- map deploy` (exports, line counts, cross-domain import edges).
 
-### Owned files (39)
+### Owned files (40)
 
 - `./` `.dockerignore`, `.env.development.example`, `.env.example`, `.gitleaks.toml`, `Dockerfile`, `docker-compose.catalog.yml`, `docker-compose.dev.yml`, `docker-compose.musicbrainz.yml`, `docker-compose.nas-migrate.yml`, `docker-compose.nas.yml`, `docker-compose.vercel.yml`, `docker-compose.yml`
 - `.github/workflows/` `android-apk.yml`, `ci.yml`, `ios-eas.yml`, `release.yml`
 - `apps/web/` `.env.vercel.example`
-- `deploy/docker/` `Dockerfile.target-api`, `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`, `target-api-entrypoint.sh`, `target-api.compose.yml`, `target-api.test.mjs`, `target-bootstrap.compose.yml`, `target-migrations.mjs`, `target-web-entrypoint.sh`
+- `deploy/docker/` `Dockerfile.target-api`, `caddy.test.mjs`, `catalog-network.yml`, `compose.test.mjs`, `entrypoint.sh`, `init.mjs`, `musicbrainz-network.yml`, `musicbrainz.mjs`, `musicbrainz.test.mjs`, `target-api-entrypoint.sh`, `target-api.compose.yml`, `target-api.test.mjs`, `target-bootstrap.compose.yml`, `target-media.compose.yml`, `target-migrations.mjs`, `target-web-entrypoint.sh`
 - `deploy/mobile/` `eas-distribution.mjs`, `eas-distribution.test.mjs`, `ios-distribution.mjs`, `ios-distribution.test.mjs`
 - `docs/` `android-builds.md`, `ios-builds.md`, `self-hosting.md`
 

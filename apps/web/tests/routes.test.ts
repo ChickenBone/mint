@@ -15,6 +15,8 @@ import {
   legacyLibraryHref,
   legacyLikedHref,
   legacyManageHref,
+  manageAccountPageHref,
+  targetManageAccounts,
   legacyMusicHref,
   legacySpotifyHref,
   resolveCollectionTab,
@@ -25,6 +27,37 @@ import {
 
 const webFile = (path: string) => new URL(`../${path}`, import.meta.url);
 const source = (path: string) => readFileSync(webFile(path), "utf8");
+
+test("account pagination preserves the other list cursor without mutating current navigation", () => {
+  const current = new URLSearchParams("tab=requests&requestsCursor=old&membersCursor=member");
+  assert.equal(manageAccountPageHref(current, "requestsCursor", "next"), "/app/manage?tab=requests&requestsCursor=next&membersCursor=member");
+  assert.equal(manageAccountPageHref(current, "requestsCursor", null), "/app/manage?tab=requests&membersCursor=member");
+  assert.equal(manageAccountPageHref(current, "membersCursor", "new"), "/app/manage?tab=requests&requestsCursor=old&membersCursor=new");
+  assert.equal(current.toString(), "tab=requests&requestsCursor=old&membersCursor=member");
+  assert.equal(manageAccountPageHref(new URLSearchParams(), "membersCursor", null), "/app/manage");
+});
+
+test("target management uses only supplied account facts and independent cursors", () => {
+  const pending = {
+    id: "00000000-0000-4000-8000-000000000001", name: "Request", email: "request@example.test",
+    role: "user" as const, status: "pending" as const, requestNote: "Hello",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+  const member = { ...pending, id: "00000000-0000-4000-8000-000000000002",
+    name: "Member", status: "disabled" as const, role: "admin" as const };
+  assert.deepEqual(targetManageAccounts(
+    { items: [pending], nextCursor: "requestNext" },
+    { items: [member], nextCursor: null },
+    undefined, "memberCurrent",
+  ), {
+    requests: [{ id: pending.id, name: pending.name, email: pending.email,
+      requestNote: pending.requestNote, createdAt: pending.createdAt }],
+    members: [{ id: member.id, name: member.name, email: member.email, role: "admin",
+      status: "disabled", created_at: member.createdAt, tracks: null, linked: null, last_synced_at: null }],
+    pagination: { requestsCursor: null, membersCursor: "memberCurrent",
+      nextRequestsCursor: "requestNext", nextMembersCursor: null },
+  });
+});
 
 test("public browse is removed without replacing member library or other public destinations", () => {
   for (const extension of ["js", "jsx", "ts", "tsx"]) {
